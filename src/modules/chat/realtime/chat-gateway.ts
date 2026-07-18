@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import type { AccessTokenClaims } from "../../auth/application/services/crypto-service.js";
 import type { ChatService } from "../application/services/chat-service.js";
+import {
+  listOnlineUserIds,
+  markUserOffline,
+  markUserOnline,
+} from "./presence-registry.js";
 
 export interface ChatClientToServerEvents {
   "message:markDelivered": (
@@ -107,6 +112,11 @@ async function connectSocket(
   }
   if ((io.sockets.adapter.rooms.get(userRoom)?.size ?? 0) === 1) {
     await emitPresence(io, chat, userId, true);
+  }
+
+  for (const onlineUserId of listOnlineUserIds()) {
+    if (onlineUserId === userId) continue;
+    socket.emit("presence:update", { userId: onlineUserId, online: true });
   }
 
   socket.on("typing:start", (payload) => {
@@ -226,8 +236,11 @@ async function emitPresence(
   online: boolean,
 ): Promise<void> {
   const presence = await chat.updatePresence(userId, online);
-  if (!presence.payload) return;
-  for (const recipientId of presence.recipientIds) {
-    io.to(`user:${recipientId}`).emit("presence:update", presence.payload);
+  if (online && presence.payload) {
+    markUserOnline(userId);
+  } else {
+    markUserOffline(userId);
   }
+  if (!presence.payload) return;
+  io.emit("presence:update", presence.payload);
 }

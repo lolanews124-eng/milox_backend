@@ -161,11 +161,15 @@ export class UserService {
         throw new AppError("USERNAME_TAKEN", "Username is already in use", 409);
       }
       if (error instanceof InvalidProfileReferenceError) {
+        const message =
+          error.field === "interestSlugs"
+            ? "One or more selected interests are not available. Please try again."
+            : "A referenced profile value is invalid";
         const code =
           error.field === "interestSlugs"
             ? "INVALID_INTEREST_TAG"
             : "MEDIA_NOT_OWNED";
-        throw new AppError(code, "A referenced profile value is invalid", 422);
+        throw new AppError(code, message, 422);
       }
       throw error;
     }

@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import { createApp } from "./app.js";
 import { getConfig, getAllowedOrigins } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
+import { ensureDefaultInterestTags } from "./infrastructure/interest-tags.js";
 import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
 import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
@@ -64,12 +65,20 @@ io.use((socket, next) => {
 });
 registerChatGateway(io, chatService);
 
-httpServer.listen(port, () => {
-  console.info(`Milox API listening on port ${port}`);
-  void emailWorker.start();
-  feedScoreWorker.start();
-  void chatOutboxWorker.start();
-});
+void (async () => {
+  try {
+    await ensureDefaultInterestTags(prisma);
+  } catch (error: unknown) {
+    console.error("Could not ensure default interest tags", error);
+  }
+
+  httpServer.listen(port, () => {
+    console.info(`Milox API listening on port ${port}`);
+    void emailWorker.start();
+    feedScoreWorker.start();
+    void chatOutboxWorker.start();
+  });
+})();
 
 async function shutdown(signal: string): Promise<void> {
   console.info(`Received ${signal}; shutting down`);

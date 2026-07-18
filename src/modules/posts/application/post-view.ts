@@ -1,6 +1,7 @@
 import type { Gender, RelationshipGoal } from "@prisma/client";
 
 import type { AppConfig } from "../../../config/env.js";
+import { isUserOnline } from "../../chat/realtime/presence-registry.js";
 import { calculateAge } from "../../users/application/services/user-service.js";
 
 export interface PostAuthorViewRecord {
@@ -105,6 +106,7 @@ export function presentPublicAuthor(
     interests: author.interests.map(({ tag }) => tag.slug),
     isVerifiedBadge: author.isVerifiedBadge,
     isPrivateAccount: author.isPrivateAccount,
+    ...(!author.hideOnline ? { online: isUserOnline(author.id) } : {}),
     ...(author.followers
       ? { viewerFollowState: followState(author.followers[0]?.status) }
       : {}),
