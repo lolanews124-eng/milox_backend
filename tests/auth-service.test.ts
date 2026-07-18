@@ -16,6 +16,7 @@ const config: AppConfig = {
   DATABASE_URL: "postgresql://test:test@localhost:5432/test",
   WEB_ORIGIN: "http://localhost:3000",
   ADMIN_ORIGIN: "http://localhost:3002",
+  CORS_ORIGINS: [],
   API_PUBLIC_URL: "http://localhost:3001",
   UPLOAD_ROOT: "../../uploads-test",
   JWT_ACCESS_SECRET: "test-secret-that-is-at-least-32-bytes-long",

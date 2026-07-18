@@ -7,6 +7,17 @@ const envSchema = z
   DATABASE_URL: z.string().min(1),
   WEB_ORIGIN: z.string().url(),
   ADMIN_ORIGIN: z.string().url(),
+  /** Comma-separated extra browser origins allowed by CORS (e.g. production domains). */
+  CORS_ORIGINS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().url())),
   API_PUBLIC_URL: z.string().url().default("http://localhost:3001"),
   UPLOAD_ROOT: z.string().default("../../uploads"),
   JWT_ACCESS_SECRET: z.string().min(32),
@@ -73,4 +84,8 @@ export function getConfig(): AppConfig {
 
 export function resetConfigForTests(): void {
   cachedConfig = undefined;
+}
+
+export function getAllowedOrigins(config: AppConfig): string[] {
+  return [...new Set([config.WEB_ORIGIN, config.ADMIN_ORIGIN, ...config.CORS_ORIGINS])];
 }

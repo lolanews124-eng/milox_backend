@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 
 import { createApp } from "./app.js";
-import { getConfig } from "./config/env.js";
+import { getConfig, getAllowedOrigins } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
 import { EmailWorker } from "./jobs/email/email-worker.js";
@@ -34,7 +34,7 @@ const io = new Server<
   ChatSocketData
 >(httpServer, {
   cors: {
-    origin: [config.WEB_ORIGIN, config.ADMIN_ORIGIN],
+    origin: getAllowedOrigins(config),
     credentials: true,
   },
 });
