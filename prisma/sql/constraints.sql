@@ -1,6 +1,6 @@
 -- Manual / companion SQL for constraints Prisma cannot express in schema.prisma.
 -- Applied via: prisma migrate diff / custom migration SQL in Module 15+ or:
---   npm run prisma:migrate:dev --workspace=@milox/api
+--   npm run prisma:migrate:dev
 --
 -- This file documents required partial indexes and checks. The first real
 -- migration should include these statements after table creation.
