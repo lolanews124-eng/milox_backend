@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build / test
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local embedded Postgres data
+.data/
+
+# Uploads (local media — also ignored at repo root)
+uploads/
+
+# Logs / caches
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.eslintcache
+.cache/
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
