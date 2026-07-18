@@ -98,6 +98,7 @@ function messageFixture(): MessageViewRecord {
     type: "TEXT",
     body: "hello",
     deliveryStatus: "SENT",
+    editedAt: null,
     deletedForEveryoneAt: null,
     createdAt: new Date("2026-07-17T00:00:00.000Z"),
     updatedAt: new Date("2026-07-17T00:00:00.000Z"),

@@ -13,6 +13,7 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "postinstall": "prisma generate",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
@@ -28,7 +29,7 @@
     "db:setup": "prisma db push && prisma db execute --file prisma/sql/constraints.sql --schema prisma/schema.prisma && tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@milox/contracts": "workspace:*",
+    "@milox/contracts": "*",
     "@prisma/client": "^6.12.0",
     "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",
@@ -50,7 +51,7 @@
   "devDependencies": {
     "@embedded-postgres/windows-x64": "18.4.0-beta.17",
     "@eslint/js": "^9.31.0",
-    "@milox/config-typescript": "workspace:*",
+    "@milox/config-typescript": "*",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
@@ -63,7 +64,7 @@
     "prisma": "^6.12.0",
     "supertest": "^7.2.2",
     "tsx": "^4.20.3",
-    "typescript": "catalog:",
+    "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vitest": "^3.2.4"
   }

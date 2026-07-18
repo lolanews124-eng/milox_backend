@@ -2,7 +2,7 @@
  * Local-dev demo data: users with profile photos, image posts, likes,
  * comments, and follows so the feed looks alive.
  *
- * Run: pnpm --filter @milox/api seed:demo
+ * Run: npm run seed:demo --workspace=@milox/api
  * Re-running wipes and recreates all demo accounts (emails @demo.milox).
  * Every demo account password: MiloxDemo123!
  */

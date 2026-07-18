@@ -164,6 +164,7 @@ function createRepository(): ChatRepository {
     markRead: vi.fn(),
     markDelivered: vi.fn(),
     deleteMessage: vi.fn(),
+    editMessage: vi.fn(),
     activeConversationIds: vi.fn(),
     activeConversationMemberIds: vi.fn(),
     canAccessConversation: vi.fn(),
@@ -184,6 +185,7 @@ function messageFixture(
     type: "TEXT",
     body: "hello privately",
     deliveryStatus: "SENT",
+    editedAt: null,
     deletedForEveryoneAt: overrides.deleted
       ? new Date("2026-07-17T00:01:00.000Z")
       : null,
@@ -196,6 +198,7 @@ function messageFixture(
 function conversationFixture(hidePrivateFields: boolean): ConversationViewRecord {
   return {
     id: conversationId,
+    matchId: "11111111-1111-4111-8111-111111111111",
     peer: {
       id: peerId,
       username: "peer",
