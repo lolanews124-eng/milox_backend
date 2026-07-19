@@ -31,6 +31,29 @@ export class FeedController {
   suggested = (request: Request, response: Response): Promise<void> =>
     this.respond("suggested", request, response);
 
+  discover = async (request: Request, response: Response): Promise<void> => {
+    if (!request.auth) {
+      throw new AppError("UNAUTHENTICATED", "Authentication required", 401);
+    }
+    const query = feedQuerySchema.parse(request.query);
+    const page = await this.feeds.getDiscoverPeople({
+      limit: query.limit,
+      ...(query.cursor ? { cursor: query.cursor } : {}),
+      viewerId: request.auth.userId,
+    });
+    response.status(200).json({
+      success: true,
+      data: { items: page.items },
+      meta: {
+        requestId: request.requestId,
+        pagination: {
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+        },
+      },
+    });
+  };
+
   passedProfiles = async (
     request: Request,
     response: Response,

@@ -32,7 +32,7 @@ export function createAuthModule(
 
   return {
     router: createAuthRouter(controller, crypto),
-    authenticate: authenticate(crypto),
+    authenticate: authenticate(crypto, database),
     optionalAuthenticate: optionalAuthenticate(crypto),
     requireVerified,
     service,

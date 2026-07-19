@@ -6,8 +6,11 @@ import {
 
 import {
   postViewSelect,
+  publicAuthorSelect,
   visibleAuthorWhere,
+  visibleUserCardWhere,
 } from "../../posts/infrastructure/post-query-policy.js";
+import type { PostAuthorViewRecord } from "../../posts/application/post-view.js";
 import type {
   FeedPostRecord,
   FeedQuery,
@@ -59,11 +62,6 @@ export class PrismaFeedRepository implements FeedRepository {
   async getSuggested(
     query: FeedQuery & { viewerId: string },
   ): Promise<FeedPostRecord[]> {
-    const tags = await this.database.userInterest.findMany({
-      where: { userId: query.viewerId },
-      select: { tagId: true },
-    });
-    const tagIds = tags.map(({ tagId }) => tagId);
     const cursorWhere = rankedCursorWhere(query.cursor);
 
     return this.findPosts(query, {
@@ -79,18 +77,6 @@ export class PrismaFeedRepository implements FeedRepository {
             status: FollowStatus.ACTIVE,
           },
         },
-        ...(tagIds.length > 0
-          ? {
-              OR: [
-                { interests: { some: { tagId: { in: tagIds } } } },
-                {
-                  createdAt: {
-                    gte: new Date(Date.now() - 30 * 86_400_000),
-                  },
-                },
-              ],
-            }
-          : {}),
       },
       orderBy: [
         { trendingScore: "desc" },
@@ -99,6 +85,41 @@ export class PrismaFeedRepository implements FeedRepository {
       ],
       ...(cursorWhere ? { cursorWhere } : {}),
     });
+  }
+
+  async getDiscoverPeople(
+    query: FeedQuery & { viewerId: string },
+  ): Promise<PostAuthorViewRecord[]> {
+    const cursorWhere = discoverPeopleCursorWhere(query.cursor);
+
+    return this.database.user.findMany({
+      where: {
+        AND: [
+          visibleUserCardWhere(query.viewerId),
+          { id: { not: query.viewerId } },
+          { isPrivateAccount: false },
+          {
+            passedByProfiles: {
+              none: { viewerId: query.viewerId },
+            },
+          },
+          ...(cursorWhere ? [cursorWhere] : []),
+        ],
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: query.limit + 1,
+      select: {
+        ...publicAuthorSelect(),
+        followers: {
+          where: {
+            followerId: query.viewerId,
+            status: { in: [FollowStatus.ACTIVE, FollowStatus.PENDING] },
+          },
+          select: { status: true },
+          take: 1,
+        },
+      },
+    }) as Promise<PostAuthorViewRecord[]>;
   }
 
   async passProfile(viewerId: string, targetId: string): Promise<void> {
@@ -179,6 +200,19 @@ function rankedCursorWhere(
         createdAt,
         id: { lt: cursor.id },
       },
+    ],
+  };
+}
+
+function discoverPeopleCursorWhere(
+  cursor: FeedCursor | undefined,
+): Prisma.UserWhereInput | undefined {
+  if (!cursor || cursor.kind !== "chronological") return undefined;
+  const createdAt = new Date(cursor.createdAt);
+  return {
+    OR: [
+      { createdAt: { lt: createdAt } },
+      { createdAt, id: { lt: cursor.id } },
     ],
   };
 }

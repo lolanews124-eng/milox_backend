@@ -11,6 +11,7 @@ import { ensureDefaultInterestTags } from "./infrastructure/interest-tags.js";
 import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
 import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
+import { NotificationOutboxWorker } from "./jobs/notifications/notification-outbox-worker.js";
 import { CryptoService } from "./modules/auth/application/services/crypto-service.js";
 import { createChatService } from "./modules/chat/index.js";
 import {
@@ -19,6 +20,7 @@ import {
   type ChatServerToClientEvents,
   type ChatSocketData,
 } from "./modules/chat/realtime/chat-gateway.js";
+import { createNotificationService } from "./modules/notifications/index.js";
 
 const config = getConfig();
 const crypto = new CryptoService(config);
@@ -43,6 +45,13 @@ const chatService = createChatService(config, prisma);
 const chatOutboxWorker = new ChatOutboxWorker(
   prisma,
   chatService,
+  io,
+  config,
+);
+const notificationService = createNotificationService(config, prisma);
+const notificationOutboxWorker = new NotificationOutboxWorker(
+  prisma,
+  notificationService,
   io,
   config,
 );
@@ -77,6 +86,7 @@ void (async () => {
     void emailWorker.start();
     feedScoreWorker.start();
     void chatOutboxWorker.start();
+    void notificationOutboxWorker.start();
   });
 })();
 
@@ -85,6 +95,7 @@ async function shutdown(signal: string): Promise<void> {
   emailWorker.stop();
   feedScoreWorker.stop();
   chatOutboxWorker.stop();
+  notificationOutboxWorker.stop();
   await io.close();
   await prisma.$disconnect();
 }

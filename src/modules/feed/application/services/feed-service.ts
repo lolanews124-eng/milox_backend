@@ -1,10 +1,11 @@
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
-import { presentPost } from "../../../posts/application/post-view.js";
+import { presentPost, presentPublicAuthor } from "../../../posts/application/post-view.js";
 import type {
   FeedPostRecord,
   FeedRepository,
 } from "../ports/feed-repository.js";
+import type { PostAuthorViewRecord } from "../../../posts/application/post-view.js";
 import type {
   FeedCursorCodec,
   FeedCursor,
@@ -97,6 +98,39 @@ export class FeedService {
   async getPassedProfileIds(viewerId: string): Promise<string[]> {
     return this.repository.getPassedProfileIds(viewerId);
   }
+
+  async getDiscoverPeople(
+    options: { viewerId?: string; cursor?: string; limit: number },
+  ): Promise<FeedPage> {
+    const viewerId = requireViewer(options.viewerId);
+    const cursor = options.cursor
+      ? this.cursors.decode(options.cursor)
+      : undefined;
+    if (cursor && cursor.kind !== "chronological") {
+      throw new AppError(
+        "INVALID_CURSOR",
+        "This cursor belongs to a different feed",
+        400,
+      );
+    }
+
+    const rows = await this.repository.getDiscoverPeople({
+      viewerId,
+      limit: options.limit,
+      ...(cursor ? { cursor } : {}),
+    });
+    const hasMore = rows.length > options.limit;
+    const pageRows = rows.slice(0, options.limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map((row) => presentPublicAuthor(row, this.config)),
+      nextCursor:
+        hasMore && last
+          ? this.cursors.encode(cursorForPerson(last))
+          : null,
+      hasMore,
+    };
+  }
 }
 
 function requireViewer(viewerId: string | undefined): string {
@@ -124,6 +158,15 @@ function cursorForPost(
     id: post.id,
     createdAt: post.createdAt.toISOString(),
     score: post.trendingScore,
+  };
+}
+
+function cursorForPerson(person: PostAuthorViewRecord): FeedCursor {
+  return {
+    version: 1,
+    kind: "chronological",
+    id: person.id,
+    createdAt: person.createdAt.toISOString(),
   };
 }
 

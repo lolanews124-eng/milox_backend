@@ -36,7 +36,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const config = dependencies.config ?? getConfig();
   const database = dependencies.database ?? prisma;
   const auth = createAuthModule(config, database);
-  const admin = createAdminModule(database, auth.authenticate);
+  const admin = createAdminModule(config, database, auth.authenticate);
   const users = createUserModule(config, database, auth.service, {
     authenticate: auth.authenticate,
     optionalAuthenticate: auth.optionalAuthenticate,

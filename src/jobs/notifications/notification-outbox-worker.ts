@@ -33,6 +33,7 @@ const messagePayloadSchema = z.object({
 });
 const NOTIFICATION_EVENTS = [
   "post.liked",
+  "post.shared",
   "post.commented",
   "comment.replied",
   "comment.liked",
@@ -234,6 +235,7 @@ export class NotificationOutboxWorker {
 function notificationTypeFor(eventType: string): NotificationType | null {
   const mapping: Record<string, NotificationType> = {
     "post.liked": NotificationType.NEW_LIKE,
+    "post.shared": NotificationType.SYSTEM,
     "post.commented": NotificationType.NEW_COMMENT,
     "comment.replied": NotificationType.NEW_COMMENT,
     "comment.liked": NotificationType.NEW_LIKE,
@@ -260,5 +262,6 @@ function directNotificationPayload(
     ...(eventType === "follow.accepted"
       ? { code: "FOLLOW_ACCEPTED" }
       : {}),
+    ...(eventType === "post.shared" ? { code: "POST_SHARED" } : {}),
   };
 }

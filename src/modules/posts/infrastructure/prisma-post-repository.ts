@@ -344,6 +344,7 @@ export class PrismaPostRepository implements PostRepository {
     return this.database.$transaction(async (transaction) => {
       const post = await findVisibleForAction(transaction, postId, userId);
       if (!post) return null;
+
       await transaction.postShare.create({
         data: { postId, userId },
       });
@@ -351,6 +352,20 @@ export class PrismaPostRepository implements PostRepository {
         where: { id: postId },
         data: { shareCount: { increment: 1 } },
       });
+      if (post.authorId !== userId) {
+        await transaction.outboxEvent.create({
+          data: {
+            eventType: "post.shared",
+            aggregateType: "post",
+            aggregateId: postId,
+            payload: {
+              postId,
+              actorId: userId,
+              recipientId: post.authorId,
+            },
+          },
+        });
+      }
       return transaction.post.findUnique({
         where: { id: postId },
         select: postViewSelect(userId),

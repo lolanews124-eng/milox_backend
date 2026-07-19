@@ -5,7 +5,13 @@ import { AppError } from "../../../shared/errors/app-error.js";
 import type { MediaService } from "../application/services/media-service.js";
 
 const mediaUploadSchema = z.object({
-  kind: z.enum(["PROFILE_PHOTO", "COVER_PHOTO", "POST_IMAGE"]),
+  kind: z.enum([
+    "PROFILE_PHOTO",
+    "COVER_PHOTO",
+    "POST_IMAGE",
+    "STORY_IMAGE",
+    "CHAT_IMAGE",
+  ]),
 });
 const mediaParamsSchema = z.object({ mediaId: z.string().uuid() });
 

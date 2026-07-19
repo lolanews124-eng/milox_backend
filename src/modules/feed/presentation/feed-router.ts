@@ -30,6 +30,11 @@ export function createFeedRouter(
     asyncHandler(controller.suggested),
   );
   router.get(
+    "/discover",
+    authenticate,
+    asyncHandler(controller.discover),
+  );
+  router.get(
     "/passes",
     authenticate,
     asyncHandler(controller.passedProfiles),

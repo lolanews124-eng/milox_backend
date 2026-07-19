@@ -96,6 +96,7 @@ function createHarness(currentRoleAllowed: boolean) {
   } as unknown as PrismaClient;
   const controller = new AdminController(
     serviceObject as unknown as AdminService,
+    "../../uploads",
   );
   const authenticate: RequestHandler = (req, _res, next) => {
     req.auth = {

@@ -54,7 +54,7 @@ export class PrismaStoryRepository implements StoryRepository {
         expiresAt: { gt: new Date() },
         author: { is: visibleAuthorWhere(viewerId) },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       take: MAX_ACTIVE_STORIES,
       select: this.storySelect(viewerId),
     });

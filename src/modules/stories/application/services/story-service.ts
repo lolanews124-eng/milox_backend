@@ -73,11 +73,25 @@ export class StoryService {
       group.stories.push(this.present(story));
     }
 
-    const items = [...groups.values()].sort((a, b) => {
-      if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
-      if (a.allViewed !== b.allViewed) return a.allViewed ? 1 : -1;
-      return 0;
-    });
+    for (const group of groups.values()) {
+      group.stories.sort(
+        (a, b) =>
+          new Date((b as { createdAt: string }).createdAt).getTime() -
+          new Date((a as { createdAt: string }).createdAt).getTime(),
+      );
+    }
+
+    const items = [...groups.values()]
+      .sort((a, b) => {
+        if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+        if (a.allViewed !== b.allViewed) return a.allViewed ? 1 : -1;
+        const aLatest = (a.stories[0] as { createdAt?: string } | undefined)
+          ?.createdAt;
+        const bLatest = (b.stories[0] as { createdAt?: string } | undefined)
+          ?.createdAt;
+        return (bLatest ?? "").localeCompare(aLatest ?? "");
+      })
+      .filter((group) => group.isSelf || !group.allViewed);
     return { items };
   }
 
