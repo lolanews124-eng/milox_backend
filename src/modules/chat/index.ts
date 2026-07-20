@@ -14,15 +14,20 @@ export interface ChatModule {
   service: ChatService;
 }
 
+export interface ChatModuleHooks {
+  wakeOutbox?: () => void;
+}
+
 export function createChatService(
   config: AppConfig,
   database: PrismaClient,
+  hooks?: ChatModuleHooks,
 ): ChatService {
   const repository = new PrismaChatRepository(database);
   const cursors = new FeedCursorCodec(
     config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
   );
-  return new ChatService(repository, cursors, config);
+  return new ChatService(repository, cursors, config, hooks);
 }
 
 export function createChatModule(
@@ -32,8 +37,9 @@ export function createChatModule(
     authenticate: RequestHandler;
     requireVerified: RequestHandler;
   },
+  hooks?: ChatModuleHooks,
 ): ChatModule {
-  const service = createChatService(config, database);
+  const service = createChatService(config, database, hooks);
   const controller = new ChatController(service);
   const routers = createChatRouters(
     controller,

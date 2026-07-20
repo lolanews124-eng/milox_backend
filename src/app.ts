@@ -30,6 +30,7 @@ import { requestId } from "./shared/http/request-id.js";
 export interface AppDependencies {
   config?: AppConfig;
   database?: PrismaClient;
+  chatOutboxWake?: () => void;
 }
 
 export function createApp(dependencies: AppDependencies = {}): Express {
@@ -77,10 +78,17 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     authenticate: auth.authenticate,
     requireVerified: auth.requireVerified,
   });
-  const chat = createChatModule(config, database, {
-    authenticate: auth.authenticate,
-    requireVerified: auth.requireVerified,
-  });
+  const chat = createChatModule(
+    config,
+    database,
+    {
+      authenticate: auth.authenticate,
+      requireVerified: auth.requireVerified,
+    },
+    dependencies.chatOutboxWake
+        ? { wakeOutbox: dependencies.chatOutboxWake }
+        : undefined,
+  );
   const notifications = createNotificationModule(
     config,
     database,

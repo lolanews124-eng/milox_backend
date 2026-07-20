@@ -27,7 +27,12 @@ const crypto = new CryptoService(config);
 const emailWorker = new EmailWorker(prisma, config);
 const feedScoreWorker = new FeedScoreWorker(prisma, config);
 const port = config.PORT;
-const app = createApp();
+const chatOutboxHooks = {
+  wake: () => {},
+};
+const app = createApp({
+  chatOutboxWake: () => chatOutboxHooks.wake(),
+});
 const httpServer = createServer(app);
 
 const io = new Server<
@@ -48,6 +53,7 @@ const chatOutboxWorker = new ChatOutboxWorker(
   io,
   config,
 );
+chatOutboxHooks.wake = () => chatOutboxWorker.wake();
 const notificationService = createNotificationService(config, prisma);
 const notificationOutboxWorker = new NotificationOutboxWorker(
   prisma,

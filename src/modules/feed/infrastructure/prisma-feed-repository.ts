@@ -1,5 +1,6 @@
 import {
   FollowStatus,
+  InterestStatus,
   type Prisma,
   type PrismaClient,
 } from "@prisma/client";
@@ -101,6 +102,16 @@ export class PrismaFeedRepository implements FeedRepository {
           {
             passedByProfiles: {
               none: { viewerId: query.viewerId },
+            },
+          },
+          {
+            interestsReceived: {
+              none: {
+                senderId: query.viewerId,
+                status: {
+                  in: [InterestStatus.PENDING, InterestStatus.ACCEPTED],
+                },
+              },
             },
           },
           ...(cursorWhere ? [cursorWhere] : []),

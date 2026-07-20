@@ -32,6 +32,7 @@ const CHAT_EVENTS = [
 export class ChatOutboxWorker {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
+  private pendingWake = false;
 
   constructor(
     private readonly database: PrismaClient,
@@ -55,27 +56,41 @@ export class ChatOutboxWorker {
     this.timer = undefined;
   }
 
+  wake(): void {
+    if (this.running) {
+      this.pendingWake = true;
+      return;
+    }
+    void this.tick();
+  }
+
   async tick(): Promise<void> {
-    if (this.running) return;
+    if (this.running) {
+      this.pendingWake = true;
+      return;
+    }
     this.running = true;
     try {
-      for (let processed = 0; processed < 100; processed += 1) {
-        const event = await this.claimNextEvent();
-        if (!event) return;
-        try {
-          await this.deliver(event);
-          await this.database.outboxEvent.update({
-            where: { id: event.id },
-            data: {
-              status: OutboxStatus.PROCESSED,
-              processedAt: new Date(),
-              lastError: null,
-            },
-          });
-        } catch (error) {
-          await this.failOrRetry(event, error);
+      do {
+        this.pendingWake = false;
+        for (let processed = 0; processed < 100; processed += 1) {
+          const event = await this.claimNextEvent();
+          if (!event) break;
+          try {
+            await this.deliver(event);
+            await this.database.outboxEvent.update({
+              where: { id: event.id },
+              data: {
+                status: OutboxStatus.PROCESSED,
+                processedAt: new Date(),
+                lastError: null,
+              },
+            });
+          } catch (error) {
+            await this.failOrRetry(event, error);
+          }
         }
-      }
+      } while (this.pendingWake);
     } finally {
       this.running = false;
     }

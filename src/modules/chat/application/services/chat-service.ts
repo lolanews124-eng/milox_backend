@@ -35,6 +35,7 @@ export class ChatService {
     private readonly repository: ChatRepository,
     private readonly cursors: FeedCursorCodec,
     private readonly config: AppConfig,
+    private readonly hooks?: { wakeOutbox?: () => void },
   ) {}
 
   async listConversations(
@@ -186,6 +187,9 @@ export class ChatService {
         }),
       });
       if (!created) throw conversationNotFound();
+      if (!created.replayed) {
+        this.hooks?.wakeOutbox?.();
+      }
       return {
         item: presentMessage(created.message, this.config),
         replayed: created.replayed,
@@ -252,6 +256,7 @@ export class ChatService {
       if (!deleted) {
         throw new AppError("MESSAGE_NOT_FOUND", "Message not found", 404);
       }
+      this.hooks?.wakeOutbox?.();
       return deleted;
     } catch (error) {
       if (
@@ -293,6 +298,7 @@ export class ChatService {
         404,
       );
     }
+    this.hooks?.wakeOutbox?.();
     return presentMessage(edited, this.config);
   }
 
