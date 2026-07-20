@@ -359,7 +359,7 @@ export class PrismaFollowRepository implements FollowRepository {
       return rows.map(({ follower, ...entry }) => ({
         ...entry,
         user: follower,
-      }));
+      })) as unknown as FollowListEntry[];
     }
     const rows = await this.database.follow.findMany({
       where: {
@@ -383,7 +383,7 @@ export class PrismaFollowRepository implements FollowRepository {
     return rows.map(({ followee, ...entry }) => ({
       ...entry,
       user: followee,
-    }));
+    })) as unknown as FollowListEntry[];
   }
 }
 

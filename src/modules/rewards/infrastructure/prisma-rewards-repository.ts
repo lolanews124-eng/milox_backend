@@ -327,10 +327,10 @@ async function creditWallet(
       type: input.type,
       amount: input.amount,
       balanceAfter: wallet.balance,
-      referenceType: input.referenceType,
-      referenceId: input.referenceId,
+      referenceType: input.referenceType ?? null,
+      referenceId: input.referenceId ?? null,
       idempotencyKey: input.idempotencyKey,
-      description: input.description,
+      description: input.description ?? null,
     },
   });
 }
@@ -370,10 +370,10 @@ async function debitWallet(
       type: input.type,
       amount: -input.amount,
       balanceAfter: wallet.balance,
-      referenceType: input.referenceType,
-      referenceId: input.referenceId,
+      referenceType: input.referenceType ?? null,
+      referenceId: input.referenceId ?? null,
       idempotencyKey: input.idempotencyKey,
-      description: input.description,
+      description: input.description ?? null,
     },
   });
 }
