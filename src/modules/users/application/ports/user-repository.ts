@@ -38,6 +38,7 @@ export interface UserProfileRecord {
   profilePhoto: { id: string } | null;
   coverPhoto: { id: string } | null;
   interests: Array<{ tag: { slug: string; label: string } }>;
+  wallet: { balance: number } | null;
 }
 
 export interface ViewerRelation {

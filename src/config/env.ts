@@ -53,6 +53,10 @@ const envSchema = z
   EMAIL_WORKER_POLL_MS: z.coerce.number().int().positive().default(5_000),
     FEED_SCORE_POLL_MS: z.coerce.number().int().positive().default(300_000),
     INTEREST_DAILY_LIMIT: z.coerce.number().int().positive().max(500).default(20),
+    WALLET_WELCOME_BONUS: z.coerce.number().int().nonnegative().default(500),
+    REFERRAL_REWARD_POINTS: z.coerce.number().int().nonnegative().default(100),
+    POST_REWARD_POINTS: z.coerce.number().int().nonnegative().default(5),
+    INTEREST_SEND_COST: z.coerce.number().int().nonnegative().default(10),
     CHAT_OUTBOX_POLL_MS: z.coerce.number().int().positive().default(100),
     NOTIFICATION_OUTBOX_POLL_MS: z.coerce
       .number()

@@ -24,6 +24,7 @@ export interface CreateAccountData {
   verificationTokenHash: string;
   verificationToken: string;
   verificationExpiresAt: Date;
+  referralCode?: string | undefined;
 }
 
 export interface CreateRefreshSessionData {

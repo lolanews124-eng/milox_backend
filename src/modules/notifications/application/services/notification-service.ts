@@ -10,6 +10,9 @@ import type {
   NotificationRepository,
 } from "../ports/notification-repository.js";
 import {
+  ACTIVITY_EXCLUDED_NOTIFICATION_TYPES,
+} from "../ports/notification-repository.js";
+import {
   presentNotification,
 } from "../notification-view.js";
 
@@ -44,6 +47,7 @@ export class NotificationService {
       recipientId,
       unreadOnly: options.unreadOnly,
       limit: options.limit,
+      excludeTypes: ACTIVITY_EXCLUDED_NOTIFICATION_TYPES,
       ...(cursor
         ? {
             before: {
@@ -74,7 +78,11 @@ export class NotificationService {
   }
 
   async unreadCount(recipientId: string): Promise<object> {
-    return { count: await this.repository.unreadCount(recipientId) };
+    return {
+      count: await this.repository.unreadCount(recipientId, {
+        excludeTypes: ACTIVITY_EXCLUDED_NOTIFICATION_TYPES,
+      }),
+    };
   }
 
   async markRead(

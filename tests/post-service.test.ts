@@ -133,6 +133,7 @@ function createService(repository: PostRepository): PostService {
 function createRepository(): PostRepository {
   return {
     create: vi.fn(),
+    createProfileUpdatePost: vi.fn(),
     findVisible: vi.fn(),
     listByUsername: vi.fn(),
     listSaved: vi.fn(),
@@ -160,6 +161,7 @@ function postFixture(
 ): PostViewRecord {
   return {
     id: postId,
+    kind: "STANDARD",
     body: "anonymous thought",
     likeCount: 0,
     commentCount: 0,

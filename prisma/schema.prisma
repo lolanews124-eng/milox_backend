@@ -116,6 +116,20 @@ enum NotificationType {
   MATCH_CREATED
   NEW_MESSAGE
   SYSTEM
+  REFERRAL_REWARD
+}
+
+enum WalletTransactionType {
+  WELCOME_BONUS
+  REFERRAL_REWARD
+  POST_REWARD
+  INTEREST_SEND
+  ADMIN_ADJUST
+}
+
+enum ReferralStatus {
+  QUALIFIED
+  REJECTED
 }
 
 enum ReportTargetType {
@@ -219,8 +233,12 @@ model User {
   bannedAt            DateTime?
   banReason           String?           @db.VarChar(500)
   deletedAt           DateTime?
+  referredByUserId    String?           @db.Uuid
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
+
+  referredBy User? @relation("UserReferrer", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referrals  User[] @relation("UserReferrer")
 
   profilePhoto MediaAsset? @relation("UserProfilePhoto", fields: [profilePhotoMediaId], references: [id], onDelete: SetNull)
   coverPhoto   MediaAsset? @relation("UserCoverPhoto", fields: [coverPhotoMediaId], references: [id], onDelete: SetNull)
@@ -260,8 +278,13 @@ model User {
   moderationActions   ModerationAction[]       @relation("ModerationTargetUser")
   moderationActionsBy ModerationAction[]       @relation("ModerationActor")
   idempotencyRecords  IdempotencyRecord[]
+  wallet              Wallet?
+  referralCode        ReferralCode?
+  referralsMade       Referral[]          @relation("ReferralsMade")
+  referralReceived    Referral?           @relation("ReferralReceived")
 
   @@index([status, createdAt])
+  @@index([referredByUserId])
   @@index([createdAt])
   @@index([countryCode, gender, status])
   @@index([isVerifiedBadge, status])
@@ -423,9 +446,16 @@ model StoryView {
 // Posts / Feed engagement
 // -----------------------------------------------------------------------------
 
+enum PostKind {
+  STANDARD
+  PROFILE_PHOTO_UPDATE
+  COVER_PHOTO_UPDATE
+}
+
 model Post {
   id            String    @id @default(uuid()) @db.Uuid
   authorId      String    @db.Uuid
+  kind          PostKind  @default(STANDARD)
   body          String?   @db.VarChar(2000)
   likeCount     Int       @default(0)
   commentCount  Int       @default(0)
@@ -999,4 +1029,67 @@ model CmsPage {
 
   @@index([status])
   @@map("cms_pages")
+}
+
+// -----------------------------------------------------------------------------
+// Refer + Earn (wallet points)
+// -----------------------------------------------------------------------------
+
+model Wallet {
+  userId         String   @id @db.Uuid
+  balance        Int      @default(0)
+  lifetimeEarned Int      @default(0)
+  lifetimeSpent  Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id             String               @id @default(uuid()) @db.Uuid
+  walletUserId   String               @db.Uuid
+  type           WalletTransactionType
+  /// Signed amount: credits are positive, debits are negative.
+  amount         Int
+  balanceAfter   Int
+  referenceType  String?              @db.VarChar(32)
+  referenceId    String?              @db.Uuid
+  idempotencyKey String               @unique @db.VarChar(128)
+  description    String?              @db.VarChar(255)
+  createdAt      DateTime             @default(now())
+
+  wallet Wallet @relation(fields: [walletUserId], references: [userId], onDelete: Cascade)
+
+  @@index([walletUserId, createdAt(sort: Desc)])
+  @@map("wallet_transactions")
+}
+
+model ReferralCode {
+  userId    String   @id @db.Uuid
+  code      String   @unique @db.VarChar(16)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@map("referral_codes")
+}
+
+model Referral {
+  id             String         @id @default(uuid()) @db.Uuid
+  referrerUserId String         @db.Uuid
+  referredUserId String         @unique @db.Uuid
+  status         ReferralStatus @default(QUALIFIED)
+  rewardPoints   Int
+  createdAt      DateTime       @default(now())
+
+  referrer User @relation("ReferralsMade", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referred User @relation("ReferralReceived", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerUserId, createdAt(sort: Desc)])
+  @@map("referrals")
 }

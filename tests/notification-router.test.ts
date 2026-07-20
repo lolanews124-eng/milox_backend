@@ -28,7 +28,11 @@ describe("notification HTTP contract", () => {
 
     expect(response.status).toBe(200);
     expect(repository.list).toHaveBeenCalledWith(
-      expect.objectContaining({ recipientId: userId, unreadOnly: true }),
+      expect.objectContaining({
+        recipientId: userId,
+        unreadOnly: true,
+        excludeTypes: ["NEW_MESSAGE"],
+      }),
     );
     expect(response.body).toMatchObject({
       data: { items: [] },

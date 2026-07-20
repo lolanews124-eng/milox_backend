@@ -31,6 +31,7 @@ describe("PrismaInterestRepository", () => {
       idempotencyKey: key,
       requestHash: "a".repeat(64),
       dailyLimit: 20,
+      interestSendCost: 0,
     });
 
     expect(result).toEqual({ interest, replayed: true });
@@ -46,6 +47,7 @@ describe("PrismaInterestRepository", () => {
         count: vi.fn().mockResolvedValue(20),
         create: vi.fn(),
       },
+      wallet: { findUnique: vi.fn() },
     };
     const database = {
       idempotencyRecord: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -66,6 +68,7 @@ describe("PrismaInterestRepository", () => {
         idempotencyKey: key,
         requestHash: "a".repeat(64),
         dailyLimit: 20,
+        interestSendCost: 0,
       }),
     ).rejects.toBeInstanceOf(InterestDailyLimitError);
     expect(transaction.interest.create).not.toHaveBeenCalled();

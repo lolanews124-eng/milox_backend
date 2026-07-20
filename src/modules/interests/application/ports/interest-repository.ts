@@ -12,6 +12,7 @@ export interface CreateInterestData {
   idempotencyKey: string;
   requestHash: string;
   dailyLimit: number;
+  interestSendCost: number;
 }
 
 export interface InterestPageQuery {

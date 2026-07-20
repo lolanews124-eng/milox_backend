@@ -14,7 +14,8 @@ import type {
   UserRepository,
   ViewerRelation,
 } from "../ports/user-repository.js";
-import { presentPublicAuthor } from "../../../posts/application/post-view.js";
+import { presentPublicAuthor, viewerFollowStateFromStatus } from "../../../posts/application/post-view.js";
+import type { ProfileUpdatePostWriter } from "../../../posts/application/profile-update-post-writer.js";
 
 const RESERVED_USERNAMES = new Set([
   "admin",
@@ -48,6 +49,7 @@ export class UserService {
     private readonly repository: UserRepository,
     private readonly authService: AuthService,
     private readonly config: AppConfig,
+    private readonly profileUpdatePosts?: ProfileUpdatePostWriter,
   ) {}
 
   async getMe(userId: string): Promise<object> {
@@ -155,6 +157,7 @@ export class UserService {
 
     try {
       const updated = await this.repository.updateProfile(userId, data);
+      await this.publishProfilePhotoUpdatePosts(current, input);
       return mapPrivateProfile(updated, this.config);
     } catch (error: unknown) {
       if (error instanceof DuplicateUsernameError) {
@@ -209,6 +212,48 @@ export class UserService {
     }
     return user;
   }
+
+  private async publishProfilePhotoUpdatePosts(
+    current: UserProfileRecord,
+    input: UpdateProfileInput,
+  ): Promise<void> {
+    if (!this.profileUpdatePosts) return;
+
+    const profilePhotoChanged =
+      input.profilePhotoMediaId !== undefined &&
+      input.profilePhotoMediaId !== null &&
+      input.profilePhotoMediaId !== current.profilePhoto?.id;
+    const coverPhotoChanged =
+      input.coverPhotoMediaId !== undefined &&
+      input.coverPhotoMediaId !== null &&
+      input.coverPhotoMediaId !== current.coverPhoto?.id;
+
+    const tasks: Promise<void>[] = [];
+    if (profilePhotoChanged && input.profilePhotoMediaId) {
+      tasks.push(
+        this.profileUpdatePosts.createProfilePhotoUpdatePost(
+          current.id,
+          input.profilePhotoMediaId,
+        ),
+      );
+    }
+    if (coverPhotoChanged && input.coverPhotoMediaId) {
+      tasks.push(
+        this.profileUpdatePosts.createCoverPhotoUpdatePost(
+          current.id,
+          input.coverPhotoMediaId,
+        ),
+      );
+    }
+
+    await Promise.all(
+      tasks.map((task) =>
+        task.catch(() => {
+          // Profile update should succeed even if feed post creation fails.
+        }),
+      ),
+    );
+  }
 }
 
 export function normalizeUsername(username: string): string {
@@ -253,6 +298,13 @@ function mapPublicProfile(
       ? { lastSeenAt: user.lastSeenAt.toISOString() }
       : {}),
     viewerRelation: relation,
+    viewerFollowState: viewerFollowStateFromStatus(
+      relation.isFollowing
+        ? "ACTIVE"
+        : relation.followRequested
+          ? "PENDING"
+          : undefined,
+    ),
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -280,6 +332,7 @@ function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
     hideCountry: user.hideCountry,
     hideLastSeen: user.hideLastSeen,
     hideOnline: user.hideOnline,
+    walletBalance: user.wallet?.balance ?? 0,
   };
 }
 

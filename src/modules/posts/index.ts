@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { RequestHandler, Router } from "express";
 
 import type { AppConfig } from "../../config/env.js";
+import type { RewardsRepository } from "../rewards/application/ports/rewards-repository.js";
 import { FeedCursorCodec } from "../feed/application/services/feed-cursor.js";
 import { PostService } from "./application/services/post-service.js";
 import { PrismaPostRepository } from "./infrastructure/prisma-post-repository.js";
@@ -23,8 +24,9 @@ export function createPostModule(
     optionalAuthenticate: RequestHandler;
     requireVerified: RequestHandler;
   },
+  rewards?: RewardsRepository,
 ): PostModule {
-  const repository = new PrismaPostRepository(database);
+  const repository = new PrismaPostRepository(database, rewards);
   const cursors = new FeedCursorCodec(
     config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
   );

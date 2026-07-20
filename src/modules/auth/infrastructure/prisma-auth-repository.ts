@@ -13,6 +13,7 @@ import type {
   RotateRefreshSessionResult,
 } from "../application/ports/auth-repository.js";
 import { DuplicateAccountError } from "../application/ports/auth-repository.js";
+import type { SignupRewardsWriter } from "../../rewards/application/ports/rewards-repository.js";
 
 const authUserSelect = {
   id: true,
@@ -28,7 +29,10 @@ const authUserSelect = {
 } satisfies Prisma.UserSelect;
 
 export class PrismaAuthRepository implements AuthRepository {
-  constructor(private readonly database: PrismaClient) {}
+  constructor(
+    private readonly database: PrismaClient,
+    private readonly signupRewards?: SignupRewardsWriter,
+  ) {}
 
   findUserByEmail(email: string): Promise<AuthUser | null> {
     return this.database.user.findUnique({
@@ -79,6 +83,14 @@ export class PrismaAuthRepository implements AuthRepository {
                 token: data.verificationToken,
               },
             },
+          });
+        }
+
+        if (this.signupRewards) {
+          await this.signupRewards.bootstrapInTransaction(transaction, {
+            userId: user.id,
+            username: user.username,
+            ...(data.referralCode ? { referralCode: data.referralCode } : {}),
           });
         }
 

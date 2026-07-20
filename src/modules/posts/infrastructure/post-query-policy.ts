@@ -62,6 +62,7 @@ export function visiblePostContentWhere(
 export function postViewSelect(viewerId?: string) {
   return {
     id: true,
+    kind: true,
     body: true,
     likeCount: true,
     commentCount: true,

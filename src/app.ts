@@ -18,6 +18,8 @@ import { createMediaModule } from "./modules/media/index.js";
 import { createModerationModule } from "./modules/moderation/index.js";
 import { createNotificationModule } from "./modules/notifications/index.js";
 import { createPostModule } from "./modules/posts/index.js";
+import { createRewardsModule } from "./modules/rewards/index.js";
+import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
 import { createStoryModule } from "./modules/stories/index.js";
 import { createUserModule } from "./modules/users/index.js";
 import { asyncHandler } from "./shared/http/async-handler.js";
@@ -36,13 +38,25 @@ export interface AppDependencies {
 export function createApp(dependencies: AppDependencies = {}): Express {
   const config = dependencies.config ?? getConfig();
   const database = dependencies.database ?? prisma;
-  const auth = createAuthModule(config, database);
+  const rewardsRepository = new PrismaRewardsRepository(database, config);
+  const auth = createAuthModule(config, database, rewardsRepository);
+  const rewards = createRewardsModule(
+    config,
+    database,
+    auth.authenticate,
+    rewardsRepository,
+  );
   const admin = createAdminModule(config, database, auth.authenticate);
+  const posts = createPostModule(config, database, {
+    authenticate: auth.authenticate,
+    optionalAuthenticate: auth.optionalAuthenticate,
+    requireVerified: auth.requireVerified,
+  }, rewardsRepository);
   const users = createUserModule(config, database, auth.service, {
     authenticate: auth.authenticate,
     optionalAuthenticate: auth.optionalAuthenticate,
     requireVerified: auth.requireVerified,
-  });
+  }, posts.service);
   const media = createMediaModule(
     config,
     database,
@@ -55,11 +69,6 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     auth.authenticate,
     auth.optionalAuthenticate,
   );
-  const posts = createPostModule(config, database, {
-    authenticate: auth.authenticate,
-    optionalAuthenticate: auth.optionalAuthenticate,
-    requireVerified: auth.requireVerified,
-  });
   const stories = createStoryModule(config, database, {
     authenticate: auth.authenticate,
     requireVerified: auth.requireVerified,
@@ -77,7 +86,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const interests = createInterestModule(config, database, {
     authenticate: auth.authenticate,
     requireVerified: auth.requireVerified,
-  });
+  }, rewardsRepository);
   const chat = createChatModule(
     config,
     database,
@@ -154,6 +163,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/follow-requests", follows.router);
   app.use("/api/v1/interests", interests.router);
   app.use("/api/v1/matches", interests.matchesRouter);
+  app.use("/api/v1/rewards", rewards.router);
   app.use("/api/v1/conversations", chat.router);
   app.use("/api/v1/messages", chat.messagesRouter);
   app.use("/api/v1/notifications", notifications.router);

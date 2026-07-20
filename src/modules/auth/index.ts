@@ -12,6 +12,7 @@ import {
   requireVerified,
 } from "./presentation/auth-middleware.js";
 import { createAuthRouter } from "./presentation/auth-router.js";
+import type { SignupRewardsWriter } from "../rewards/application/ports/rewards-repository.js";
 
 export interface AuthModule {
   router: Router;
@@ -24,9 +25,10 @@ export interface AuthModule {
 export function createAuthModule(
   config: AppConfig,
   database: PrismaClient,
+  signupRewards?: SignupRewardsWriter,
 ): AuthModule {
   const crypto = new CryptoService(config);
-  const repository = new PrismaAuthRepository(database);
+  const repository = new PrismaAuthRepository(database, signupRewards);
   const service = new AuthService(repository, crypto, config);
   const controller = new AuthController(service, config);
 

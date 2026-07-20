@@ -302,6 +302,22 @@ export class PrismaFollowRepository implements FollowRepository {
       );
   }
 
+  private viewerFollowSelect(
+    viewerId?: string,
+  ): Prisma.UserSelect {
+    if (!viewerId) return {};
+    return {
+      followers: {
+        where: {
+          followerId: viewerId,
+          status: { in: [FollowStatus.ACTIVE, FollowStatus.PENDING] },
+        },
+        select: { status: true },
+        take: 1,
+      },
+    };
+  }
+
   private async listForUser(
     username: string,
     query: FollowPageQuery,
@@ -332,7 +348,12 @@ export class PrismaFollowRepository implements FollowRepository {
         select: {
           id: true,
           createdAt: true,
-          follower: { select: publicAuthorSelect() },
+          follower: {
+            select: {
+              ...publicAuthorSelect(),
+              ...this.viewerFollowSelect(query.viewerId),
+            },
+          },
         },
       });
       return rows.map(({ follower, ...entry }) => ({
@@ -351,7 +372,12 @@ export class PrismaFollowRepository implements FollowRepository {
       select: {
         id: true,
         createdAt: true,
-        followee: { select: publicAuthorSelect() },
+        followee: {
+          select: {
+            ...publicAuthorSelect(),
+            ...this.viewerFollowSelect(query.viewerId),
+          },
+        },
       },
     });
     return rows.map(({ followee, ...entry }) => ({

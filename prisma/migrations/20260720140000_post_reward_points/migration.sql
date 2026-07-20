@@ -1,0 +1,1 @@
+ALTER TYPE "WalletTransactionType" ADD VALUE IF NOT EXISTS 'POST_REWARD';

@@ -23,6 +23,8 @@ import type {
   InterestViewRecord,
   MatchViewRecord,
 } from "../application/interest-view.js";
+import type { RewardsRepository } from "../../rewards/application/ports/rewards-repository.js";
+import { InsufficientWalletBalanceError } from "../../rewards/application/ports/rewards-repository.js";
 import { visibleUserCardWhere } from "../../posts/infrastructure/post-query-policy.js";
 import {
   interestViewSelect,
@@ -32,7 +34,10 @@ import {
 const CREATE_SCOPE = "interests.create";
 
 export class PrismaInterestRepository implements InterestRepository {
-  constructor(private readonly database: PrismaClient) {}
+  constructor(
+    private readonly database: PrismaClient,
+    private readonly rewards?: RewardsRepository,
+  ) {}
 
   async create(
     data: CreateInterestData,
@@ -86,6 +91,17 @@ export class PrismaInterestRepository implements InterestRepository {
           throw new InterestDailyLimitError();
         }
 
+        const wallet = await transaction.wallet.findUnique({
+          where: { userId: data.senderId },
+          select: { balance: true },
+        });
+        if (
+          data.interestSendCost > 0 &&
+          (!wallet || wallet.balance < data.interestSendCost)
+        ) {
+          throw new InsufficientWalletBalanceError();
+        }
+
         const created = await transaction.interest.create({
           data: {
             senderId: data.senderId,
@@ -94,6 +110,16 @@ export class PrismaInterestRepository implements InterestRepository {
           },
           select: interestViewSelect(),
         });
+
+        if (data.interestSendCost > 0 && this.rewards) {
+          await this.rewards.debitForInterest(transaction, {
+            userId: data.senderId,
+            interestId: created.id,
+            cost: data.interestSendCost,
+            idempotencyKey: `interest:${created.id}`,
+          });
+        }
+
         await transaction.idempotencyRecord.create({
           data: {
             userId: data.senderId,

@@ -1,4 +1,4 @@
-import type { ReportStatus } from "@prisma/client";
+import type { ReportStatus, PostKind } from "@prisma/client";
 
 import type { PostViewRecord } from "../post-view.js";
 
@@ -51,8 +51,15 @@ export interface ReportRecord {
   createdAt: Date;
 }
 
+export interface CreateProfileUpdatePostData {
+  authorId: string;
+  kind: Extract<PostKind, "PROFILE_PHOTO_UPDATE" | "COVER_PHOTO_UPDATE">;
+  mediaAssetId: string;
+}
+
 export interface PostRepository {
   create(data: CreatePostData): Promise<CreatedPost>;
+  createProfileUpdatePost(data: CreateProfileUpdatePostData): Promise<void>;
   findVisible(postId: string, viewerId?: string): Promise<PostViewRecord | null>;
   listByUsername(query: PostPageQuery): Promise<PostViewRecord[] | null>;
   listSaved(query: SavedPageQuery): Promise<SavedPostRecord[]>;

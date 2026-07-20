@@ -74,6 +74,32 @@ describe("UserService privacy projections", () => {
     });
     expect(repository.updateProfile).not.toHaveBeenCalled();
   });
+
+  it("creates feed posts when profile or cover photos change", async () => {
+    const repository = createRepository();
+    const profileUpdatePosts = {
+      createProfilePhotoUpdatePost: vi.fn().mockResolvedValue(undefined),
+      createCoverPhotoUpdatePost: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(repository.findById).mockResolvedValue(
+      profileFixture({ profilePhoto: { id: "old-photo" }, coverPhoto: null }),
+    );
+    vi.mocked(repository.updateProfile).mockResolvedValue(profileFixture());
+
+    await createService(repository, profileUpdatePosts).updateProfile("user-id", {
+      profilePhotoMediaId: "new-photo",
+      coverPhotoMediaId: "new-cover",
+    });
+
+    expect(profileUpdatePosts.createProfilePhotoUpdatePost).toHaveBeenCalledWith(
+      "user-id",
+      "new-photo",
+    );
+    expect(profileUpdatePosts.createCoverPhotoUpdatePost).toHaveBeenCalledWith(
+      "user-id",
+      "new-cover",
+    );
+  });
 });
 
 describe("calculateAge", () => {
@@ -87,9 +113,15 @@ describe("calculateAge", () => {
   });
 });
 
-function createService(repository: UserRepository): UserService {
+function createService(
+  repository: UserRepository,
+  profileUpdatePosts?: {
+    createProfilePhotoUpdatePost: ReturnType<typeof vi.fn>;
+    createCoverPhotoUpdatePost: ReturnType<typeof vi.fn>;
+  },
+): UserService {
   const authService = {} as AuthService;
-  return new UserService(repository, authService, config);
+  return new UserService(repository, authService, config, profileUpdatePosts);
 }
 
 function createRepository(): UserRepository {
@@ -138,6 +170,7 @@ function profileFixture(
     profilePhoto: { id: "3d98a9aa-19e3-4b77-a5f0-94a0637541aa" },
     coverPhoto: null,
     interests: [{ tag: { slug: "music", label: "Music" } }],
+    wallet: { balance: 500 },
     ...overrides,
   };
 }

@@ -20,6 +20,7 @@ export interface SignupInput {
   password: string;
   dateOfBirth: string;
   gender: Gender;
+  referralCode?: string | undefined;
 }
 
 export interface AuthSession {
@@ -76,6 +77,9 @@ export class AuthService {
           new Date(),
           this.config.EMAIL_VERIFICATION_TTL_HOURS,
         ),
+        ...(input.referralCode
+          ? { referralCode: input.referralCode.trim().toUpperCase() }
+          : {}),
       });
     } catch (error: unknown) {
       if (error instanceof DuplicateAccountError) {

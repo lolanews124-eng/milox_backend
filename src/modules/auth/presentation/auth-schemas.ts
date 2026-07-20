@@ -23,6 +23,13 @@ export const signupSchema = z
       "OTHER",
       "PREFER_NOT_TO_SAY",
     ]),
+    referralCode: z
+      .string()
+      .trim()
+      .min(4)
+      .max(16)
+      .regex(/^[a-zA-Z0-9]+$/)
+      .optional(),
   })
   .strict();
 

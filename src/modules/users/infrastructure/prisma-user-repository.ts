@@ -60,6 +60,7 @@ const profileSelect = {
     select: { tag: { select: { slug: true, label: true } } },
     orderBy: { tag: { label: "asc" } },
   },
+  wallet: { select: { balance: true } },
 } satisfies Prisma.UserSelect;
 
 export class PrismaUserRepository implements UserRepository {

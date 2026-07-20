@@ -12,6 +12,7 @@ import {
   PostMediaOwnershipError,
 } from "../ports/post-repository.js";
 import { presentPost } from "../post-view.js";
+import type { ProfileUpdatePostWriter } from "../profile-update-post-writer.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
 
 export interface PostPage {
@@ -20,7 +21,7 @@ export interface PostPage {
   hasMore: boolean;
 }
 
-export class PostService {
+export class PostService implements ProfileUpdatePostWriter {
   constructor(
     private readonly repository: PostRepository,
     private readonly cursors: FeedCursorCodec,
@@ -82,6 +83,28 @@ export class PostService {
       }
       throw error;
     }
+  }
+
+  createProfilePhotoUpdatePost(
+    authorId: string,
+    mediaAssetId: string,
+  ): Promise<void> {
+    return this.repository.createProfileUpdatePost({
+      authorId,
+      kind: "PROFILE_PHOTO_UPDATE",
+      mediaAssetId,
+    });
+  }
+
+  createCoverPhotoUpdatePost(
+    authorId: string,
+    mediaAssetId: string,
+  ): Promise<void> {
+    return this.repository.createProfileUpdatePost({
+      authorId,
+      kind: "COVER_PHOTO_UPDATE",
+      mediaAssetId,
+    });
   }
 
   async get(postId: string, viewerId?: string): Promise<object> {

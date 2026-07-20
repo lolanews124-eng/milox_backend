@@ -34,6 +34,7 @@ export interface PostAuthorViewRecord {
 
 export interface PostViewRecord {
   id: string;
+  kind: string;
   body: string | null;
   likeCount: number;
   commentCount: number;
@@ -63,6 +64,7 @@ export function presentPost(post: PostViewRecord, config: AppConfig): object {
   const author = post.author;
   return {
     id: post.id,
+    kind: post.kind ?? "STANDARD",
     author: presentPublicAuthor(author, config),
     body: post.body,
     media: post.media.map(({ mediaAsset }) => ({
@@ -108,7 +110,7 @@ export function presentPublicAuthor(
     isPrivateAccount: author.isPrivateAccount,
     ...(!author.hideOnline ? { online: isUserOnline(author.id) } : {}),
     ...(author.followers
-      ? { viewerFollowState: followState(author.followers[0]?.status) }
+      ? { viewerFollowState: viewerFollowStateFromStatus(author.followers[0]?.status) }
       : {}),
     followerCount: author.followerCount,
     followingCount: author.followingCount,
@@ -117,7 +119,7 @@ export function presentPublicAuthor(
   };
 }
 
-function followState(
+export function viewerFollowStateFromStatus(
   status: string | undefined,
 ): "none" | "following" | "requested" {
   if (status === "ACTIVE") return "following";

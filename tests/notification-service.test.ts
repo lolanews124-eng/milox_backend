@@ -36,7 +36,11 @@ describe("NotificationService", () => {
     expect(actor).not.toHaveProperty("countryCode");
     expect(actor).not.toHaveProperty("email");
     expect(repository.list).toHaveBeenCalledWith(
-      expect.objectContaining({ recipientId, unreadOnly: true }),
+      expect.objectContaining({
+        recipientId,
+        unreadOnly: true,
+        excludeTypes: ["NEW_MESSAGE"],
+      }),
     );
   });
 
@@ -47,6 +51,9 @@ describe("NotificationService", () => {
     await expect(
       createService(repository).unreadCount(recipientId),
     ).resolves.toEqual({ count: 7 });
+    expect(repository.unreadCount).toHaveBeenCalledWith(recipientId, {
+      excludeTypes: ["NEW_MESSAGE"],
+    });
   });
 
   it("requires either all or IDs when marking read", async () => {

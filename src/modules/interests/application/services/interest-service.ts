@@ -15,6 +15,7 @@ import {
   InterestDailyLimitError,
   InterestIdempotencyConflictError,
 } from "../ports/interest-repository.js";
+import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import {
   presentInterest,
   presentMatch,
@@ -50,6 +51,7 @@ export class InterestService {
           message,
         }),
         dailyLimit: this.config.INTEREST_DAILY_LIMIT,
+        interestSendCost: this.config.INTEREST_SEND_COST,
       });
       if (!created) throw new AppError("NOT_FOUND", "User not found", 404);
       return {
@@ -236,6 +238,13 @@ export class InterestService {
         "INTEREST_DAILY_LIMIT",
         "Daily interest limit reached",
         429,
+      );
+    }
+    if (error instanceof InsufficientWalletBalanceError) {
+      throw new AppError(
+        "INSUFFICIENT_WALLET_BALANCE",
+        "Not enough Milox Points to send interest",
+        402,
       );
     }
     if (error instanceof InterestIdempotencyConflictError) {

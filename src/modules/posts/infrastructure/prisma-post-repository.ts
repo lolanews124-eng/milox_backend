@@ -1,6 +1,7 @@
 import {
   MediaKind,
   OutboxStatus,
+  PostKind,
   Prisma,
   ReportStatus,
   ReportTargetType,
@@ -9,6 +10,7 @@ import {
 
 import type {
   CreatePostData,
+  CreateProfileUpdatePostData,
   CreatedPost,
   HashtagPageQuery,
   HashtagRecord,
@@ -24,6 +26,7 @@ import {
   PostMediaOwnershipError,
 } from "../application/ports/post-repository.js";
 import type { PostViewRecord } from "../application/post-view.js";
+import type { RewardsRepository } from "../../rewards/application/ports/rewards-repository.js";
 import { extractHashtags } from "../../../shared/hashtags.js";
 import {
   postViewSelect,
@@ -34,7 +37,10 @@ import {
 const CREATE_SCOPE = "posts.create";
 
 export class PrismaPostRepository implements PostRepository {
-  constructor(private readonly database: PrismaClient) {}
+  constructor(
+    private readonly database: PrismaClient,
+    private readonly rewards?: RewardsRepository,
+  ) {}
 
   async create(data: CreatePostData): Promise<CreatedPost> {
     const replay = await this.findReplay(data);
@@ -105,6 +111,14 @@ export class PrismaPostRepository implements PostRepository {
             },
           });
         }
+
+        if (this.rewards) {
+          await this.rewards.creditForPost(transaction, {
+            userId: data.authorId,
+            postId: created.id,
+          });
+        }
+
         return transaction.post.findUniqueOrThrow({
           where: { id: created.id },
           select: postViewSelect(data.authorId),
@@ -122,6 +136,55 @@ export class PrismaPostRepository implements PostRepository {
       }
       throw error;
     }
+  }
+
+  async createProfileUpdatePost(
+    data: CreateProfileUpdatePostData,
+  ): Promise<void> {
+    const expectedMediaKind =
+      data.kind === PostKind.PROFILE_PHOTO_UPDATE
+        ? MediaKind.PROFILE_PHOTO
+        : MediaKind.COVER_PHOTO;
+
+    await this.database.$transaction(async (transaction) => {
+      const media = await transaction.mediaAsset.findFirst({
+        where: {
+          id: data.mediaAssetId,
+          ownerUserId: data.authorId,
+          kind: expectedMediaKind,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!media) return;
+
+      const created = await transaction.post.create({
+        data: {
+          authorId: data.authorId,
+          kind: data.kind,
+          body: null,
+          media: {
+            create: [{ mediaAssetId: data.mediaAssetId, sortOrder: 0 }],
+          },
+        },
+        select: { id: true },
+      });
+
+      await transaction.user.update({
+        where: { id: data.authorId },
+        data: { postCount: { increment: 1 } },
+      });
+
+      await transaction.outboxEvent.create({
+        data: {
+          eventType: "post.created",
+          aggregateType: "post",
+          aggregateId: created.id,
+          payload: { postId: created.id, authorId: data.authorId },
+          status: OutboxStatus.PENDING,
+        },
+      });
+    });
   }
 
   findVisible(

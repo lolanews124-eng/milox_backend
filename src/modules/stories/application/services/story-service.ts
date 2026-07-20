@@ -81,17 +81,15 @@ export class StoryService {
       );
     }
 
-    const items = [...groups.values()]
-      .sort((a, b) => {
-        if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
-        if (a.allViewed !== b.allViewed) return a.allViewed ? 1 : -1;
-        const aLatest = (a.stories[0] as { createdAt?: string } | undefined)
-          ?.createdAt;
-        const bLatest = (b.stories[0] as { createdAt?: string } | undefined)
-          ?.createdAt;
-        return (bLatest ?? "").localeCompare(aLatest ?? "");
-      })
-      .filter((group) => group.isSelf || !group.allViewed);
+    const items = [...groups.values()].sort((a, b) => {
+      if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+      if (a.allViewed !== b.allViewed) return a.allViewed ? 1 : -1;
+      const aLatest = (a.stories[0] as { createdAt?: string } | undefined)
+        ?.createdAt;
+      const bLatest = (b.stories[0] as { createdAt?: string } | undefined)
+        ?.createdAt;
+      return (bLatest ?? "").localeCompare(aLatest ?? "");
+    });
     return { items };
   }
 

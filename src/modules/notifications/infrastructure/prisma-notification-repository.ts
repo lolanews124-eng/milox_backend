@@ -1,6 +1,7 @@
 import {
   ConversationStatus,
   MatchStatus,
+  NotificationType,
   Prisma,
   UserStatus,
   type PrismaClient,
@@ -26,6 +27,9 @@ export class PrismaNotificationRepository
       where: {
         recipientId: query.recipientId,
         ...(query.unreadOnly ? { isRead: false } : {}),
+        ...(query.excludeTypes?.length
+          ? { type: { notIn: query.excludeTypes } }
+          : {}),
         ...cursorWhere(query.before),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -34,9 +38,18 @@ export class PrismaNotificationRepository
     });
   }
 
-  unreadCount(recipientId: string): Promise<number> {
+  unreadCount(
+    recipientId: string,
+    options?: { excludeTypes?: NotificationType[] },
+  ): Promise<number> {
     return this.database.notification.count({
-      where: { recipientId, isRead: false },
+      where: {
+        recipientId,
+        isRead: false,
+        ...(options?.excludeTypes?.length
+          ? { type: { notIn: options.excludeTypes } }
+          : {}),
+      },
     });
   }
 
