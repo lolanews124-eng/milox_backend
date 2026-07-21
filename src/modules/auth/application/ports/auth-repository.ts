@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   passwordHash: string;
   ageRange: AgeRange;
+  country: string;
   gender: Gender;
   role: UserRole;
   status: UserStatus;

@@ -21,6 +21,7 @@ const authUserSelect = {
   email: true,
   passwordHash: true,
   ageRange: true,
+  country: true,
   gender: true,
   role: true,
   status: true,

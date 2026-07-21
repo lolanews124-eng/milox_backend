@@ -21,6 +21,8 @@ import {
   type ChatSocketData,
 } from "./modules/chat/realtime/chat-gateway.js";
 import { createNotificationService } from "./modules/notifications/index.js";
+import { PrismaPushDeviceRepository } from "./modules/push/infrastructure/prisma-push-device-repository.js";
+import { createPushSender } from "./modules/push/application/services/fcm-push-sender.js";
 
 const config = getConfig();
 const crypto = new CryptoService(config);
@@ -55,11 +57,16 @@ const chatOutboxWorker = new ChatOutboxWorker(
 );
 chatOutboxHooks.wake = () => chatOutboxWorker.wake();
 const notificationService = createNotificationService(config, prisma);
+const pushSender = createPushSender(
+  new PrismaPushDeviceRepository(prisma),
+  config,
+);
 const notificationOutboxWorker = new NotificationOutboxWorker(
   prisma,
   notificationService,
   io,
   config,
+  pushSender,
 );
 
 io.use((socket, next) => {

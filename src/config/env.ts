@@ -65,6 +65,8 @@ const envSchema = z
       .int()
       .positive()
       .default(500),
+    /** Path to Firebase service account JSON for FCM push notifications. */
+    GOOGLE_APPLICATION_CREDENTIALS: z.string().default(""),
   })
   .superRefine((environment, context) => {
     if (

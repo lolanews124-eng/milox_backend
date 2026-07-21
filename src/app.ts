@@ -17,6 +17,7 @@ import { createInterestModule } from "./modules/interests/index.js";
 import { createMediaModule } from "./modules/media/index.js";
 import { createModerationModule } from "./modules/moderation/index.js";
 import { createNotificationModule } from "./modules/notifications/index.js";
+import { createPushModule } from "./modules/push/index.js";
 import { createPostModule } from "./modules/posts/index.js";
 import { createRewardsModule } from "./modules/rewards/index.js";
 import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
@@ -103,6 +104,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     database,
     auth.authenticate,
   );
+  const push = createPushModule(config, database, auth.authenticate);
   const moderation = createModerationModule(
     config,
     database,
@@ -167,6 +169,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/conversations", chat.router);
   app.use("/api/v1/messages", chat.messagesRouter);
   app.use("/api/v1/notifications", notifications.router);
+  app.use("/api/v1/push-devices", push.router);
   app.use("/api/v1/blocks", moderation.blocksRouter);
   app.use("/api/v1/reports", moderation.reportsRouter);
   app.use("/api/v1/admin", admin.router);

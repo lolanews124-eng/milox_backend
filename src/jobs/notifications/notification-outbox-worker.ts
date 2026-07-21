@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { AppConfig } from "../../config/env.js";
 import type { ChatIo } from "../../modules/chat/realtime/chat-gateway.js";
 import type { NotificationService } from "../../modules/notifications/application/services/notification-service.js";
+import type { PushSender } from "../../modules/push/application/services/fcm-push-sender.js";
 
 const directPayloadSchema = z.object({
   actorId: z.uuid(),
@@ -62,6 +63,7 @@ export class NotificationOutboxWorker {
     private readonly notifications: NotificationService,
     private readonly io: ChatIo,
     private readonly config: AppConfig,
+    private readonly push?: PushSender,
   ) {}
 
   async start(): Promise<void> {
@@ -97,6 +99,13 @@ export class NotificationOutboxWorker {
               this.io
                 .to(`user:${job.recipientId}`)
                 .emit("notification:new", notification);
+              if (this.push?.isEnabled()) {
+                void this.push
+                  .sendForNotification(job.recipientId, notification)
+                  .catch((error) => {
+                    console.error("Failed to send push notification", error);
+                  });
+              }
             }
           }
           await this.database.outboxEvent.update({

@@ -37,6 +37,7 @@ export interface PrivateAuthUser {
   email: string;
   emailVerified: boolean;
   ageRange: AgeRange;
+  country: string;
   gender: Gender;
   role: UserRole;
   status: UserStatus;
@@ -295,6 +296,7 @@ function mapPrivateUser(user: AuthUser): PrivateAuthUser {
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
     ageRange: user.ageRange,
+    country: user.country,
     gender: user.gender,
     role: user.role,
     status: user.status,
