@@ -13,23 +13,34 @@ export class PrismaPushDeviceRepository implements PushDeviceRepository {
     token: string;
     platform: PushPlatform;
   }): Promise<PushDeviceRecord> {
-    return this.database.pushDevice.upsert({
-      where: { token: input.token },
-      create: {
-        userId: input.userId,
-        token: input.token,
-        platform: input.platform,
-      },
-      update: {
-        userId: input.userId,
-        platform: input.platform,
-      },
-      select: {
-        id: true,
-        userId: true,
-        token: true,
-        platform: true,
-      },
+    return this.database.$transaction(async (transaction) => {
+      // Drop stale tokens for this user so reinstall/login does not fan out
+      // multiple pushes to the same person.
+      await transaction.pushDevice.deleteMany({
+        where: {
+          userId: input.userId,
+          NOT: { token: input.token },
+        },
+      });
+
+      return transaction.pushDevice.upsert({
+        where: { token: input.token },
+        create: {
+          userId: input.userId,
+          token: input.token,
+          platform: input.platform,
+        },
+        update: {
+          userId: input.userId,
+          platform: input.platform,
+        },
+        select: {
+          id: true,
+          userId: true,
+          token: true,
+          platform: true,
+        },
+      });
     });
   }
 

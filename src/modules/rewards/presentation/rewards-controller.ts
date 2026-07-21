@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { RewardsService } from "../application/services/rewards-service.js";
 import {
+  claimRewardedAdSchema,
   referralCodeParamSchema,
   walletTransactionsQuerySchema,
 } from "./rewards-schemas.js";
@@ -54,6 +55,20 @@ export class RewardsController {
     response.status(200).json({
       success: true,
       data: await this.rewards.validateReferralCode(code),
+      meta: { requestId: request.requestId },
+    });
+  };
+
+  claimRewardedAd = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const userId = requireUserId(request);
+    const input = claimRewardedAdSchema.parse(request.body);
+    const result = await this.rewards.claimRewardedAd(userId, input.claimId);
+    response.status(200).json({
+      success: true,
+      data: result,
       meta: { requestId: request.requestId },
     });
   };

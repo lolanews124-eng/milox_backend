@@ -6,6 +6,8 @@ import type {
 
 export class InsufficientWalletBalanceError extends Error {}
 
+export class RewardedAdDailyLimitError extends Error {}
+
 export interface WalletSummary {
   balance: number;
   lifetimeEarned: number;
@@ -14,6 +16,8 @@ export interface WalletSummary {
   referralRewardPoints: number;
   postRewardPoints: number;
   welcomeBonus: number;
+  rewardedAdPoints: number;
+  rewardedAdDailyLimit: number;
 }
 
 export interface WalletTransactionRecord {
@@ -80,4 +84,8 @@ export interface RewardsRepository extends SignupRewardsWriter {
       postId: string;
     },
   ): Promise<void>;
+  creditRewardedAd(
+    userId: string,
+    claimId: string,
+  ): Promise<{ amount: number; balance: number }>;
 }

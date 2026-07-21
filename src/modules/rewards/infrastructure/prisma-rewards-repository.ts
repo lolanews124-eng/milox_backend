@@ -19,9 +19,9 @@ import type {
   WalletSummary,
   WalletTransactionRecord,
 } from "../application/ports/rewards-repository.js";
-import { InsufficientWalletBalanceError } from "../application/ports/rewards-repository.js";
+import { InsufficientWalletBalanceError, RewardedAdDailyLimitError } from "../application/ports/rewards-repository.js";
 
-export { InsufficientWalletBalanceError };
+export { InsufficientWalletBalanceError, RewardedAdDailyLimitError };
 
 export class PrismaRewardsRepository implements RewardsRepository {
   constructor(
@@ -116,6 +116,8 @@ export class PrismaRewardsRepository implements RewardsRepository {
       referralRewardPoints: this.config.REFERRAL_REWARD_POINTS,
       postRewardPoints: this.config.POST_REWARD_POINTS,
       welcomeBonus: this.config.WALLET_WELCOME_BONUS,
+      rewardedAdPoints: this.config.REWARDED_AD_POINTS,
+      rewardedAdDailyLimit: this.config.REWARDED_AD_DAILY_LIMIT,
     };
   }
 
@@ -298,6 +300,61 @@ export class PrismaRewardsRepository implements RewardsRepository {
     }
     throw new Error("Unable to allocate referral code");
   }
+
+  async creditRewardedAd(
+    userId: string,
+    claimId: string,
+  ): Promise<{ amount: number; balance: number }> {
+    const todayStart = startOfUtcDay();
+    const existing = await this.database.walletTransaction.findUnique({
+      where: { idempotencyKey: `rewarded-ad:${claimId}` },
+      select: {
+        amount: true,
+        balanceAfter: true,
+      },
+    });
+    if (existing) {
+      return {
+        amount: existing.amount,
+        balance: existing.balanceAfter,
+      };
+    }
+
+    const rewardedToday = await this.database.walletTransaction.count({
+      where: {
+        walletUserId: userId,
+        type: WalletTransactionType.REWARDED_AD,
+        createdAt: { gte: todayStart },
+      },
+    });
+    if (rewardedToday >= this.config.REWARDED_AD_DAILY_LIMIT) {
+      throw new RewardedAdDailyLimitError();
+    }
+
+    return this.database.$transaction(async (transaction) => {
+      await creditWallet(transaction, {
+        userId,
+        amount: this.config.REWARDED_AD_POINTS,
+        type: WalletTransactionType.REWARDED_AD,
+        idempotencyKey: `rewarded-ad:${claimId}`,
+        referenceType: "rewarded_ad",
+        description: "Watched reward ad",
+      });
+
+      const wallet = await transaction.wallet.findUnique({
+        where: { userId },
+        select: { balance: true },
+      });
+      if (!wallet) {
+        throw new Error("Wallet missing after rewarded ad credit");
+      }
+
+      return {
+        amount: this.config.REWARDED_AD_POINTS,
+        balance: wallet.balance,
+      };
+    });
+  }
 }
 
 async function creditWallet(
@@ -379,3 +436,10 @@ async function debitWallet(
 }
 
 export { creditWallet, debitWallet };
+
+function startOfUtcDay(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}

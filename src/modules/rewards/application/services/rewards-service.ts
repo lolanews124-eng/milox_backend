@@ -1,6 +1,7 @@
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import type { RewardsRepository } from "../ports/rewards-repository.js";
+import { RewardedAdDailyLimitError } from "../ports/rewards-repository.js";
 
 export class RewardsService {
   constructor(
@@ -42,6 +43,19 @@ export class RewardsService {
       code: code.trim().toUpperCase(),
     }));
   }
+
+  claimRewardedAd(userId: string, claimId: string) {
+    return this.repository.creditRewardedAd(userId, claimId).catch((error) => {
+      if (error instanceof RewardedAdDailyLimitError) {
+        throw new AppError(
+          "REWARDED_AD_DAILY_LIMIT",
+          "Daily rewarded ad limit reached. Try again tomorrow.",
+          429,
+        );
+      }
+      throw error;
+    });
+  }
 }
 
 function presentWallet(wallet: {
@@ -52,6 +66,8 @@ function presentWallet(wallet: {
   referralRewardPoints: number;
   postRewardPoints: number;
   welcomeBonus: number;
+  rewardedAdPoints: number;
+  rewardedAdDailyLimit: number;
 }) {
   return {
     balance: wallet.balance,
@@ -61,6 +77,8 @@ function presentWallet(wallet: {
     referralRewardPoints: wallet.referralRewardPoints,
     postRewardPoints: wallet.postRewardPoints,
     welcomeBonus: wallet.welcomeBonus,
+    rewardedAdPoints: wallet.rewardedAdPoints,
+    rewardedAdDailyLimit: wallet.rewardedAdDailyLimit,
   };
 }
 

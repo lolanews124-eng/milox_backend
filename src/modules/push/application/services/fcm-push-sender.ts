@@ -91,23 +91,20 @@ export class FcmPushSender implements PushSender {
     tokens: string[],
     message: PushNotificationMessage,
   ): Promise<void> {
+    // Data-only payload: the mobile app renders one local notification.
+    // Including a `notification` block would make Android show a system tray
+    // alert *and* our background handler would show another — duplicates.
     const response = await messaging.sendEachForMulticast({
       tokens,
-      notification: {
-        title: message.title,
-        body: message.body,
-      },
       data: message.data,
       android: {
         priority: "high",
-        notification: {
-          channelId: "milox_alerts",
-        },
       },
       apns: {
         payload: {
           aps: {
             sound: "default",
+            contentAvailable: true,
           },
         },
       },
