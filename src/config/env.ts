@@ -6,6 +6,8 @@ const envSchema = z
   PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().min(1),
   WEB_ORIGIN: z.string().url(),
+  /** Public website URL used in shareable links (referrals, emails). */
+  PUBLIC_WEB_ORIGIN: z.string().url().default("https://milox.in"),
   ADMIN_ORIGIN: z.string().url(),
   /** Comma-separated extra browser origins allowed by CORS (e.g. production domains). */
   CORS_ORIGINS: z

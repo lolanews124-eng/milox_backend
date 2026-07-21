@@ -33,13 +33,13 @@ const profileSelect = {
   usernameChangedAt: true,
   email: true,
   emailVerifiedAt: true,
-  dateOfBirth: true,
+  ageRange: true,
   gender: true,
   role: true,
   status: true,
   displayName: true,
   bio: true,
-  countryCode: true,
+  country: true,
   relationshipGoal: true,
   websiteUrl: true,
   instagramHandle: true,
@@ -150,8 +150,14 @@ export class PrismaUserRepository implements UserRepository {
     if (!viewerUserId) return emptyRelation(false);
     if (viewerUserId === profileUserId) return emptyRelation(true);
 
-    const [following, followedBy, block, pendingInterest, match] =
-      await this.database.$transaction([
+    const [
+      following,
+      followedBy,
+      block,
+      pendingInterest,
+      incomingPendingInterest,
+      match,
+    ] = await this.database.$transaction([
         this.database.follow.findUnique({
           where: {
             followerId_followeeId: {
@@ -187,6 +193,15 @@ export class PrismaUserRepository implements UserRepository {
           },
           select: { id: true },
         }),
+        this.database.interest.findFirst({
+          where: {
+            senderId: profileUserId,
+            recipientId: viewerUserId,
+            status: InterestStatus.PENDING,
+            sender: { is: visibleUserCardWhere(viewerUserId) },
+          },
+          select: { id: true },
+        }),
         this.database.match.findFirst({
           where: {
             status: MatchStatus.ACTIVE,
@@ -206,6 +221,7 @@ export class PrismaUserRepository implements UserRepository {
       isFollowedBy: followedBy?.status === "ACTIVE",
       isBlocked: Boolean(block),
       hasPendingInterest: Boolean(pendingInterest),
+      hasIncomingPendingInterest: Boolean(incomingPendingInterest),
       isMatched: Boolean(match),
     };
   }
@@ -263,9 +279,8 @@ export class PrismaUserRepository implements UserRepository {
               ? { displayName: data.displayName }
               : {}),
             ...(data.bio !== undefined ? { bio: data.bio } : {}),
-            ...(data.countryCode !== undefined
-              ? { countryCode: data.countryCode }
-              : {}),
+            ...(data.ageRange !== undefined ? { ageRange: data.ageRange } : {}),
+            ...(data.country !== undefined ? { country: data.country } : {}),
             ...(data.relationshipGoal !== undefined
               ? { relationshipGoal: data.relationshipGoal }
               : {}),
@@ -352,7 +367,6 @@ export class PrismaUserRepository implements UserRepository {
           deletedAt: now,
           displayName: null,
           bio: null,
-          countryCode: null,
           relationshipGoal: null,
           websiteUrl: null,
           instagramHandle: null,
@@ -373,12 +387,37 @@ export class PrismaUserRepository implements UserRepository {
         where: { authorId: userId, deletedAt: null },
         data: { isHidden: true },
       });
-      await transaction.interest.updateMany({
+      const pendingInterests = await transaction.interest.findMany({
         where: {
           status: InterestStatus.PENDING,
           OR: [{ senderId: userId }, { recipientId: userId }],
         },
-        data: { status: InterestStatus.CANCELLED, respondedAt: now },
+        select: { id: true, senderId: true, recipientId: true },
+      });
+      if (pendingInterests.length > 0) {
+        await transaction.interest.updateMany({
+          where: {
+            id: { in: pendingInterests.map(({ id }) => id) },
+            status: InterestStatus.PENDING,
+          },
+          data: { status: InterestStatus.CANCELLED, respondedAt: now },
+        });
+        await transaction.outboxEvent.createMany({
+          data: pendingInterests.map((interest) => ({
+            eventType: "interest.cancelled",
+            aggregateType: "interest",
+            aggregateId: interest.id,
+            payload: {
+              interestId: interest.id,
+              actorId: userId,
+              senderId: interest.senderId,
+              recipientId: interest.recipientId,
+            },
+          })),
+        });
+      }
+      await transaction.notification.deleteMany({
+        where: { actorId: userId },
       });
       await transaction.match.updateMany({
         where: {
@@ -415,6 +454,7 @@ function emptyRelation(isSelf: boolean): ViewerRelation {
     isFollowedBy: false,
     isBlocked: false,
     hasPendingInterest: false,
+    hasIncomingPendingInterest: false,
     isMatched: false,
   };
 }

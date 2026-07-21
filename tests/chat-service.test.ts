@@ -82,8 +82,8 @@ describe("ChatService", () => {
     expect(page.hasMore).toBe(true);
     expect(page.nextCursor).toEqual(expect.any(String));
     const peer = (page.items[0] as { peer: Record<string, unknown> }).peer;
-    expect(peer).not.toHaveProperty("age");
-    expect(peer).not.toHaveProperty("countryCode");
+    expect(peer).not.toHaveProperty("ageRange");
+    expect(peer).not.toHaveProperty("country");
     expect(peer).not.toHaveProperty("email");
   });
 
@@ -204,9 +204,9 @@ function conversationFixture(hidePrivateFields: boolean): ConversationViewRecord
       username: "peer",
       displayName: null,
       bio: null,
-      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      ageRange: "AGE_25_28",
       gender: "OTHER",
-      countryCode: "IN",
+      country: "India",
       relationshipGoal: null,
       websiteUrl: null,
       instagramHandle: null,

@@ -30,6 +30,7 @@ export class PrismaNotificationRepository
         ...(query.excludeTypes?.length
           ? { type: { notIn: query.excludeTypes } }
           : {}),
+        OR: [{ actorId: null }, { actor: { is: visibleUserCardWhere(query.recipientId) } }],
         ...cursorWhere(query.before),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -49,6 +50,7 @@ export class PrismaNotificationRepository
         ...(options?.excludeTypes?.length
           ? { type: { notIn: options.excludeTypes } }
           : {}),
+        OR: [{ actorId: null }, { actor: { is: visibleUserCardWhere(recipientId) } }],
       },
     });
   }

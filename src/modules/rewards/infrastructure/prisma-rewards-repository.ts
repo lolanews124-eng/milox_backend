@@ -160,7 +160,7 @@ export class PrismaRewardsRepository implements RewardsRepository {
 
     return {
       code: codeRow.code,
-      inviteUrl: referralInviteUrl(this.config.WEB_ORIGIN, codeRow.code),
+      inviteUrl: referralInviteUrl(this.config.PUBLIC_WEB_ORIGIN, codeRow.code),
       totalInvited,
       totalEarned: earnedRows.reduce((sum, row) => sum + row.amount, 0),
       rewardPerReferral: this.config.REFERRAL_REWARD_POINTS,

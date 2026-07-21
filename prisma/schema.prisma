@@ -6,7 +6,7 @@
 // - UUIDs for all primary keys
 // - Soft delete via deletedAt where business recovery is required
 // - createdAt / updatedAt on mutable aggregates
-// - Sensitive identity fields (email, passwordHash, DOB, IP hashes) must NEVER
+// - Sensitive identity fields (email, passwordHash, exact birth date, IP hashes) must NEVER
 //   appear in public DTOs — enforced in application mappers, not the ORM
 // - Username uniqueness is case-insensitive via usernameNormalized
 // =============================================================================
@@ -45,6 +45,19 @@ enum Gender {
   NON_BINARY
   OTHER
   PREFER_NOT_TO_SAY
+}
+
+enum AgeRange {
+  AGE_18_24
+  AGE_25_28
+  AGE_29_34
+  AGE_35_39
+  AGE_40_44
+  AGE_45_49
+  AGE_50_54
+  AGE_55_59
+  AGE_60_64
+  AGE_65_70
 }
 
 enum RelationshipGoal {
@@ -206,13 +219,13 @@ model User {
   email               String            @unique @db.VarChar(255)
   passwordHash        String            @db.VarChar(255)
   emailVerifiedAt     DateTime?
-  dateOfBirth         DateTime          @db.Date
+  ageRange            AgeRange
   gender              Gender
   role                UserRole          @default(USER)
   status              UserStatus        @default(ACTIVE)
   displayName         String?           @db.VarChar(80)
   bio                 String?           @db.VarChar(500)
-  countryCode         String?           @db.Char(2)
+  country             String            @db.VarChar(80)
   relationshipGoal    RelationshipGoal?
   websiteUrl          String?           @db.VarChar(255)
   instagramHandle     String?           @db.VarChar(64)
@@ -286,7 +299,7 @@ model User {
   @@index([status, createdAt])
   @@index([referredByUserId])
   @@index([createdAt])
-  @@index([countryCode, gender, status])
+  @@index([country, gender, status])
   @@index([isVerifiedBadge, status])
   @@index([deletedAt])
   @@map("users")

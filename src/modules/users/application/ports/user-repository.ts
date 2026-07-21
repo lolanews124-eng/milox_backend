@@ -1,4 +1,5 @@
 import type {
+  AgeRange,
   Gender,
   RelationshipGoal,
   UserRole,
@@ -14,13 +15,13 @@ export interface UserProfileRecord {
   usernameChangedAt: Date | null;
   email: string;
   emailVerifiedAt: Date | null;
-  dateOfBirth: Date;
+  ageRange: AgeRange;
   gender: Gender;
   role: UserRole;
   status: UserStatus;
   displayName: string | null;
   bio: string | null;
-  countryCode: string | null;
+  country: string;
   relationshipGoal: RelationshipGoal | null;
   websiteUrl: string | null;
   instagramHandle: string | null;
@@ -48,6 +49,7 @@ export interface ViewerRelation {
   isFollowedBy: boolean;
   isBlocked: boolean;
   hasPendingInterest: boolean;
+  hasIncomingPendingInterest: boolean;
   isMatched: boolean;
 }
 
@@ -57,7 +59,8 @@ export interface UpdateProfileData {
   usernameChangedAt?: Date | undefined;
   displayName?: string | null | undefined;
   bio?: string | null | undefined;
-  countryCode?: string | null | undefined;
+  country?: string | undefined;
+  ageRange?: AgeRange | undefined;
   relationshipGoal?: RelationshipGoal | null | undefined;
   websiteUrl?: string | null | undefined;
   instagramHandle?: string | null | undefined;

@@ -247,7 +247,7 @@ export class PrismaAdminRepository implements AdminRepository {
       select: {
         ...adminUserSelect,
         bio: true,
-        countryCode: true,
+        country: true,
         gender: true,
         isPrivateAccount: true,
         lastSeenAt: true,

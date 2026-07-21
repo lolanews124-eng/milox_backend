@@ -116,8 +116,8 @@ describe("PostService", () => {
     expect(page.hasMore).toBe(true);
     expect(page.nextCursor).toEqual(expect.any(String));
     const author = (page.items[0] as { author: Record<string, unknown> }).author;
-    expect(author).not.toHaveProperty("age");
-    expect(author).not.toHaveProperty("countryCode");
+    expect(author).not.toHaveProperty("ageRange");
+    expect(author).not.toHaveProperty("country");
     expect(author).not.toHaveProperty("email");
   });
 });
@@ -175,9 +175,9 @@ function postFixture(
       username: "author",
       displayName: null,
       bio: null,
-      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      ageRange: "AGE_25_28",
       gender: "OTHER",
-      countryCode: "IN",
+      country: "India",
       relationshipGoal: null,
       websiteUrl: null,
       instagramHandle: null,

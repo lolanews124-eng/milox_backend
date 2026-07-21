@@ -4,7 +4,6 @@ import type { AppConfig } from "../src/config/env.js";
 import type { AuthRepository } from "../src/modules/auth/application/ports/auth-repository.js";
 import {
   AuthService,
-  isAdult,
   normalizeEmail,
   normalizeUsername,
 } from "../src/modules/auth/application/services/auth-service.js";
@@ -45,39 +44,9 @@ describe("auth utilities", () => {
     expect(normalizeEmail("  Alex@Example.COM ")).toBe("alex@example.com");
     expect(normalizeUsername(" NightBoy ")).toBe("nightboy");
   });
-
-  it("enforces the exact 18th birthday boundary", () => {
-    const now = new Date("2026-07-17T12:00:00.000Z");
-    expect(isAdult(new Date("2008-07-17T00:00:00.000Z"), now)).toBe(true);
-    expect(isAdult(new Date("2008-07-18T00:00:00.000Z"), now)).toBe(false);
-  });
 });
 
 describe("AuthService", () => {
-  it("rejects underage signup before writing data", async () => {
-    const repository = createRepository();
-    const service = new AuthService(
-      repository,
-      new CryptoService(config),
-      config,
-    );
-
-    await expect(
-      service.signup(
-        {
-          username: "young_user",
-          email: "young@example.com",
-          password: "long-enough-password",
-          dateOfBirth: "2010-01-01",
-          gender: "PREFER_NOT_TO_SAY",
-        },
-        {},
-      ),
-    ).rejects.toMatchObject({ code: "UNDERAGE", statusCode: 422 });
-
-    expect(repository.createAccount).not.toHaveBeenCalled();
-  });
-
   it("does not reveal whether a forgot-password email exists", async () => {
     const repository = createRepository();
     vi.mocked(repository.findUserByEmail).mockResolvedValue(null);

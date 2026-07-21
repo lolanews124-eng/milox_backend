@@ -2,15 +2,12 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import { discoverQuerySchema } from "./discover-query.js";
+import { feedQuerySchema } from "./feed-query.js";
 import type {
   FeedKind,
   FeedService,
 } from "../application/services/feed-service.js";
-
-const feedQuerySchema = z.object({
-  cursor: z.string().min(1).max(2_048).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-});
 
 const profilePassParamsSchema = z.object({
   userId: z.uuid(),
@@ -35,11 +32,14 @@ export class FeedController {
     if (!request.auth) {
       throw new AppError("UNAUTHENTICATED", "Authentication required", 401);
     }
-    const query = feedQuerySchema.parse(request.query);
+    const query = discoverQuerySchema.parse(request.query);
     const page = await this.feeds.getDiscoverPeople({
       limit: query.limit,
       ...(query.cursor ? { cursor: query.cursor } : {}),
       viewerId: request.auth.userId,
+      ...(query.ageRange ? { ageRanges: query.ageRange } : {}),
+      ...(query.gender ? { genders: query.gender } : {}),
+      ...(query.country ? { countries: query.country } : {}),
     });
     response.status(200).json({
       success: true,

@@ -55,7 +55,7 @@ describe("auth HTTP contract", () => {
           username: data.username,
           email: data.email,
           passwordHash: data.passwordHash,
-          dateOfBirth: data.dateOfBirth,
+          ageRange: data.ageRange,
           gender: data.gender,
           role: "USER",
           status: "ACTIVE",
@@ -69,7 +69,8 @@ describe("auth HTTP contract", () => {
       username: "night_user",
       email: "Night@Example.com",
       password: "long-enough-password",
-      dateOfBirth: "2000-01-01",
+      ageRange: "AGE_25_28",
+      country: "India",
       gender: "PREFER_NOT_TO_SAY",
     });
 
@@ -91,7 +92,7 @@ describe("auth HTTP contract", () => {
           username: data.username,
           email: data.email,
           passwordHash: data.passwordHash,
-          dateOfBirth: data.dateOfBirth,
+          ageRange: data.ageRange,
           gender: data.gender,
           role: "USER",
           status: "ACTIVE",
@@ -108,7 +109,8 @@ describe("auth HTTP contract", () => {
         username: "mobile_user",
         email: "mobile@example.com",
         password: "long-enough-password",
-        dateOfBirth: "2000-01-01",
+        ageRange: "AGE_25_28",
+        country: "India",
         gender: "OTHER",
       });
 
@@ -123,7 +125,8 @@ describe("auth HTTP contract", () => {
       username: "x",
       email: "not-an-email",
       password: "short",
-      dateOfBirth: "bad",
+      ageRange: "bad",
+      country: "",
       gender: "UNKNOWN",
     });
 

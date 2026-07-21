@@ -11,6 +11,7 @@ coverage/
 .env.*
 !.env.example
 !.env.*.example
+secrets/
 
 # Local embedded Postgres data
 .data/

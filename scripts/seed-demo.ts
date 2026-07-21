@@ -10,12 +10,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { ageToRangeValue, countryNameFromCode } from "@milox/contracts";
 import {
   Gender,
   MediaKind,
   MediaVisibility,
   PrismaClient,
   RelationshipGoal,
+  type AgeRange,
 } from "@prisma/client";
 import argon2 from "argon2";
 import "dotenv/config";
@@ -503,11 +505,13 @@ async function main(): Promise<void> {
         email: `${demo.username}@demo.milox`,
         passwordHash,
         emailVerifiedAt: createdAt,
-        dateOfBirth: new Date(Date.UTC(demo.birthYear, index % 12, 5 + index)),
+        ageRange: ageToRangeValue(
+          new Date().getUTCFullYear() - demo.birthYear,
+        ) as AgeRange,
         gender: demo.gender,
         displayName: demo.displayName,
         bio: demo.bio,
-        countryCode: demo.country,
+        country: countryNameFromCode(demo.country),
         relationshipGoal: demo.goal,
         isVerifiedBadge: demo.verified ?? false,
         // First few users read as "online" (5-minute presence window).

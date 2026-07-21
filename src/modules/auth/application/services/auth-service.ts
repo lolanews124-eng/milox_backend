@@ -1,4 +1,4 @@
-import type { Gender, UserRole, UserStatus } from "@prisma/client";
+import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
@@ -18,7 +18,8 @@ export interface SignupInput {
   username: string;
   email: string;
   password: string;
-  dateOfBirth: string;
+  ageRange: AgeRange;
+  country: string;
   gender: Gender;
   referralCode?: string | undefined;
 }
@@ -35,7 +36,7 @@ export interface PrivateAuthUser {
   username: string;
   email: string;
   emailVerified: boolean;
-  dateOfBirth: string;
+  ageRange: AgeRange;
   gender: Gender;
   role: UserRole;
   status: UserStatus;
@@ -53,11 +54,6 @@ export class AuthService {
     input: SignupInput,
     context: RequestContext,
   ): Promise<AuthSession> {
-    const dateOfBirth = new Date(`${input.dateOfBirth}T00:00:00.000Z`);
-    if (!isAdult(dateOfBirth, new Date())) {
-      throw new AppError("UNDERAGE", "You must be at least 18 years old", 422);
-    }
-
     const verification = this.crypto.createOpaqueToken();
     const passwordHash = await this.crypto.hashPassword(input.password);
 
@@ -68,7 +64,8 @@ export class AuthService {
         usernameNormalized: normalizeUsername(input.username),
         email: normalizeEmail(input.email),
         passwordHash,
-        dateOfBirth,
+        ageRange: input.ageRange,
+        country: input.country,
         gender: input.gender,
         autoVerifyEmail: this.config.AUTO_VERIFY_EMAIL,
         verificationTokenHash: verification.hash,
@@ -291,21 +288,13 @@ export function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
-export function isAdult(dateOfBirth: Date, now: Date): boolean {
-  if (Number.isNaN(dateOfBirth.getTime())) return false;
-  const cutoff = new Date(
-    Date.UTC(now.getUTCFullYear() - 18, now.getUTCMonth(), now.getUTCDate()),
-  );
-  return dateOfBirth <= cutoff;
-}
-
 function mapPrivateUser(user: AuthUser): PrivateAuthUser {
   return {
     id: user.id,
     username: user.username,
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
-    dateOfBirth: user.dateOfBirth.toISOString().slice(0, 10),
+    ageRange: user.ageRange,
     gender: user.gender,
     role: user.role,
     status: user.status,

@@ -46,6 +46,51 @@ describe("feed HTTP contract", () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("passes discover filters to the repository", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.getDiscoverPeople).mockResolvedValue([]);
+    const response = await request(createTestApp(repository)).get(
+      "/api/v1/feed/discover?limit=20&ageRange=AGE_25_28&ageRange=AGE_29_34&gender=FEMALE&country=India&country=United%20States",
+    );
+
+    expect(response.status).toBe(200);
+    expect(repository.getDiscoverPeople).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 20,
+        viewerId: "8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9",
+        ageRanges: ["AGE_25_28", "AGE_29_34"],
+        genders: ["FEMALE"],
+        countries: ["India", "United States"],
+      }),
+    );
+  });
+
+  it("accepts comma-separated discover filter values", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.getDiscoverPeople).mockResolvedValue([]);
+    const response = await request(createTestApp(repository)).get(
+      "/api/v1/feed/discover?ageRange=AGE_18_24,AGE_65_70&gender=MALE,NON_BINARY&country=Canada",
+    );
+
+    expect(response.status).toBe(200);
+    expect(repository.getDiscoverPeople).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ageRanges: ["AGE_18_24", "AGE_65_70"],
+        genders: ["MALE", "NON_BINARY"],
+        countries: ["Canada"],
+      }),
+    );
+  });
+
+  it("rejects invalid discover filter values", async () => {
+    const response = await request(createTestApp(createRepository())).get(
+      "/api/v1/feed/discover?ageRange=NOT_A_RANGE",
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
 });
 
 function createTestApp(repository: FeedRepository) {

@@ -1,3 +1,4 @@
+import { ageRangeSchema, countrySchema } from "@milox/contracts";
 import { z } from "zod";
 
 const nullableTrimmed = (max: number) =>
@@ -28,9 +29,8 @@ export const updateProfileSchema = z
       .optional(),
     displayName: nullableTrimmed(80).optional(),
     bio: nullableTrimmed(500).optional(),
-    countryCode: z
-      .union([z.string().trim().length(2), z.null()])
-      .optional(),
+    ageRange: ageRangeSchema.optional(),
+    country: countrySchema.optional(),
     relationshipGoal: z
       .enum([
         "FRIENDSHIP",

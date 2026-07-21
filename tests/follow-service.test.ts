@@ -89,8 +89,8 @@ describe("FollowService", () => {
     expect(page.hasMore).toBe(true);
     expect(page.nextCursor).toEqual(expect.any(String));
     const user = page.items[0] as Record<string, unknown>;
-    expect(user).not.toHaveProperty("age");
-    expect(user).not.toHaveProperty("countryCode");
+    expect(user).not.toHaveProperty("ageRange");
+    expect(user).not.toHaveProperty("country");
     expect(user).not.toHaveProperty("email");
   });
 
@@ -140,9 +140,9 @@ function followEntry(
       username: "anonymous_user",
       displayName: null,
       bio: null,
-      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      ageRange: "AGE_25_28",
       gender: "OTHER",
-      countryCode: "IN",
+      country: "India",
       relationshipGoal: null,
       websiteUrl: null,
       instagramHandle: null,

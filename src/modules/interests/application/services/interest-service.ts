@@ -257,6 +257,7 @@ export class InterestService {
     if (error instanceof InterestConflictError) {
       const codeByReason: Record<string, string> = {
         already_pending: "INTEREST_ALREADY_PENDING",
+        incoming_pending: "INTEREST_ALREADY_RECEIVED",
         already_matched: "ALREADY_MATCHED",
         not_pending: "INTEREST_NOT_PENDING",
       };

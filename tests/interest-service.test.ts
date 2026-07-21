@@ -88,6 +88,13 @@ describe("InterestService", () => {
       createService(repository).create(senderId, { recipientId }, key),
     ).rejects.toMatchObject({ code: "INTEREST_ALREADY_PENDING" });
 
+    vi.mocked(repository.create).mockRejectedValue(
+      new InterestConflictError("incoming_pending"),
+    );
+    await expect(
+      createService(repository).create(senderId, { recipientId }, key),
+    ).rejects.toMatchObject({ code: "INTEREST_ALREADY_RECEIVED" });
+
     vi.mocked(repository.accept).mockRejectedValue(
       new InterestConflictError("not_pending"),
     );
@@ -116,8 +123,8 @@ describe("InterestService", () => {
     const sender = (page.items[0] as {
       sender: Record<string, unknown>;
     }).sender;
-    expect(sender).not.toHaveProperty("age");
-    expect(sender).not.toHaveProperty("countryCode");
+    expect(sender).not.toHaveProperty("ageRange");
+    expect(sender).not.toHaveProperty("country");
     expect(sender).not.toHaveProperty("email");
   });
 
@@ -201,9 +208,9 @@ function userFixture(
     username,
     displayName: null,
     bio: null,
-    dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+    ageRange: "AGE_25_28",
     gender: "OTHER" as const,
-    countryCode: "IN",
+    country: "India",
     relationshipGoal: null,
     websiteUrl: null,
     instagramHandle: null,

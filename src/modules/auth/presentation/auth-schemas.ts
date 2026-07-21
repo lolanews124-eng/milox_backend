@@ -1,3 +1,4 @@
+import { ageRangeSchema, countrySchema } from "@milox/contracts";
 import { z } from "zod";
 
 const password = z.string().min(10).max(128);
@@ -13,9 +14,8 @@ export const signupSchema = z
       .regex(/^[a-zA-Z0-9_]+$/),
     email,
     password,
-    dateOfBirth: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
+    ageRange: ageRangeSchema,
+    country: countrySchema,
     gender: z.enum([
       "MALE",
       "FEMALE",

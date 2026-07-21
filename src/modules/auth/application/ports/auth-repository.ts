@@ -1,11 +1,11 @@
-import type { Gender, UserRole, UserStatus } from "@prisma/client";
+import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 
 export interface AuthUser {
   id: string;
   username: string;
   email: string;
   passwordHash: string;
-  dateOfBirth: Date;
+  ageRange: AgeRange;
   gender: Gender;
   role: UserRole;
   status: UserStatus;
@@ -18,7 +18,8 @@ export interface CreateAccountData {
   usernameNormalized: string;
   email: string;
   passwordHash: string;
-  dateOfBirth: Date;
+  ageRange: AgeRange;
+  country: string;
   gender: Gender;
   autoVerifyEmail: boolean;
   verificationTokenHash: string;

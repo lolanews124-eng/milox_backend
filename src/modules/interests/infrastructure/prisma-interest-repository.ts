@@ -71,6 +71,18 @@ export class PrismaInterestRepository implements InterestRepository {
           throw new InterestConflictError("already_matched");
         }
 
+        const incomingPending = await transaction.interest.findFirst({
+          where: {
+            senderId: recipient.id,
+            recipientId: data.senderId,
+            status: InterestStatus.PENDING,
+          },
+          select: { id: true },
+        });
+        if (incomingPending) {
+          throw new InterestConflictError("incoming_pending");
+        }
+
         const pending = await transaction.interest.findFirst({
           where: {
             senderId: data.senderId,

@@ -1,4 +1,5 @@
-import type { RelationshipGoal } from "@prisma/client";
+import { ageRangeLabel } from "@milox/contracts";
+import type { AgeRange, RelationshipGoal } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
@@ -35,7 +36,8 @@ export interface UpdateProfileInput {
   username?: string | undefined;
   displayName?: string | null | undefined;
   bio?: string | null | undefined;
-  countryCode?: string | null | undefined;
+  ageRange?: AgeRange | undefined;
+  country?: string | undefined;
   relationshipGoal?: RelationshipGoal | null | undefined;
   websiteUrl?: string | null | undefined;
   instagramHandle?: string | null | undefined;
@@ -146,8 +148,11 @@ export class UserService {
       }
     }
 
-    if (input.countryCode !== undefined) {
-      data.countryCode = input.countryCode?.toUpperCase() ?? null;
+    if (input.ageRange !== undefined) {
+      data.ageRange = input.ageRange;
+    }
+    if (input.country !== undefined) {
+      data.country = input.country;
     }
     if (input.interestSlugs) {
       data.interestSlugs = [
@@ -260,16 +265,6 @@ export function normalizeUsername(username: string): string {
   return username.trim().replace(/^@/, "").toLowerCase();
 }
 
-export function calculateAge(dateOfBirth: Date, now = new Date()): number {
-  let age = now.getUTCFullYear() - dateOfBirth.getUTCFullYear();
-  const birthdayPassed =
-    now.getUTCMonth() > dateOfBirth.getUTCMonth() ||
-    (now.getUTCMonth() === dateOfBirth.getUTCMonth() &&
-      now.getUTCDate() >= dateOfBirth.getUTCDate());
-  if (!birthdayPassed) age -= 1;
-  return age;
-}
-
 function mapPublicProfile(
   user: UserProfileRecord,
   relation: ViewerRelation,
@@ -283,8 +278,8 @@ function mapPublicProfile(
     profilePhotoUrl: mediaUrl(user.profilePhoto?.id, config),
     coverPhotoUrl: mediaUrl(user.coverPhoto?.id, config),
     gender: user.gender,
-    ...(!user.hideAge ? { age: calculateAge(user.dateOfBirth) } : {}),
-    ...(!user.hideCountry ? { countryCode: user.countryCode } : {}),
+    ...(!user.hideAge ? { ageRange: ageRangeLabel(user.ageRange) } : {}),
+    ...(!user.hideCountry ? { country: user.country } : {}),
     relationshipGoal: user.relationshipGoal,
     websiteUrl: user.websiteUrl,
     instagramHandle: user.instagramHandle,
@@ -317,15 +312,16 @@ function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
     isFollowedBy: false,
     isBlocked: false,
     hasPendingInterest: false,
+    hasIncomingPendingInterest: false,
     isMatched: false,
   };
   return {
     ...mapPublicProfile(user, relation, config),
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
-    dateOfBirth: user.dateOfBirth.toISOString().slice(0, 10),
-    age: calculateAge(user.dateOfBirth),
-    countryCode: user.countryCode,
+    ageRange: user.ageRange,
+    ageRangeLabel: ageRangeLabel(user.ageRange),
+    country: user.country,
     role: user.role,
     status: user.status,
     hideAge: user.hideAge,

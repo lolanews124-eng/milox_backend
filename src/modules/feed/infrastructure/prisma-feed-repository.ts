@@ -1,6 +1,7 @@
 import {
   FollowStatus,
   InterestStatus,
+  MatchStatus,
   type Prisma,
   type PrismaClient,
 } from "@prisma/client";
@@ -13,6 +14,7 @@ import {
 } from "../../posts/infrastructure/post-query-policy.js";
 import type { PostAuthorViewRecord } from "../../posts/application/post-view.js";
 import type {
+  DiscoverPeopleQuery,
   FeedPostRecord,
   FeedQuery,
   FeedRepository,
@@ -89,7 +91,7 @@ export class PrismaFeedRepository implements FeedRepository {
   }
 
   async getDiscoverPeople(
-    query: FeedQuery & { viewerId: string },
+    query: DiscoverPeopleQuery,
   ): Promise<PostAuthorViewRecord[]> {
     const cursorWhere = discoverPeopleCursorWhere(query.cursor);
 
@@ -114,6 +116,39 @@ export class PrismaFeedRepository implements FeedRepository {
               },
             },
           },
+          {
+            interestsSent: {
+              none: {
+                recipientId: query.viewerId,
+                status: InterestStatus.PENDING,
+              },
+            },
+          },
+          {
+            matchesAsUserA: {
+              none: {
+                userBId: query.viewerId,
+                status: MatchStatus.ACTIVE,
+              },
+            },
+          },
+          {
+            matchesAsUserB: {
+              none: {
+                userAId: query.viewerId,
+                status: MatchStatus.ACTIVE,
+              },
+            },
+          },
+          ...(query.ageRanges?.length
+            ? [{ ageRange: { in: query.ageRanges } }]
+            : []),
+          ...(query.genders?.length
+            ? [{ gender: { in: query.genders } }]
+            : []),
+          ...(query.countries?.length
+            ? [{ country: { in: query.countries } }]
+            : []),
           ...(cursorWhere ? [cursorWhere] : []),
         ],
       },

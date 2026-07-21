@@ -20,7 +20,7 @@ const authUserSelect = {
   username: true,
   email: true,
   passwordHash: true,
-  dateOfBirth: true,
+  ageRange: true,
   gender: true,
   role: true,
   status: true,
@@ -57,7 +57,8 @@ export class PrismaAuthRepository implements AuthRepository {
             usernameNormalized: data.usernameNormalized,
             email: data.email,
             passwordHash: data.passwordHash,
-            dateOfBirth: data.dateOfBirth,
+            ageRange: data.ageRange,
+            country: data.country,
             gender: data.gender,
             ...(data.autoVerifyEmail
               ? { emailVerifiedAt: new Date() }

@@ -32,8 +32,8 @@ describe("NotificationService", () => {
     const actor = (page.items[0] as {
       actor: Record<string, unknown>;
     }).actor;
-    expect(actor).not.toHaveProperty("age");
-    expect(actor).not.toHaveProperty("countryCode");
+    expect(actor).not.toHaveProperty("ageRange");
+    expect(actor).not.toHaveProperty("country");
     expect(actor).not.toHaveProperty("email");
     expect(repository.list).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -120,9 +120,9 @@ function notificationFixture(hidden: boolean): NotificationViewRecord {
       username: "actor",
       displayName: null,
       bio: null,
-      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      ageRange: "AGE_25_28",
       gender: "OTHER",
-      countryCode: "IN",
+      country: "India",
       relationshipGoal: null,
       websiteUrl: null,
       instagramHandle: null,

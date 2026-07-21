@@ -29,6 +29,7 @@
     "db:setup": "prisma db push && prisma db execute --file prisma/sql/constraints.sql --schema prisma/schema.prisma && tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@milox/contracts": "0.1.0",
     "@prisma/client": "^6.12.0",
     "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",

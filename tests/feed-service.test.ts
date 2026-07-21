@@ -75,8 +75,8 @@ describe("FeedService", () => {
 
     const page = await service.getPage("trending", { limit: 20 });
     const author = (page.items[0] as { author: Record<string, unknown> }).author;
-    expect(author).not.toHaveProperty("age");
-    expect(author).not.toHaveProperty("countryCode");
+    expect(author).not.toHaveProperty("ageRange");
+    expect(author).not.toHaveProperty("country");
   });
 
   it("requires authentication for following feed", async () => {
@@ -127,9 +127,9 @@ function postFixture(
       username: `author_${sequence}`,
       displayName: null,
       bio: null,
-      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      ageRange: "AGE_25_28",
       gender: "OTHER",
-      countryCode: "IN",
+      country: "India",
       relationshipGoal: null,
       websiteUrl: null,
       instagramHandle: null,

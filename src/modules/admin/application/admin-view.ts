@@ -95,7 +95,7 @@ export function presentAdminReport(report: AdminReportRecord): object {
 
 export interface AdminUserDetailRecord extends AdminUserRecord {
   bio: string | null;
-  countryCode: string | null;
+  country: string;
   gender: string;
   isPrivateAccount: boolean;
   lastSeenAt: Date | null;
@@ -295,7 +295,7 @@ export function presentAdminUserDetail(user: AdminUserDetailRecord): object {
   return {
     ...presentAdminUser(user),
     bio: user.bio,
-    countryCode: user.countryCode,
+    country: user.country,
     gender: user.gender,
     isPrivateAccount: user.isPrivateAccount,
     lastSeenAt: user.lastSeenAt?.toISOString() ?? null,

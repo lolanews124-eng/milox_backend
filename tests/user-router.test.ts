@@ -35,7 +35,8 @@ describe("user HTTP contract", () => {
     expect(response.body.data).toMatchObject({
       username: "private_user",
       email: "private@example.com",
-      dateOfBirth: "2000-01-01",
+      ageRange: "AGE_25_28",
+      country: "India",
     });
     expect(response.body.data).not.toHaveProperty("passwordHash");
   });
@@ -52,6 +53,7 @@ describe("user HTTP contract", () => {
       isFollowedBy: false,
       isBlocked: false,
       hasPendingInterest: false,
+      hasIncomingPendingInterest: false,
       isMatched: false,
     });
     const app = createTestApp(repository);
@@ -62,9 +64,9 @@ describe("user HTTP contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data).not.toHaveProperty("email");
-    expect(response.body.data).not.toHaveProperty("dateOfBirth");
-    expect(response.body.data).not.toHaveProperty("age");
-    expect(response.body.data).not.toHaveProperty("countryCode");
+    expect(response.body.data).not.toHaveProperty("ageRangeValue");
+    expect(response.body.data).not.toHaveProperty("ageRange");
+    expect(response.body.data).not.toHaveProperty("country");
   });
 });
 
@@ -117,13 +119,13 @@ function profileFixture(
     usernameChangedAt: null,
     email: "private@example.com",
     emailVerifiedAt: new Date(),
-    dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+    ageRange: "AGE_25_28",
     gender: "OTHER",
     role: "USER",
     status: "ACTIVE",
     displayName: null,
     bio: null,
-    countryCode: "IN",
+    country: "India",
     relationshipGoal: null,
     websiteUrl: null,
     instagramHandle: null,

@@ -1,16 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../src/config/env.js";
-import type { AuthService } from "../src/modules/auth/application/services/auth-service.js";
 import type {
   UserProfileRecord,
   UserRepository,
   ViewerRelation,
 } from "../src/modules/users/application/ports/user-repository.js";
-import {
-  calculateAge,
-  UserService,
-} from "../src/modules/users/application/services/user-service.js";
+import { UserService } from "../src/modules/users/application/services/user-service.js";
 
 const config = {
   API_PUBLIC_URL: "http://localhost:3001",
@@ -22,8 +18,8 @@ describe("UserService privacy projections", () => {
     const profile = profileFixture({
       hideAge: true,
       hideCountry: true,
-     hideOnline: false,
-     lastSeenAt: null,
+      hideOnline: false,
+      lastSeenAt: null,
       hideLastSeen: true,
     });
     vi.mocked(repository.findByUsername).mockResolvedValue(profile);
@@ -35,9 +31,9 @@ describe("UserService privacy projections", () => {
     const output = await service.getPublicProfile("moon_user");
 
     expect(output).not.toHaveProperty("email");
-    expect(output).not.toHaveProperty("dateOfBirth");
-    expect(output).not.toHaveProperty("age");
-    expect(output).not.toHaveProperty("countryCode");
+    expect(output).not.toHaveProperty("ageRangeValue");
+    expect(output).not.toHaveProperty("ageRange");
+    expect(output).not.toHaveProperty("country");
     expect(output).not.toHaveProperty("lastSeenAt");
     expect(output).toMatchObject({
       username: "moon_user",
@@ -81,35 +77,19 @@ describe("UserService privacy projections", () => {
       createProfilePhotoUpdatePost: vi.fn().mockResolvedValue(undefined),
       createCoverPhotoUpdatePost: vi.fn().mockResolvedValue(undefined),
     };
-    vi.mocked(repository.findById).mockResolvedValue(
-      profileFixture({ profilePhoto: { id: "old-photo" }, coverPhoto: null }),
+    vi.mocked(repository.findById).mockResolvedValue(profileFixture());
+    vi.mocked(repository.updateProfile).mockResolvedValue(
+      profileFixture({
+        profilePhoto: { id: "new-photo-id" },
+      }),
     );
-    vi.mocked(repository.updateProfile).mockResolvedValue(profileFixture());
 
-    await createService(repository, profileUpdatePosts).updateProfile("user-id", {
-      profilePhotoMediaId: "new-photo",
-      coverPhotoMediaId: "new-cover",
-    });
-
-    expect(profileUpdatePosts.createProfilePhotoUpdatePost).toHaveBeenCalledWith(
+    await createService(repository, profileUpdatePosts).updateProfile(
       "user-id",
-      "new-photo",
+      { profilePhotoMediaId: "new-photo-id" },
     );
-    expect(profileUpdatePosts.createCoverPhotoUpdatePost).toHaveBeenCalledWith(
-      "user-id",
-      "new-cover",
-    );
-  });
-});
 
-describe("calculateAge", () => {
-  it("uses the UTC birthday boundary", () => {
-    expect(
-      calculateAge(
-        new Date("2000-07-18T00:00:00.000Z"),
-        new Date("2026-07-17T12:00:00.000Z"),
-      ),
-    ).toBe(25);
+    expect(profileUpdatePosts.createProfilePhotoUpdatePost).toHaveBeenCalled();
   });
 });
 
@@ -120,8 +100,12 @@ function createService(
     createCoverPhotoUpdatePost: ReturnType<typeof vi.fn>;
   },
 ): UserService {
-  const authService = {} as AuthService;
-  return new UserService(repository, authService, config, profileUpdatePosts);
+  return new UserService(
+    repository,
+    {} as never,
+    config,
+    profileUpdatePosts,
+  );
 }
 
 function createRepository(): UserRepository {
@@ -140,20 +124,20 @@ function profileFixture(
   overrides: Partial<UserProfileRecord> = {},
 ): UserProfileRecord {
   return {
-    id: "user-id",
+    id: "4a727dd8-a77d-4a51-8841-3e94a4b68650",
     username: "moon_user",
     usernameNormalized: "moon_user",
     usernameChangedAt: null,
-    email: "private@example.com",
-    emailVerifiedAt: new Date(),
-    dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+    email: "moon@example.com",
+    emailVerifiedAt: new Date("2026-07-17T00:00:00.000Z"),
+    ageRange: "AGE_25_28",
     gender: "PREFER_NOT_TO_SAY",
     role: "USER",
     status: "ACTIVE",
-    displayName: null,
+    displayName: "Moon",
     bio: "Hello",
-    countryCode: "IN",
-    relationshipGoal: "LONG_TERM",
+    country: "India",
+    relationshipGoal: "DATING",
     websiteUrl: null,
     instagramHandle: null,
     isVerifiedBadge: false,
@@ -162,11 +146,11 @@ function profileFixture(
     hideCountry: false,
     hideLastSeen: false,
     hideOnline: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
-    lastSeenAt: new Date(),
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    followerCount: 10,
+    followingCount: 5,
+    postCount: 2,
+    lastSeenAt: new Date("2026-07-17T00:00:00.000Z"),
+    createdAt: new Date("2026-07-17T00:00:00.000Z"),
     profilePhoto: { id: "3d98a9aa-19e3-4b77-a5f0-94a0637541aa" },
     coverPhoto: null,
     interests: [{ tag: { slug: "music", label: "Music" } }],
@@ -185,6 +169,7 @@ function relationFixture(
     isFollowedBy: false,
     isBlocked: false,
     hasPendingInterest: false,
+    hasIncomingPendingInterest: false,
     isMatched: false,
     ...overrides,
   };

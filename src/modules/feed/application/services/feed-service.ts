@@ -1,3 +1,5 @@
+import type { AgeRange, Gender } from "@prisma/client";
+
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { presentPost, presentPublicAuthor } from "../../../posts/application/post-view.js";
@@ -100,7 +102,14 @@ export class FeedService {
   }
 
   async getDiscoverPeople(
-    options: { viewerId?: string; cursor?: string; limit: number },
+    options: {
+      viewerId?: string;
+      cursor?: string;
+      limit: number;
+      ageRanges?: AgeRange[];
+      genders?: Gender[];
+      countries?: string[];
+    },
   ): Promise<FeedPage> {
     const viewerId = requireViewer(options.viewerId);
     const cursor = options.cursor
@@ -118,6 +127,9 @@ export class FeedService {
       viewerId,
       limit: options.limit,
       ...(cursor ? { cursor } : {}),
+      ...(options.ageRanges ? { ageRanges: options.ageRanges } : {}),
+      ...(options.genders ? { genders: options.genders } : {}),
+      ...(options.countries ? { countries: options.countries } : {}),
     });
     const hasMore = rows.length > options.limit;
     const pageRows = rows.slice(0, options.limit);

@@ -1,17 +1,17 @@
-import type { Gender, RelationshipGoal } from "@prisma/client";
+import { ageRangeLabel } from "@milox/contracts";
+import type { AgeRange, Gender, RelationshipGoal } from "@prisma/client";
 
 import type { AppConfig } from "../../../config/env.js";
 import { isUserOnline } from "../../chat/realtime/presence-registry.js";
-import { calculateAge } from "../../users/application/services/user-service.js";
 
 export interface PostAuthorViewRecord {
   id: string;
   username: string;
   displayName: string | null;
   bio: string | null;
-  dateOfBirth: Date;
+  ageRange: AgeRange;
   gender: Gender;
-  countryCode: string | null;
+  country: string;
   relationshipGoal: RelationshipGoal | null;
   websiteUrl: string | null;
   instagramHandle: string | null;
@@ -100,8 +100,8 @@ export function presentPublicAuthor(
     profilePhotoUrl: mediaUrl(author.profilePhoto?.id, config),
     coverPhotoUrl: mediaUrl(author.coverPhoto?.id, config),
     gender: author.gender,
-    ...(!author.hideAge ? { age: calculateAge(author.dateOfBirth) } : {}),
-    ...(!author.hideCountry ? { countryCode: author.countryCode } : {}),
+    ...(!author.hideAge ? { ageRange: ageRangeLabel(author.ageRange) } : {}),
+    ...(!author.hideCountry ? { country: author.country } : {}),
     relationshipGoal: author.relationshipGoal,
     websiteUrl: author.websiteUrl,
     instagramHandle: author.instagramHandle,
