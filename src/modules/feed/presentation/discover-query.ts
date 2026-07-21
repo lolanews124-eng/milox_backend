@@ -1,4 +1,4 @@
-import { ageRangeSchema, countrySchema } from "@milox/contracts";
+import { ageRangeSchema, countrySchema } from "../../../shared/contracts/profile-fields.js";
 import { z } from "zod";
 
 import { feedQuerySchema } from "./feed-query.js";

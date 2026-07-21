@@ -1,4 +1,4 @@
-import { ageRangeLabel } from "@milox/contracts";
+import { ageRangeLabel } from "../../../../shared/contracts/age-ranges.js";
 import type { AgeRange, RelationshipGoal } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";

@@ -10,7 +10,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ageToRangeValue, countryNameFromCode } from "@milox/contracts";
+import { ageToRangeValue, countryNameFromCode } from "../src/shared/contracts/index.js";
 import {
   Gender,
   MediaKind,
