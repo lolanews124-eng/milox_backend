@@ -126,6 +126,13 @@ const postAdminSelect = {
   author: {
     select: { id: true, username: true, displayName: true },
   },
+  media: {
+    orderBy: { sortOrder: "asc" },
+    take: 4,
+    select: {
+      mediaAsset: { select: { id: true, mimeType: true } },
+    },
+  },
   _count: { select: { media: true } },
 } satisfies Prisma.PostSelect;
 
@@ -517,36 +524,12 @@ export class PrismaAdminRepository implements AdminRepository {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        select: {
-          id: true,
-          body: true,
-          likeCount: true,
-          commentCount: true,
-          isHidden: true,
-          deletedAt: true,
-          createdAt: true,
-          author: {
-            select: { id: true, username: true, displayName: true },
-          },
-          _count: { select: { media: true } },
-        },
+        select: postAdminSelect,
       }),
       this.database.post.count({ where }),
     ]);
     return {
-      items: rows.map((post) => ({
-        id: post.id,
-        authorId: post.author.id,
-        authorUsername: post.author.username,
-        authorDisplayName: post.author.displayName,
-        bodyPreview: truncatePreview(post.body),
-        mediaCount: post._count.media,
-        likeCount: post.likeCount,
-        commentCount: post.commentCount,
-        isHidden: post.isHidden,
-        deletedAt: post.deletedAt,
-        createdAt: post.createdAt,
-      })),
+      items: rows.map((post) => mapAdminPost(post)),
       total,
     };
   }
@@ -2089,6 +2072,10 @@ function mapAdminPost(
     authorDisplayName: post.author.displayName,
     bodyPreview: truncatePreview(post.body),
     mediaCount: post._count.media,
+    mediaPreview: post.media.map((row) => ({
+      id: row.mediaAsset.id,
+      mimeType: row.mediaAsset.mimeType,
+    })),
     likeCount: post.likeCount,
     commentCount: post.commentCount,
     isHidden: post.isHidden,

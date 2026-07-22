@@ -121,6 +121,7 @@ export interface AdminPostRecord {
   authorDisplayName: string | null;
   bodyPreview: string | null;
   mediaCount: number;
+  mediaPreview: Array<{ id: string; mimeType: string }>;
   likeCount: number;
   commentCount: number;
   isHidden: boolean;
@@ -335,6 +336,7 @@ export function presentAdminPost(post: AdminPostRecord): object {
     authorDisplayName: post.authorDisplayName,
     bodyPreview: post.bodyPreview,
     mediaCount: post.mediaCount,
+    mediaPreview: post.mediaPreview,
     likeCount: post.likeCount,
     commentCount: post.commentCount,
     isHidden: post.isHidden,
