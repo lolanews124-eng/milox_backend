@@ -87,6 +87,7 @@ const adminUserSelect = {
   role: true,
   status: true,
   isVerifiedBadge: true,
+  country: true,
   followerCount: true,
   followingCount: true,
   postCount: true,
@@ -218,6 +219,7 @@ export class PrismaAdminRepository implements AdminRepository {
   ): Promise<AdminPage<AdminUserRecord>> {
     const where: Prisma.UserWhereInput = {
       ...(query.status ? { status: query.status } : {}),
+      ...(query.verified !== undefined ? { isVerifiedBadge: query.verified } : {}),
       ...(query.q
         ? {
             OR: [
@@ -1857,7 +1859,13 @@ export class PrismaAdminRepository implements AdminRepository {
       now.getUTCMonth(),
       now.getUTCDate() - (days - 1),
     ));
-    const [users, posts, reports] = await Promise.all([
+    const demographicsWhere = {
+      deletedAt: null,
+      status: { not: UserStatus.DELETED },
+    } as const;
+
+    const [users, posts, reports, genderGroups, ageGroups, countryGroups, demographicsTotal] =
+      await Promise.all([
       this.database.user.findMany({
         where: { createdAt: { gte: start }, deletedAt: null },
         select: { createdAt: true },
@@ -1870,11 +1878,58 @@ export class PrismaAdminRepository implements AdminRepository {
         where: { createdAt: { gte: start } },
         select: { createdAt: true },
       }),
+      this.database.user.groupBy({
+        by: ["gender"],
+        where: demographicsWhere,
+        _count: { _all: true },
+      }),
+      this.database.user.groupBy({
+        by: ["ageRange"],
+        where: demographicsWhere,
+        _count: { _all: true },
+      }),
+      this.database.user.groupBy({
+        by: ["country"],
+        where: demographicsWhere,
+        _count: { _all: true },
+        orderBy: { _count: { country: "desc" } },
+        take: 20,
+      }),
+      this.database.user.count({ where: demographicsWhere }),
     ]);
+
     return {
       userSignups: buildDailySeries(start, days, users.map((row) => row.createdAt)),
       postsCreated: buildDailySeries(start, days, posts.map((row) => row.createdAt)),
       reportsFiled: buildDailySeries(start, days, reports.map((row) => row.createdAt)),
+      demographics: {
+        totalUsers: demographicsTotal,
+        gender: buildDemographicBuckets(
+          genderGroups.map((row) => ({
+            key: row.gender,
+            count: row._count._all,
+          })),
+          demographicsTotal,
+          formatGenderLabel,
+        ),
+        ageRanges: buildDemographicBuckets(
+          ageGroups.map((row) => ({
+            key: row.ageRange,
+            count: row._count._all,
+          })),
+          demographicsTotal,
+          formatAgeRangeLabel,
+          ageRangeSortKey,
+        ),
+        countries: buildDemographicBuckets(
+          countryGroups.map((row) => ({
+            key: row.country,
+            count: row._count._all,
+          })),
+          demographicsTotal,
+          (key) => key.trim() || "Unknown",
+        ),
+      },
     };
   }
 
@@ -2156,6 +2211,57 @@ function buildDailySeries(
     }
   }
   return [...buckets.entries()].map(([date, count]) => ({ date, count }));
+}
+
+function buildDemographicBuckets(
+  rows: Array<{ key: string; count: number }>,
+  total: number,
+  labelFn: (key: string) => string,
+  sortFn?: (a: { key: string; count: number }, b: { key: string; count: number }) => number,
+): Array<{ key: string; label: string; count: number; percentage: number }> {
+  const sorted = sortFn
+    ? [...rows].sort(sortFn)
+    : [...rows].sort((a, b) => b.count - a.count);
+  return sorted.map((row) => ({
+    key: row.key,
+    label: labelFn(row.key),
+    count: row.count,
+    percentage: total ? Math.round((row.count / total) * 1000) / 10 : 0,
+  }));
+}
+
+function formatGenderLabel(key: string): string {
+  const labels: Record<string, string> = {
+    MALE: "Male",
+    FEMALE: "Female",
+    NON_BINARY: "Non-binary",
+    OTHER: "Other",
+    PREFER_NOT_TO_SAY: "Prefer not to say",
+  };
+  return labels[key] ?? key;
+}
+
+function formatAgeRangeLabel(key: string): string {
+  const labels: Record<string, string> = {
+    AGE_18_24: "18–24",
+    AGE_25_28: "25–28",
+    AGE_29_34: "29–34",
+    AGE_35_39: "35–39",
+    AGE_40_44: "40–44",
+    AGE_45_49: "45–49",
+    AGE_50_54: "50–54",
+    AGE_55_59: "55–59",
+    AGE_60_64: "60–64",
+    AGE_65_70: "65–70",
+  };
+  return labels[key] ?? key;
+}
+
+function ageRangeSortKey(
+  a: { key: string; count: number },
+  b: { key: string; count: number },
+): number {
+  return a.key.localeCompare(b.key);
 }
 
 function maskEmail(email: string): string {

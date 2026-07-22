@@ -17,6 +17,10 @@ const offsetPageSchema = {
 export const adminUserQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   status: z.enum(UserStatus).optional(),
+  verified: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   ...offsetPageSchema,
 });
 

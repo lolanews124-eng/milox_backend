@@ -31,6 +31,7 @@ export interface OffsetPage {
 export interface AdminUserQuery extends OffsetPage {
   q?: string;
   status?: UserStatus;
+  verified?: boolean;
 }
 
 export interface AdminReportQuery extends OffsetPage {

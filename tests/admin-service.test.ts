@@ -157,6 +157,7 @@ function userFixture(): AdminUserRecord {
     role: "USER",
     status: "ACTIVE",
     isVerifiedBadge: false,
+    country: null,
     followerCount: 1,
     followingCount: 2,
     postCount: 3,

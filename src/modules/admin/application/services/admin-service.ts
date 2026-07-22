@@ -38,6 +38,7 @@ export class AdminService {
   async listUsers(options: {
     q?: string | undefined;
     status?: UserStatus | undefined;
+    verified?: boolean | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -46,6 +47,7 @@ export class AdminService {
       pageSize: options.pageSize,
       ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
       ...(options.status ? { status: options.status } : {}),
+      ...(options.verified !== undefined ? { verified: options.verified } : {}),
     });
     return {
       items: result.items.map(presentAdminUser),

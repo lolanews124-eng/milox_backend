@@ -26,6 +26,7 @@ export interface AdminUserRecord {
   role: UserRole;
   status: UserStatus;
   isVerifiedBadge: boolean;
+  country: string | null;
   followerCount: number;
   followingCount: number;
   postCount: number;
@@ -63,6 +64,7 @@ export function presentAdminUser(user: AdminUserRecord): object {
     role: user.role,
     status: user.status,
     isVerifiedBadge: user.isVerifiedBadge,
+    country: user.country,
     followerCount: user.followerCount,
     followingCount: user.followingCount,
     postCount: user.postCount,
@@ -213,10 +215,18 @@ export interface AdminCmsPageRecord {
   updatedAt: Date;
 }
 
+export interface AdminAnalyticsDemographics {
+  totalUsers: number;
+  gender: Array<{ key: string; label: string; count: number; percentage: number }>;
+  ageRanges: Array<{ key: string; label: string; count: number; percentage: number }>;
+  countries: Array<{ key: string; label: string; count: number; percentage: number }>;
+}
+
 export interface AdminAnalyticsRecord {
   userSignups: Array<{ date: string; count: number }>;
   postsCreated: Array<{ date: string; count: number }>;
   reportsFiled: Array<{ date: string; count: number }>;
+  demographics: AdminAnalyticsDemographics;
 }
 
 export interface AdminMatchRecord {
