@@ -96,6 +96,19 @@ export function resetConfigForTests(): void {
   cachedConfig = undefined;
 }
 
+/** Always allowed in production (Vercel admin). Also set ADMIN_ORIGIN on the server. */
+const DEFAULT_EXTRA_CORS_ORIGINS = ["https://milox-admin.vercel.app"] as const;
+
+function normalizeOrigin(origin: string): string {
+  return origin.replace(/\/+$/, "");
+}
+
 export function getAllowedOrigins(config: AppConfig): string[] {
-  return [...new Set([config.WEB_ORIGIN, config.ADMIN_ORIGIN, ...config.CORS_ORIGINS])];
+  const merged = [
+    config.WEB_ORIGIN,
+    config.ADMIN_ORIGIN,
+    ...config.CORS_ORIGINS,
+    ...DEFAULT_EXTRA_CORS_ORIGINS,
+  ];
+  return [...new Set(merged.map(normalizeOrigin))];
 }
