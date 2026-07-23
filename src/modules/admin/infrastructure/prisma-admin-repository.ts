@@ -7,6 +7,8 @@ import {
   MatchStatus,
   MediaKind,
   MediaVisibility,
+  ConversationStatus,
+  MessageType,
   OutboxStatus,
   Prisma,
   ReportStatus,
@@ -21,9 +23,11 @@ import type {
   AdminCommentQuery,
   AdminPage,
   AdminPostQuery,
+  AdminStoryQuery,
   AdminReportQuery,
   AdminRepository,
   AdminUserQuery,
+  OffsetPage,
   ChangeStaffRoleData,
   ChangeUserStatusData,
   CreateInterestTagData,
@@ -34,6 +38,7 @@ import type {
   AdminSubscriptionQuery,
   DeleteCommentData,
   DeletePostData,
+  DeleteStoryData,
   GrantSubscriptionData,
   ResolveReportData,
   SetVerifiedBadgeData,
@@ -46,6 +51,8 @@ import type {
   AdminEmailJobQuery,
   AdminHashtagQuery,
   AdminMatchQuery,
+  AdminConversationQuery,
+  DeleteAdminMessageData,
   AdminMediaQuery,
   AdminOutboxQuery,
   UpdateMediaData,
@@ -63,6 +70,8 @@ import type {
   AdminModerationActionRecord,
   AdminPostRecord,
   AdminPostsStatsRecord,
+  AdminStoryRecord,
+  AdminStoriesStatsRecord,
   AdminPremiumPlanRecord,
   AdminAdRecord,
   AdminAnalyticsRecord,
@@ -70,6 +79,10 @@ import type {
   AdminEmailJobRecord,
   AdminHashtagRecord,
   AdminMatchRecord,
+  AdminMatchesStatsRecord,
+  AdminConversationsStatsRecord,
+  AdminConversationRecord,
+  AdminConversationMessageRecord,
   AdminMediaContentRecord,
   AdminMediaRecord,
   AdminOutboxEventRecord,
@@ -173,6 +186,69 @@ const commentAdminSelect = {
     select: { id: true, username: true },
   },
 } satisfies Prisma.CommentSelect;
+
+const storyAdminSelect = {
+  id: true,
+  caption: true,
+  expiresAt: true,
+  deletedAt: true,
+  createdAt: true,
+  author: {
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      isVerifiedBadge: true,
+      profilePhotoMediaId: true,
+    },
+  },
+  mediaAsset: {
+    select: {
+      id: true,
+      mimeType: true,
+    },
+  },
+  _count: { select: { views: true } },
+} satisfies Prisma.StorySelect;
+
+const openReportMessageFilter: Prisma.MessageWhereInput = {
+  reports: {
+    some: {
+      status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+    },
+  },
+};
+
+const conversationAdminSelect = {
+  id: true,
+  status: true,
+  matchId: true,
+  createdAt: true,
+  updatedAt: true,
+  members: {
+    select: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          profilePhotoMediaId: true,
+        },
+      },
+    },
+  },
+  messages: {
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: {
+      body: true,
+      type: true,
+      createdAt: true,
+      deletedForEveryoneAt: true,
+    },
+  },
+  _count: { select: { messages: true } },
+} satisfies Prisma.ConversationSelect;
 
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private readonly database: PrismaClient) {}
@@ -789,6 +865,156 @@ export class PrismaAdminRepository implements AdminRepository {
       });
       return mapAdminPost(updated);
     });
+  }
+
+  async listStories(
+    query: AdminStoryQuery,
+  ): Promise<AdminPage<AdminStoryRecord>> {
+    const now = new Date();
+    const bucket = query.bucket ?? "all";
+    const where: Prisma.StoryWhereInput = {
+      ...(query.q
+        ? {
+            OR: [
+              { caption: { contains: query.q, mode: "insensitive" } },
+              ...(isUuid(query.q) ? [{ id: query.q }] : []),
+              {
+                author: {
+                  username: { contains: query.q, mode: "insensitive" },
+                },
+              },
+              {
+                author: {
+                  displayName: { contains: query.q, mode: "insensitive" },
+                },
+              },
+            ],
+          }
+        : {}),
+      ...(query.createdFrom || query.createdTo
+        ? {
+            createdAt: {
+              ...(query.createdFrom ? { gte: query.createdFrom } : {}),
+              ...(query.createdTo ? { lte: query.createdTo } : {}),
+            },
+          }
+        : {}),
+    };
+
+    if (bucket === "removed") {
+      where.deletedAt = { not: null };
+    } else if (bucket === "active") {
+      where.deletedAt = null;
+      where.expiresAt = { gt: now };
+    } else if (bucket === "expired") {
+      where.deletedAt = null;
+      where.expiresAt = { lte: now };
+    } else {
+      where.deletedAt = null;
+    }
+
+    const [rows, total] = await this.database.$transaction([
+      this.database.story.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: storyAdminSelect,
+      }),
+      this.database.story.count({ where }),
+    ]);
+    return {
+      items: rows.map((story) => mapAdminStory(story)),
+      total,
+    };
+  }
+
+  async storiesStats(now: Date): Promise<AdminStoriesStatsRecord> {
+    const notDeleted = { deletedAt: null };
+    const [
+      totalStories,
+      activeStories,
+      expiredStories,
+      removedStories,
+      totalViews,
+    ] = await Promise.all([
+      this.database.story.count({ where: notDeleted }),
+      this.database.story.count({
+        where: { ...notDeleted, expiresAt: { gt: now } },
+      }),
+      this.database.story.count({
+        where: { ...notDeleted, expiresAt: { lte: now } },
+      }),
+      this.database.story.count({ where: { deletedAt: { not: null } } }),
+      this.database.storyView.count(),
+    ]);
+    return {
+      totalStories,
+      activeStories,
+      expiredStories,
+      removedStories,
+      totalViews,
+    };
+  }
+
+  deleteStory(data: DeleteStoryData): Promise<AdminStoryRecord | null> {
+    return this.database.$transaction(
+      async (transaction) => {
+        const actor = await transaction.user.findFirst({
+          where: {
+            id: data.actorId,
+            status: UserStatus.ACTIVE,
+            role: {
+              in: [
+                UserRole.MODERATOR,
+                UserRole.ADMIN,
+                UserRole.SUPER_ADMIN,
+              ],
+            },
+          },
+          select: { id: true },
+        });
+        if (!actor) throw new AdminHierarchyError();
+
+        const story = await transaction.story.findUnique({
+          where: { id: data.storyId },
+          select: {
+            id: true,
+            authorId: true,
+            deletedAt: true,
+          },
+        });
+        if (!story) return null;
+        if (story.deletedAt) throw new AdminStateConflictError();
+
+        const updated = await transaction.story.update({
+          where: { id: story.id },
+          data: { deletedAt: new Date() },
+          select: storyAdminSelect,
+        });
+        await transaction.moderationAction.create({
+          data: {
+            actorId: data.actorId,
+            targetUserId: story.authorId,
+            actionCode: "STORY_REMOVED",
+            note: data.note ?? null,
+            metadata: { storyId: story.id },
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorType: AuditActorType.ADMIN,
+            actorUserId: data.actorId,
+            action: "admin.story.deleted",
+            resourceType: "story",
+            resourceId: story.id,
+            metadata: { actionCode: "STORY_REMOVED" },
+          },
+        });
+        return mapAdminStory(updated);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async listComments(
@@ -1609,6 +1835,7 @@ export class PrismaAdminRepository implements AdminRepository {
       ...(query.q
         ? {
             OR: [
+              ...(isUuid(query.q) ? [{ id: query.q }] : []),
               { userA: { username: { contains: query.q, mode: "insensitive" } } },
               { userB: { username: { contains: query.q, mode: "insensitive" } } },
               {
@@ -1639,10 +1866,20 @@ export class PrismaAdminRepository implements AdminRepository {
           interestId: true,
           createdAt: true,
           userA: {
-            select: { id: true, username: true, displayName: true },
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              profilePhotoMediaId: true,
+            },
           },
           userB: {
-            select: { id: true, username: true, displayName: true },
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              profilePhotoMediaId: true,
+            },
           },
           conversation: { select: { id: true, _count: { select: { messages: true } } } },
         },
@@ -1660,14 +1897,300 @@ export class PrismaAdminRepository implements AdminRepository {
         userAId: match.userA.id,
         userAUsername: match.userA.username,
         userADisplayName: match.userA.displayName,
+        userAProfilePhotoMediaId: match.userA.profilePhotoMediaId,
         userBId: match.userB.id,
         userBUsername: match.userB.username,
         userBDisplayName: match.userB.displayName,
+        userBProfilePhotoMediaId: match.userB.profilePhotoMediaId,
         messageCount: match.conversation?._count.messages ?? 0,
         createdAt: match.createdAt,
       })),
       total,
     };
+  }
+
+  async matchesStats(now: Date): Promise<AdminMatchesStatsRecord> {
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const [
+      totalMatches,
+      activeMatches,
+      unmatchedMatches,
+      withMessages,
+      matchedToday,
+    ] = await Promise.all([
+      this.database.match.count(),
+      this.database.match.count({ where: { status: MatchStatus.ACTIVE } }),
+      this.database.match.count({ where: { status: MatchStatus.UNMATCHED } }),
+      this.database.match.count({
+        where: { conversation: { messages: { some: {} } } },
+      }),
+      this.database.match.count({ where: { matchedAt: { gte: dayStart } } }),
+    ]);
+    return {
+      totalMatches,
+      activeMatches,
+      unmatchedMatches,
+      withMessages,
+      matchedToday,
+    };
+  }
+
+  async listConversations(
+    query: AdminConversationQuery,
+  ): Promise<AdminPage<AdminConversationRecord>> {
+    const bucket = query.bucket ?? "all";
+    const where: Prisma.ConversationWhereInput = {
+      ...(query.q
+        ? {
+            OR: [
+              ...(isUuid(query.q) ? [{ id: query.q }, { matchId: query.q }] : []),
+              {
+                members: {
+                  some: {
+                    user: {
+                      username: { contains: query.q, mode: "insensitive" },
+                    },
+                  },
+                },
+              },
+              {
+                members: {
+                  some: {
+                    user: {
+                      displayName: { contains: query.q, mode: "insensitive" },
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    if (bucket === "active") {
+      where.status = ConversationStatus.ACTIVE;
+    } else if (bucket === "closed") {
+      where.status = ConversationStatus.CLOSED;
+    } else if (bucket === "reported") {
+      where.messages = { some: openReportMessageFilter };
+    }
+
+    const [rows, total] = await this.database.$transaction([
+      this.database.conversation.findMany({
+        where,
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: conversationAdminSelect,
+      }),
+      this.database.conversation.count({ where }),
+    ]);
+
+    const reportCounts = await this.openReportCountsByConversation(
+      rows.map((row) => row.id),
+    );
+
+    return {
+      items: rows.map((row) =>
+        mapAdminConversation(row, reportCounts.get(row.id) ?? 0),
+      ),
+      total,
+    };
+  }
+
+  async conversationsStats(now: Date): Promise<AdminConversationsStatsRecord> {
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const [
+      totalConversations,
+      activeConversations,
+      closedConversations,
+      reportedConversations,
+      totalMessages,
+      messagesToday,
+    ] = await Promise.all([
+      this.database.conversation.count(),
+      this.database.conversation.count({
+        where: { status: ConversationStatus.ACTIVE },
+      }),
+      this.database.conversation.count({
+        where: { status: ConversationStatus.CLOSED },
+      }),
+      this.database.conversation.count({
+        where: { messages: { some: openReportMessageFilter } },
+      }),
+      this.database.message.count({
+        where: { deletedForEveryoneAt: null },
+      }),
+      this.database.message.count({
+        where: { createdAt: { gte: dayStart }, deletedForEveryoneAt: null },
+      }),
+    ]);
+    return {
+      totalConversations,
+      activeConversations,
+      closedConversations,
+      reportedConversations,
+      totalMessages,
+      messagesToday,
+    };
+  }
+
+  async listConversationMessages(
+    conversationId: string,
+    query: OffsetPage,
+  ): Promise<AdminPage<AdminConversationMessageRecord>> {
+    const where: Prisma.MessageWhereInput = { conversationId };
+    const [rows, total] = await this.database.$transaction([
+      this.database.message.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: {
+          id: true,
+          conversationId: true,
+          type: true,
+          body: true,
+          deletedForEveryoneAt: true,
+          createdAt: true,
+          sender: { select: { id: true, username: true } },
+          mediaAsset: { select: { id: true, mimeType: true } },
+          reports: {
+            where: {
+              status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+            },
+            select: { id: true },
+          },
+        },
+      }),
+      this.database.message.count({ where }),
+    ]);
+    return {
+      items: rows.map((message) => mapAdminConversationMessage(message)),
+      total,
+    };
+  }
+
+  deleteMessageForEveryone(
+    data: DeleteAdminMessageData,
+  ): Promise<AdminConversationMessageRecord | null> {
+    return this.database.$transaction(
+      async (transaction) => {
+        const actor = await transaction.user.findFirst({
+          where: {
+            id: data.actorId,
+            status: UserStatus.ACTIVE,
+            role: {
+              in: [
+                UserRole.MODERATOR,
+                UserRole.ADMIN,
+                UserRole.SUPER_ADMIN,
+              ],
+            },
+          },
+          select: { id: true },
+        });
+        if (!actor) throw new AdminHierarchyError();
+
+        const message = await transaction.message.findUnique({
+          where: { id: data.messageId },
+          select: {
+            id: true,
+            conversationId: true,
+            senderId: true,
+            type: true,
+            body: true,
+            deletedForEveryoneAt: true,
+            createdAt: true,
+            mediaAssetId: true,
+            sender: { select: { id: true, username: true } },
+            mediaAsset: { select: { id: true, mimeType: true } },
+            reports: {
+              where: {
+                status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+              },
+              select: { id: true },
+            },
+          },
+        });
+        if (!message) return null;
+        if (message.deletedForEveryoneAt) throw new AdminStateConflictError();
+
+        const deletedAt = new Date();
+        await transaction.message.update({
+          where: { id: message.id },
+          data: {
+            body: null,
+            mediaAssetId: null,
+            deletedForEveryoneAt: deletedAt,
+          },
+        });
+        if (message.mediaAssetId) {
+          await transaction.mediaAsset.update({
+            where: { id: message.mediaAssetId },
+            data: { deletedAt },
+          });
+        }
+        await transaction.moderationAction.create({
+          data: {
+            actorId: data.actorId,
+            targetUserId: message.senderId,
+            actionCode: "MESSAGE_REMOVED",
+            note: data.note ?? null,
+            metadata: {
+              messageId: message.id,
+              conversationId: message.conversationId,
+            },
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorType: AuditActorType.ADMIN,
+            actorUserId: data.actorId,
+            action: "admin.message.deleted",
+            resourceType: "message",
+            resourceId: message.id,
+            metadata: {
+              actionCode: "MESSAGE_REMOVED",
+              conversationId: message.conversationId,
+            },
+          },
+        });
+        return mapAdminConversationMessage({
+          ...message,
+          body: null,
+          deletedForEveryoneAt: deletedAt,
+          mediaAsset: null,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  private async openReportCountsByConversation(
+    conversationIds: string[],
+  ): Promise<Map<string, number>> {
+    if (conversationIds.length === 0) return new Map();
+    const rows = await this.database.message.findMany({
+      where: {
+        conversationId: { in: conversationIds },
+        reports: {
+          some: {
+            status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+          },
+        },
+      },
+      select: { conversationId: true },
+    });
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      counts.set(row.conversationId, (counts.get(row.conversationId) ?? 0) + 1);
+    }
+    return counts;
   }
 
   async listMedia(
@@ -2284,6 +2807,101 @@ function mapAdminPost(
     isHidden: post.isHidden,
     deletedAt: post.deletedAt,
     createdAt: post.createdAt,
+  };
+}
+
+function mapAdminConversation(
+  row: Prisma.ConversationGetPayload<{ select: typeof conversationAdminSelect }>,
+  openReportCount: number,
+): AdminConversationRecord {
+  const last = row.messages[0];
+  return {
+    id: row.id,
+    status: row.status,
+    matchId: row.matchId,
+    messageCount: row._count.messages,
+    openReportCount,
+    lastMessageAt: last?.createdAt ?? null,
+    lastMessagePreview: adminMessagePreview(last),
+    lastMessageType: last?.type ?? null,
+    members: row.members.map((member) => ({
+      id: member.user.id,
+      username: member.user.username,
+      displayName: member.user.displayName,
+      profilePhotoMediaId: member.user.profilePhotoMediaId,
+    })),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function mapAdminConversationMessage(message: {
+  id: string;
+  conversationId: string;
+  type: string;
+  body: string | null;
+  deletedForEveryoneAt: Date | null;
+  createdAt: Date;
+  sender: { id: string; username: string };
+  mediaAsset: { id: string; mimeType: string } | null;
+  reports: Array<{ id: string }>;
+}): AdminConversationMessageRecord {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    senderId: message.sender.id,
+    senderUsername: message.sender.username,
+    type: message.type,
+    bodyPreview: adminMessagePreview({
+      body: message.body,
+      type: message.type as MessageType,
+      deletedForEveryoneAt: message.deletedForEveryoneAt,
+    }),
+    mediaAssetId: message.mediaAsset?.id ?? null,
+    mimeType: message.mediaAsset?.mimeType ?? null,
+    hasOpenReport: message.reports.length > 0,
+    deletedForEveryoneAt: message.deletedForEveryoneAt,
+    createdAt: message.createdAt,
+  };
+}
+
+function adminMessagePreview(
+  message:
+    | {
+        body: string | null;
+        type: MessageType | string;
+        deletedForEveryoneAt: Date | null;
+      }
+    | undefined,
+): string | null {
+  if (!message) return null;
+  if (message.deletedForEveryoneAt) return "[Removed]";
+  if (message.type === MessageType.IMAGE || message.type === "IMAGE") {
+    return message.body?.trim() ? truncatePreview(message.body) : "[Image]";
+  }
+  if (message.type === MessageType.SYSTEM || message.type === "SYSTEM") {
+    return "[System]";
+  }
+  return truncatePreview(message.body);
+}
+
+function mapAdminStory(
+  story: Prisma.StoryGetPayload<{ select: typeof storyAdminSelect }>,
+): AdminStoryRecord {
+  return {
+    id: story.id,
+    authorId: story.author.id,
+    authorUsername: story.author.username,
+    authorDisplayName: story.author.displayName,
+    authorIsVerifiedBadge: story.author.isVerifiedBadge,
+    authorProfilePhotoMediaId: story.author.profilePhotoMediaId,
+    mediaAssetId: story.mediaAsset.id,
+    mimeType: story.mediaAsset.mimeType,
+    captionPreview: truncatePreview(story.caption),
+    viewCount: story._count.views,
+    expiresAt: story.expiresAt,
+    deletedAt: story.deletedAt,
+    createdAt: story.createdAt,
   };
 }
 

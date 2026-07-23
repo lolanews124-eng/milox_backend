@@ -8,6 +8,8 @@ import type {
   AdminModerationActionRecord,
   AdminPostRecord,
   AdminPostsStatsRecord,
+  AdminStoryRecord,
+  AdminStoriesStatsRecord,
   AdminPremiumPlanRecord,
   AdminAdRecord,
   AdminAnalyticsRecord,
@@ -15,6 +17,10 @@ import type {
   AdminEmailJobRecord,
   AdminHashtagRecord,
   AdminMatchRecord,
+  AdminMatchesStatsRecord,
+  AdminConversationsStatsRecord,
+  AdminConversationRecord,
+  AdminConversationMessageRecord,
   AdminMediaContentRecord,
   AdminMediaRecord,
   AdminOutboxEventRecord,
@@ -50,6 +56,19 @@ export interface AdminPostQuery extends OffsetPage {
   mediaKind?: "image" | "video" | "text" | "audio";
   createdFrom?: Date;
   createdTo?: Date;
+}
+
+export interface AdminStoryQuery extends OffsetPage {
+  q?: string;
+  bucket?: "all" | "active" | "expired" | "removed";
+  createdFrom?: Date;
+  createdTo?: Date;
+}
+
+export interface DeleteStoryData {
+  actorId: string;
+  storyId: string;
+  note: string | null;
 }
 
 export interface UpdatePostVisibilityData {
@@ -197,6 +216,17 @@ export interface AdminMatchQuery extends OffsetPage {
   q?: string;
 }
 
+export interface AdminConversationQuery extends OffsetPage {
+  q?: string;
+  bucket?: "all" | "active" | "closed" | "reported";
+}
+
+export interface DeleteAdminMessageData {
+  actorId: string;
+  messageId: string;
+  note: string | null;
+}
+
 export interface AdminMediaQuery extends OffsetPage {
   kind?: string;
   visibility?: string;
@@ -274,6 +304,9 @@ export interface AdminRepository {
     data: UpdatePostVisibilityData,
   ): Promise<AdminPostRecord | null>;
   deletePost(data: DeletePostData): Promise<AdminPostRecord | null>;
+  listStories(query: AdminStoryQuery): Promise<AdminPage<AdminStoryRecord>>;
+  storiesStats(now: Date): Promise<AdminStoriesStatsRecord>;
+  deleteStory(data: DeleteStoryData): Promise<AdminStoryRecord | null>;
   listComments(
     query: AdminCommentQuery,
   ): Promise<AdminPage<AdminCommentRecord>>;
@@ -317,6 +350,18 @@ export interface AdminRepository {
   updateCmsPage(data: UpdateCmsPageData): Promise<AdminCmsPageRecord | null>;
   analytics(now: Date): Promise<AdminAnalyticsRecord>;
   listMatches(query: AdminMatchQuery): Promise<AdminPage<AdminMatchRecord>>;
+  matchesStats(now: Date): Promise<AdminMatchesStatsRecord>;
+  listConversations(
+    query: AdminConversationQuery,
+  ): Promise<AdminPage<AdminConversationRecord>>;
+  conversationsStats(now: Date): Promise<AdminConversationsStatsRecord>;
+  listConversationMessages(
+    conversationId: string,
+    query: OffsetPage,
+  ): Promise<AdminPage<AdminConversationMessageRecord>>;
+  deleteMessageForEveryone(
+    data: DeleteAdminMessageData,
+  ): Promise<AdminConversationMessageRecord | null>;
   listMedia(query: AdminMediaQuery): Promise<AdminPage<AdminMediaRecord>>;
   getMediaContent(mediaId: string): Promise<AdminMediaContentRecord | null>;
   updateMedia(data: UpdateMediaData): Promise<AdminMediaRecord | null>;

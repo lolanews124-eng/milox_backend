@@ -143,6 +143,30 @@ export interface AdminPostsStatsRecord {
   removedPosts: number;
 }
 
+export interface AdminStoriesStatsRecord {
+  totalStories: number;
+  activeStories: number;
+  expiredStories: number;
+  removedStories: number;
+  totalViews: number;
+}
+
+export interface AdminStoryRecord {
+  id: string;
+  authorId: string;
+  authorUsername: string;
+  authorDisplayName: string | null;
+  authorIsVerifiedBadge: boolean;
+  authorProfilePhotoMediaId: string | null;
+  mediaAssetId: string;
+  mimeType: string;
+  captionPreview: string | null;
+  viewCount: number;
+  expiresAt: Date;
+  deletedAt: Date | null;
+  createdAt: Date;
+}
+
 export interface AdminPostRecord {
   id: string;
   authorId: string;
@@ -264,6 +288,58 @@ export interface AdminAnalyticsRecord {
   demographics: AdminAnalyticsDemographics;
 }
 
+export interface AdminMatchesStatsRecord {
+  totalMatches: number;
+  activeMatches: number;
+  unmatchedMatches: number;
+  withMessages: number;
+  matchedToday: number;
+}
+
+export interface AdminConversationsStatsRecord {
+  totalConversations: number;
+  activeConversations: number;
+  closedConversations: number;
+  reportedConversations: number;
+  totalMessages: number;
+  messagesToday: number;
+}
+
+export interface AdminConversationMemberRecord {
+  id: string;
+  username: string;
+  displayName: string | null;
+  profilePhotoMediaId: string | null;
+}
+
+export interface AdminConversationRecord {
+  id: string;
+  status: string;
+  matchId: string;
+  messageCount: number;
+  openReportCount: number;
+  lastMessageAt: Date | null;
+  lastMessagePreview: string | null;
+  lastMessageType: string | null;
+  members: AdminConversationMemberRecord[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AdminConversationMessageRecord {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderUsername: string;
+  type: string;
+  bodyPreview: string | null;
+  mediaAssetId: string | null;
+  mimeType: string | null;
+  hasOpenReport: boolean;
+  deletedForEveryoneAt: Date | null;
+  createdAt: Date;
+}
+
 export interface AdminMatchRecord {
   id: string;
   status: string;
@@ -274,9 +350,11 @@ export interface AdminMatchRecord {
   userAId: string;
   userAUsername: string;
   userADisplayName: string | null;
+  userAProfilePhotoMediaId: string | null;
   userBId: string;
   userBUsername: string;
   userBDisplayName: string | null;
+  userBProfilePhotoMediaId: string | null;
   messageCount: number;
   createdAt: Date;
 }
@@ -386,6 +464,36 @@ export function presentAdminPost(post: AdminPostRecord): object {
 }
 
 export function presentAdminPostsStats(stats: AdminPostsStatsRecord): object {
+  return { ...stats };
+}
+
+export function presentAdminStory(story: AdminStoryRecord): object {
+  const now = Date.now();
+  const isActive =
+    story.deletedAt == null && story.expiresAt.getTime() > now;
+  const isExpired =
+    story.deletedAt == null && story.expiresAt.getTime() <= now;
+  return {
+    id: story.id,
+    authorId: story.authorId,
+    authorUsername: story.authorUsername,
+    authorDisplayName: story.authorDisplayName,
+    authorIsVerifiedBadge: story.authorIsVerifiedBadge,
+    authorProfilePhotoMediaId: story.authorProfilePhotoMediaId,
+    mediaAssetId: story.mediaAssetId,
+    mimeType: story.mimeType,
+    captionPreview: story.captionPreview,
+    viewCount: story.viewCount,
+    expiresAt: story.expiresAt.toISOString(),
+    deletedAt: story.deletedAt?.toISOString() ?? null,
+    createdAt: story.createdAt.toISOString(),
+    isActive,
+    isExpired,
+    isRemoved: story.deletedAt != null,
+  };
+}
+
+export function presentAdminStoriesStats(stats: AdminStoriesStatsRecord): object {
   return { ...stats };
 }
 
@@ -506,14 +614,62 @@ export function presentAdminMatch(match: AdminMatchRecord): object {
       id: match.userAId,
       username: match.userAUsername,
       displayName: match.userADisplayName,
+      profilePhotoMediaId: match.userAProfilePhotoMediaId,
     },
     userB: {
       id: match.userBId,
       username: match.userBUsername,
       displayName: match.userBDisplayName,
+      profilePhotoMediaId: match.userBProfilePhotoMediaId,
     },
     messageCount: match.messageCount,
     createdAt: match.createdAt.toISOString(),
+  };
+}
+
+export function presentAdminMatchesStats(stats: AdminMatchesStatsRecord): object {
+  return { ...stats };
+}
+
+export function presentAdminConversation(
+  conversation: AdminConversationRecord,
+): object {
+  return {
+    id: conversation.id,
+    status: conversation.status,
+    matchId: conversation.matchId,
+    messageCount: conversation.messageCount,
+    openReportCount: conversation.openReportCount,
+    lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
+    lastMessagePreview: conversation.lastMessagePreview,
+    lastMessageType: conversation.lastMessageType,
+    members: conversation.members,
+    createdAt: conversation.createdAt.toISOString(),
+    updatedAt: conversation.updatedAt.toISOString(),
+  };
+}
+
+export function presentAdminConversationsStats(
+  stats: AdminConversationsStatsRecord,
+): object {
+  return { ...stats };
+}
+
+export function presentAdminConversationMessage(
+  message: AdminConversationMessageRecord,
+): object {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    senderId: message.senderId,
+    senderUsername: message.senderUsername,
+    type: message.type,
+    bodyPreview: message.bodyPreview,
+    mediaAssetId: message.mediaAssetId,
+    mimeType: message.mimeType,
+    hasOpenReport: message.hasOpenReport,
+    deletedForEveryoneAt: message.deletedForEveryoneAt?.toISOString() ?? null,
+    createdAt: message.createdAt.toISOString(),
   };
 }
 

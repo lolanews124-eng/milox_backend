@@ -12,6 +12,9 @@ import {
   adminHashtagIdParamSchema,
   adminHashtagQuerySchema,
   adminMatchQuerySchema,
+  adminConversationQuerySchema,
+  adminConversationIdParamSchema,
+  adminMessageIdParamSchema,
   adminMediaIdParamSchema,
   adminMediaQuerySchema,
   adminOutboxEventIdParamSchema,
@@ -22,6 +25,8 @@ import {
   adminPlanIdParamSchema,
   adminPostIdParamSchema,
   adminPostQuerySchema,
+  adminStoryIdParamSchema,
+  adminStoryQuerySchema,
   adminReportIdParamSchema,
   adminReportQuerySchema,
   adminSubscriptionIdParamSchema,
@@ -35,6 +40,8 @@ import {
   createInterestTagSchema,
   createPremiumPlanSchema,
   deletePostSchema,
+  deleteStorySchema,
+  deleteAdminMessageSchema,
   grantSubscriptionSchema,
   resolveReportSchema,
   setVerifiedBadgeSchema,
@@ -161,6 +168,28 @@ export class AdminController {
     const data = await this.admin.deletePost(
       requireUser(request),
       postId,
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  listStories = async (request: Request, response: Response): Promise<void> => {
+    const query = adminStoryQuerySchema.parse(request.query);
+    const data = await this.admin.listStories(query);
+    response.status(200).json(success(request, data));
+  };
+
+  storiesStats = async (request: Request, response: Response): Promise<void> => {
+    const data = await this.admin.storiesStats();
+    response.status(200).json(success(request, data));
+  };
+
+  deleteStory = async (request: Request, response: Response): Promise<void> => {
+    const { storyId } = adminStoryIdParamSchema.parse(request.params);
+    const input = deleteStorySchema.parse(request.body as unknown);
+    const data = await this.admin.deleteStory(
+      requireUser(request),
+      storyId,
       input,
     );
     response.status(200).json(success(request, data));
@@ -364,6 +393,56 @@ export class AdminController {
   listMatches = async (request: Request, response: Response): Promise<void> => {
     const query = adminMatchQuerySchema.parse(request.query);
     const data = await this.admin.listMatches(query);
+    response.status(200).json(success(request, data));
+  };
+
+  matchesStats = async (request: Request, response: Response): Promise<void> => {
+    const data = await this.admin.matchesStats();
+    response.status(200).json(success(request, data));
+  };
+
+  listConversations = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminConversationQuerySchema.parse(request.query);
+    const data = await this.admin.listConversations(query);
+    response.status(200).json(success(request, data));
+  };
+
+  conversationsStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.conversationsStats();
+    response.status(200).json(success(request, data));
+  };
+
+  listConversationMessages = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { conversationId } = adminConversationIdParamSchema.parse(
+      request.params,
+    );
+    const query = adminConversationQuerySchema
+      .pick({ page: true, pageSize: true })
+      .parse(request.query);
+    const data = await this.admin.listConversationMessages(
+      conversationId,
+      query,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  deleteMessage = async (request: Request, response: Response): Promise<void> => {
+    const { messageId } = adminMessageIdParamSchema.parse(request.params);
+    const input = deleteAdminMessageSchema.parse(request.body as unknown);
+    const data = await this.admin.deleteMessageForEveryone(
+      requireUser(request),
+      messageId,
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 

@@ -58,6 +58,18 @@ export const adminPostIdParamSchema = z.object({
   postId: z.uuid(),
 });
 
+export const adminStoryQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  bucket: z.enum(["all", "active", "expired", "removed"]).optional(),
+  createdFrom: z.coerce.date().optional(),
+  createdTo: z.coerce.date().optional(),
+  ...offsetPageSchema,
+});
+
+export const adminStoryIdParamSchema = z.object({
+  storyId: z.uuid(),
+});
+
 export const changeUserStatusSchema = z
   .object({
     status: z.enum([
@@ -95,6 +107,8 @@ export const deletePostSchema = z
     note: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
+
+export const deleteStorySchema = deletePostSchema;
 
 export const adminCommentQuerySchema = adminPostQuerySchema;
 
@@ -247,6 +261,22 @@ export const adminMatchQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   ...offsetPageSchema,
 });
+
+export const adminConversationQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  bucket: z.enum(["all", "active", "closed", "reported"]).optional(),
+  ...offsetPageSchema,
+});
+
+export const adminConversationIdParamSchema = z.object({
+  conversationId: z.uuid(),
+});
+
+export const adminMessageIdParamSchema = z.object({
+  messageId: z.uuid(),
+});
+
+export const deleteAdminMessageSchema = deletePostSchema;
 
 export const adminMediaQuerySchema = z.object({
   kind: z.enum(MediaKind).optional(),

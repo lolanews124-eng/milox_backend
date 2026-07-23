@@ -14,6 +14,8 @@ import {
   presentAdminModerationAction,
   presentAdminPost,
   presentAdminPostsStats,
+  presentAdminStory,
+  presentAdminStoriesStats,
   presentAdminPremiumPlan,
   presentAdminAd,
   presentAdminAnalytics,
@@ -21,6 +23,10 @@ import {
   presentAdminEmailJob,
   presentAdminHashtag,
   presentAdminMatch,
+  presentAdminMatchesStats,
+  presentAdminConversation,
+  presentAdminConversationsStats,
+  presentAdminConversationMessage,
   presentAdminMedia,
   presentAdminOutboxEvent,
   presentAdminSubscription,
@@ -306,6 +312,70 @@ export class AdminService {
         throw new AppError(
           "ADMIN_STATE_CONFLICT",
           "Post has already been deleted",
+          409,
+        );
+      }
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async listStories(options: {
+    q?: string | undefined;
+    bucket?: "all" | "active" | "expired" | "removed" | undefined;
+    createdFrom?: Date | undefined;
+    createdTo?: Date | undefined;
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listStories({
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
+      ...(options.bucket ? { bucket: options.bucket } : {}),
+      ...(options.createdFrom ? { createdFrom: options.createdFrom } : {}),
+      ...(options.createdTo ? { createdTo: options.createdTo } : {}),
+    });
+    return {
+      items: result.items.map(presentAdminStory),
+      total: result.total,
+      page: options.page,
+      pageSize: options.pageSize,
+      totalPages: Math.ceil(result.total / options.pageSize),
+    };
+  }
+
+  async storiesStats(): Promise<object> {
+    const stats = await this.repository.storiesStats(new Date());
+    return presentAdminStoriesStats(stats);
+  }
+
+  async deleteStory(
+    actorId: string,
+    storyId: string,
+    input: { note?: string | undefined },
+  ): Promise<object> {
+    try {
+      const story = await this.repository.deleteStory({
+        actorId,
+        storyId,
+        note: input.note?.trim() || null,
+      });
+      if (!story) {
+        throw new AppError("ADMIN_STORY_NOT_FOUND", "Story not found", 404);
+      }
+      return presentAdminStory(story);
+    } catch (error) {
+      if (error instanceof AdminStateConflictError) {
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "Story has already been removed",
           409,
         );
       }
@@ -798,6 +868,88 @@ export class AdminService {
       ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
     });
     return paginate(result, options, presentAdminMatch);
+  }
+
+  async matchesStats(): Promise<object> {
+    const stats = await this.repository.matchesStats(new Date());
+    return presentAdminMatchesStats(stats);
+  }
+
+  async listConversations(options: {
+    q?: string | undefined;
+    bucket?: "all" | "active" | "closed" | "reported" | undefined;
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listConversations({
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
+      ...(options.bucket ? { bucket: options.bucket } : {}),
+    });
+    return {
+      items: result.items.map(presentAdminConversation),
+      total: result.total,
+      page: options.page,
+      pageSize: options.pageSize,
+      totalPages: Math.ceil(result.total / options.pageSize),
+    };
+  }
+
+  async conversationsStats(): Promise<object> {
+    const stats = await this.repository.conversationsStats(new Date());
+    return presentAdminConversationsStats(stats);
+  }
+
+  async listConversationMessages(
+    conversationId: string,
+    options: { page: number; pageSize: number },
+  ): Promise<object> {
+    const result = await this.repository.listConversationMessages(
+      conversationId,
+      options,
+    );
+    return {
+      items: result.items.map(presentAdminConversationMessage),
+      total: result.total,
+      page: options.page,
+      pageSize: options.pageSize,
+      totalPages: Math.ceil(result.total / options.pageSize),
+    };
+  }
+
+  async deleteMessageForEveryone(
+    actorId: string,
+    messageId: string,
+    input: { note?: string | undefined },
+  ): Promise<object> {
+    try {
+      const message = await this.repository.deleteMessageForEveryone({
+        actorId,
+        messageId,
+        note: input.note?.trim() || null,
+      });
+      if (!message) {
+        throw new AppError("ADMIN_MESSAGE_NOT_FOUND", "Message not found", 404);
+      }
+      return presentAdminConversationMessage(message);
+    } catch (error) {
+      if (error instanceof AdminStateConflictError) {
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "Message has already been removed",
+          409,
+        );
+      }
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      throw error;
+    }
   }
 
   async listMedia(options: {

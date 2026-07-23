@@ -102,6 +102,24 @@ export function createAdminRouter(
     asyncHandler(controller.deletePost),
   );
   router.get(
+    "/stories",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.listStories),
+  );
+  router.get(
+    "/stories/stats",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.storiesStats),
+  );
+  router.delete(
+    "/stories/:storyId",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.deleteStory),
+  );
+  router.get(
     "/comments",
     readLimit,
     moderationStaff,
@@ -246,10 +264,40 @@ export function createAdminRouter(
     asyncHandler(controller.updateCmsPage),
   );
   router.get(
+    "/matches/stats",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.matchesStats),
+  );
+  router.get(
     "/matches",
     readLimit,
     adminOnly,
     asyncHandler(controller.listMatches),
+  );
+  router.get(
+    "/conversations/stats",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.conversationsStats),
+  );
+  router.get(
+    "/conversations/:conversationId/messages",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.listConversationMessages),
+  );
+  router.get(
+    "/conversations",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.listConversations),
+  );
+  router.delete(
+    "/messages/:messageId",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.deleteMessage),
   );
   router.get(
     "/media",
