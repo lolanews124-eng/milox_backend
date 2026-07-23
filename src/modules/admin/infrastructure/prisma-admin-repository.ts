@@ -153,6 +153,14 @@ const postAdminSelect = {
   _count: { select: { media: true } },
 } satisfies Prisma.PostSelect;
 
+const openReportPostFilter: Prisma.PostWhereInput = {
+  reports: {
+    some: {
+      status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+    },
+  },
+};
+
 const commentAdminSelect = {
   id: true,
   postId: true,
@@ -595,14 +603,6 @@ export class PrismaAdminRepository implements AdminRepository {
   async listPosts(
     query: AdminPostQuery,
   ): Promise<AdminPage<AdminPostRecord>> {
-    const openReportFilter = {
-      reports: {
-        some: {
-          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
-        },
-      },
-    } as const;
-
     const bucket = query.bucket ?? "all";
     const where: Prisma.PostWhereInput = {
       ...(query.q
@@ -659,7 +659,7 @@ export class PrismaAdminRepository implements AdminRepository {
     } else {
       where.deletedAt = null;
       if (bucket === "reported") {
-        Object.assign(where, openReportFilter);
+        Object.assign(where, openReportPostFilter);
       } else if (bucket === "pending") {
         where.reports = {
           some: { status: ReportStatus.UNDER_REVIEW },
@@ -692,14 +692,6 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   async postsStats(): Promise<AdminPostsStatsRecord> {
-    const openReportFilter = {
-      reports: {
-        some: {
-          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
-        },
-      },
-    } as const;
-
     const [totalPosts, approvedPosts, reportedPosts, pendingReviewPosts, hiddenPosts, removedPosts] =
       await Promise.all([
         this.database.post.count({ where: { deletedAt: null } }),
@@ -707,7 +699,7 @@ export class PrismaAdminRepository implements AdminRepository {
           where: { deletedAt: null, isHidden: false },
         }),
         this.database.post.count({
-          where: { deletedAt: null, ...openReportFilter },
+          where: { deletedAt: null, ...openReportPostFilter },
         }),
         this.database.post.count({
           where: {
