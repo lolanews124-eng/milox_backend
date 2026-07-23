@@ -33,6 +33,7 @@ import type {
   CreateInterestTagData,
   CreateAdData,
   CreateCmsPageData,
+  CreateBlogPostData,
   CreatePremiumPlanData,
   CancelSubscriptionData,
   AdminSubscriptionQuery,
@@ -44,6 +45,8 @@ import type {
   SetVerifiedBadgeData,
   UpdateAdData,
   UpdateCmsPageData,
+  UpdateBlogPostData,
+  AdminBlogQuery,
   UpdateCommentVisibilityData,
   UpdateInterestTagData,
   UpdatePremiumPlanData,
@@ -77,6 +80,7 @@ import type {
   AdminAdRecord,
   AdminAnalyticsRecord,
   AdminCmsPageRecord,
+  AdminBlogPostRecord,
   AdminEmailJobRecord,
   AdminHashtagRecord,
   AdminMatchRecord,
@@ -1947,6 +1951,87 @@ export class PrismaAdminRepository implements AdminRepository {
     });
   }
 
+  async listBlogPosts(
+    query: AdminBlogQuery,
+  ): Promise<AdminPage<AdminBlogPostRecord>> {
+    const page = Math.max(query.page, 1);
+    const pageSize = Math.min(Math.max(query.pageSize, 1), 100);
+    const skip = (page - 1) * pageSize;
+    const where =
+      query.status !== undefined
+        ? { status: query.status as CmsPageStatus }
+        : {};
+    const [rows, total] = await Promise.all([
+      this.database.blogPost.findMany({
+        where,
+        orderBy: [{ updatedAt: "desc" }],
+        skip,
+        take: pageSize,
+      }),
+      this.database.blogPost.count({ where }),
+    ]);
+    return { items: rows.map(mapBlogPost), total };
+  }
+
+  createBlogPost(data: CreateBlogPostData): Promise<AdminBlogPostRecord> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const status = (data.status ?? "DRAFT") as CmsPageStatus;
+      const created = await transaction.blogPost.create({
+        data: {
+          slug: data.slug,
+          title: data.title,
+          excerpt: data.excerpt ?? null,
+          bodyMarkdown: data.bodyMarkdown,
+          coverImageUrl: data.coverImageUrl ?? null,
+          metaDescription: data.metaDescription ?? null,
+          status,
+          publishedAt: status === CmsPageStatus.PUBLISHED ? new Date() : null,
+        },
+      });
+      await this.writeAudit(transaction, actor.id, "admin.blog.created", "blog_post", created.id, {
+        slug: created.slug,
+      });
+      return mapBlogPost(created);
+    });
+  }
+
+  updateBlogPost(data: UpdateBlogPostData): Promise<AdminBlogPostRecord | null> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const existing = await transaction.blogPost.findUnique({
+        where: { id: data.postId },
+        select: { id: true, status: true, publishedAt: true },
+      });
+      if (!existing) return null;
+      const nextStatus = data.status as CmsPageStatus | undefined;
+      const updated = await transaction.blogPost.update({
+        where: { id: existing.id },
+        data: {
+          ...(data.slug !== undefined ? { slug: data.slug } : {}),
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(data.excerpt !== undefined ? { excerpt: data.excerpt } : {}),
+          ...(data.bodyMarkdown !== undefined ? { bodyMarkdown: data.bodyMarkdown } : {}),
+          ...(data.coverImageUrl !== undefined ? { coverImageUrl: data.coverImageUrl } : {}),
+          ...(data.metaDescription !== undefined
+            ? { metaDescription: data.metaDescription }
+            : {}),
+          ...(nextStatus !== undefined
+            ? {
+                status: nextStatus,
+                publishedAt:
+                  nextStatus === CmsPageStatus.PUBLISHED
+                    ? existing.publishedAt ?? new Date()
+                    : existing.publishedAt,
+              }
+            : {}),
+        },
+      });
+      await this.writeAudit(transaction, actor.id, "admin.blog.updated", "blog_post", updated.id, {});
+      return mapBlogPost(updated);
+    });
+  }
+
   async listMatches(
     query: AdminMatchQuery,
   ): Promise<AdminPage<AdminMatchRecord>> {
@@ -3130,6 +3215,34 @@ function mapCmsPage(page: {
     publishedAt: page.publishedAt,
     createdAt: page.createdAt,
     updatedAt: page.updatedAt,
+  };
+}
+
+function mapBlogPost(post: {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  bodyMarkdown: string;
+  coverImageUrl: string | null;
+  metaDescription: string | null;
+  status: string;
+  publishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): AdminBlogPostRecord {
+  return {
+    id: post.id,
+    slug: post.slug,
+    title: post.title,
+    excerpt: post.excerpt,
+    bodyMarkdown: post.bodyMarkdown,
+    coverImageUrl: post.coverImageUrl,
+    metaDescription: post.metaDescription,
+    status: post.status,
+    publishedAt: post.publishedAt,
+    createdAt: post.createdAt,
+    updatedAt: post.updatedAt,
   };
 }
 

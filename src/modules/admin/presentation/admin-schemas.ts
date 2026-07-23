@@ -273,6 +273,45 @@ export const adminCmsPageIdParamSchema = z.object({
   pageId: z.uuid(),
 });
 
+export const adminBlogQuerySchema = z.object({
+  status: z.enum(CmsPageStatus).optional(),
+  ...offsetPageSchema,
+});
+
+export const createBlogPostSchema = z
+  .object({
+    slug: z.string().trim().min(1).max(120).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    title: z.string().trim().min(1).max(200),
+    excerpt: z.string().trim().max(500).nullable().optional(),
+    bodyMarkdown: z.string().trim().min(1).max(100_000),
+    coverImageUrl: z.string().trim().url().max(2048).nullable().optional(),
+    metaDescription: z.string().trim().max(320).nullable().optional(),
+    status: z.enum(CmsPageStatus).optional(),
+  })
+  .strict();
+
+export const updateBlogPostSchema = z
+  .object({
+    slug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    excerpt: z.string().trim().max(500).nullable().optional(),
+    bodyMarkdown: z.string().trim().min(1).max(100_000).optional(),
+    coverImageUrl: z.string().trim().url().max(2048).nullable().optional(),
+    metaDescription: z.string().trim().max(320).nullable().optional(),
+    status: z.enum(CmsPageStatus).optional(),
+  })
+  .strict();
+
+export const adminBlogPostIdParamSchema = z.object({
+  postId: z.uuid(),
+});
+
 export const adminMatchQuerySchema = z.object({
   status: z.enum(MatchStatus).optional(),
   userId: z.uuid().optional(),

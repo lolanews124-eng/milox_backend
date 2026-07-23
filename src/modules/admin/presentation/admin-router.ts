@@ -276,6 +276,24 @@ export function createAdminRouter(
     asyncHandler(controller.updateCmsPage),
   );
   router.get(
+    "/blog-posts",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listBlogPosts),
+  );
+  router.post(
+    "/blog-posts",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.createBlogPost),
+  );
+  router.patch(
+    "/blog-posts/:postId",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.updateBlogPost),
+  );
+  router.get(
     "/matches/stats",
     readLimit,
     adminOnly,

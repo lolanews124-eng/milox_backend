@@ -15,6 +15,7 @@ import type {
   AdminAdRecord,
   AdminAnalyticsRecord,
   AdminCmsPageRecord,
+  AdminBlogPostRecord,
   AdminEmailJobRecord,
   AdminHashtagRecord,
   AdminMatchRecord,
@@ -216,6 +217,33 @@ export interface UpdateCmsPageData {
   status?: string;
 }
 
+export interface AdminBlogQuery extends OffsetPage {
+  status?: string | undefined;
+}
+
+export interface CreateBlogPostData {
+  actorId: string;
+  slug: string;
+  title: string;
+  excerpt?: string | null;
+  bodyMarkdown: string;
+  coverImageUrl?: string | null;
+  metaDescription?: string | null;
+  status?: string;
+}
+
+export interface UpdateBlogPostData {
+  actorId: string;
+  postId: string;
+  slug?: string;
+  title?: string;
+  excerpt?: string | null;
+  bodyMarkdown?: string;
+  coverImageUrl?: string | null;
+  metaDescription?: string | null;
+  status?: string;
+}
+
 export interface AdminMatchQuery extends OffsetPage {
   status?: string;
   userId?: string;
@@ -356,6 +384,9 @@ export interface AdminRepository {
   listCmsPages(query: OffsetPage): Promise<AdminPage<AdminCmsPageRecord>>;
   createCmsPage(data: CreateCmsPageData): Promise<AdminCmsPageRecord>;
   updateCmsPage(data: UpdateCmsPageData): Promise<AdminCmsPageRecord | null>;
+  listBlogPosts(query: AdminBlogQuery): Promise<AdminPage<AdminBlogPostRecord>>;
+  createBlogPost(data: CreateBlogPostData): Promise<AdminBlogPostRecord>;
+  updateBlogPost(data: UpdateBlogPostData): Promise<AdminBlogPostRecord | null>;
   analytics(now: Date): Promise<AdminAnalyticsRecord>;
   listMatches(query: AdminMatchQuery): Promise<AdminPage<AdminMatchRecord>>;
   matchesStats(now: Date): Promise<AdminMatchesStatsRecord>;

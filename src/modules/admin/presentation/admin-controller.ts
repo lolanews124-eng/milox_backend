@@ -7,6 +7,10 @@ import {
   adminAdIdParamSchema,
   adminAuditLogQuerySchema,
   adminCmsPageIdParamSchema,
+  adminBlogQuerySchema,
+  createBlogPostSchema,
+  updateBlogPostSchema,
+  adminBlogPostIdParamSchema,
   adminEmailJobIdParamSchema,
   adminEmailJobQuerySchema,
   adminHashtagIdParamSchema,
@@ -400,6 +404,25 @@ export class AdminController {
     const { pageId } = adminCmsPageIdParamSchema.parse(request.params);
     const input = updateCmsPageSchema.parse(request.body as unknown);
     const data = await this.admin.updateCmsPage(requireUser(request), pageId, input);
+    response.status(200).json(success(request, data));
+  };
+
+  listBlogPosts = async (request: Request, response: Response): Promise<void> => {
+    const query = adminBlogQuerySchema.parse(request.query);
+    const data = await this.admin.listBlogPosts(query);
+    response.status(200).json(success(request, data));
+  };
+
+  createBlogPost = async (request: Request, response: Response): Promise<void> => {
+    const input = createBlogPostSchema.parse(request.body as unknown);
+    const data = await this.admin.createBlogPost(requireUser(request), input);
+    response.status(201).json(success(request, data));
+  };
+
+  updateBlogPost = async (request: Request, response: Response): Promise<void> => {
+    const { postId } = adminBlogPostIdParamSchema.parse(request.params);
+    const input = updateBlogPostSchema.parse(request.body as unknown);
+    const data = await this.admin.updateBlogPost(requireUser(request), postId, input);
     response.status(200).json(success(request, data));
   };
 

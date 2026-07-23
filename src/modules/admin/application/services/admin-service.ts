@@ -21,6 +21,7 @@ import {
   presentAdminAd,
   presentAdminAnalytics,
   presentAdminCmsPage,
+  presentAdminBlogPost,
   presentAdminEmailJob,
   presentAdminHashtag,
   presentAdminMatch,
@@ -865,6 +866,88 @@ export class AdminService {
       });
       if (!page) throw new AppError("ADMIN_CMS_NOT_FOUND", "CMS page not found", 404);
       return presentAdminCmsPage(page);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async listBlogPosts(options: {
+    page: number;
+    pageSize: number;
+    status?: string | undefined;
+  }): Promise<object> {
+    const result = await this.repository.listBlogPosts({
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(options.status !== undefined ? { status: options.status } : {}),
+    });
+    return paginate(result, options, presentAdminBlogPost);
+  }
+
+  async createBlogPost(
+    actorId: string,
+    input: {
+      slug: string;
+      title: string;
+      excerpt?: string | null | undefined;
+      bodyMarkdown: string;
+      coverImageUrl?: string | null | undefined;
+      metaDescription?: string | null | undefined;
+      status?: string | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const post = await this.repository.createBlogPost({
+        actorId,
+        slug: input.slug,
+        title: input.title.trim(),
+        bodyMarkdown: input.bodyMarkdown,
+        excerpt: input.excerpt ?? null,
+        coverImageUrl: input.coverImageUrl ?? null,
+        metaDescription: input.metaDescription ?? null,
+        ...(input.status !== undefined ? { status: input.status } : {}),
+      });
+      return presentAdminBlogPost(post);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async updateBlogPost(
+    actorId: string,
+    postId: string,
+    input: {
+      slug?: string | undefined;
+      title?: string | undefined;
+      excerpt?: string | null | undefined;
+      bodyMarkdown?: string | undefined;
+      coverImageUrl?: string | null | undefined;
+      metaDescription?: string | null | undefined;
+      status?: string | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const post = await this.repository.updateBlogPost({
+        actorId,
+        postId,
+        ...(input.slug !== undefined ? { slug: input.slug } : {}),
+        ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+        ...(input.excerpt !== undefined ? { excerpt: input.excerpt } : {}),
+        ...(input.bodyMarkdown !== undefined ? { bodyMarkdown: input.bodyMarkdown } : {}),
+        ...(input.coverImageUrl !== undefined ? { coverImageUrl: input.coverImageUrl } : {}),
+        ...(input.metaDescription !== undefined
+          ? { metaDescription: input.metaDescription }
+          : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+      });
+      if (!post) throw new AppError("NOT_FOUND", "Blog post not found", 404);
+      return presentAdminBlogPost(post);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);

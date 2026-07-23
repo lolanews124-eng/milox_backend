@@ -9,6 +9,7 @@ import { getConfig, getAllowedOrigins, type AppConfig } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { createAdminModule } from "./modules/admin/index.js";
 import { createAuthModule } from "./modules/auth/index.js";
+import { createBlogModule } from "./modules/blog/index.js";
 import { createChatModule } from "./modules/chat/index.js";
 import { createCommentModule } from "./modules/comments/index.js";
 import { createFeedModule } from "./modules/feed/index.js";
@@ -48,6 +49,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     rewardsRepository,
   );
   const admin = createAdminModule(config, database, auth.authenticate);
+  const blog = createBlogModule(database);
   const posts = createPostModule(config, database, {
     authenticate: auth.authenticate,
     optionalAuthenticate: auth.optionalAuthenticate,
@@ -173,6 +175,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/blocks", moderation.blocksRouter);
   app.use("/api/v1/reports", moderation.reportsRouter);
   app.use("/api/v1/admin", admin.router);
+  app.use("/api/v1/blog", blog.router);
   app.use(notFoundHandler);
   app.use(errorHandler);
 

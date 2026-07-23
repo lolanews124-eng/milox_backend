@@ -301,6 +301,20 @@ export interface AdminCmsPageRecord {
   updatedAt: Date;
 }
 
+export interface AdminBlogPostRecord {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  bodyMarkdown: string;
+  coverImageUrl: string | null;
+  metaDescription: string | null;
+  status: string;
+  publishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface AdminAnalyticsDemographics {
   totalUsers: number;
   gender: Array<{ key: string; label: string; count: number; percentage: number }>;
@@ -633,6 +647,22 @@ export function presentAdminCmsPage(page: AdminCmsPageRecord): object {
     publishedAt: page.publishedAt?.toISOString() ?? null,
     createdAt: page.createdAt.toISOString(),
     updatedAt: page.updatedAt.toISOString(),
+  };
+}
+
+export function presentAdminBlogPost(post: AdminBlogPostRecord): object {
+  return {
+    id: post.id,
+    slug: post.slug,
+    title: post.title,
+    excerpt: post.excerpt,
+    bodyMarkdown: post.bodyMarkdown,
+    coverImageUrl: post.coverImageUrl,
+    metaDescription: post.metaDescription,
+    status: post.status,
+    publishedAt: post.publishedAt?.toISOString() ?? null,
+    createdAt: post.createdAt.toISOString(),
+    updatedAt: post.updatedAt.toISOString(),
   };
 }
 
