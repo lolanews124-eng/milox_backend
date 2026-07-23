@@ -42,6 +42,12 @@ export function createAdminRouter(
     asyncHandler(controller.listUsers),
   );
   router.get(
+    "/users/verification/stats",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.verificationStats),
+  );
+  router.get(
     "/users/stats",
     readLimit,
     adminOnly,
@@ -118,6 +124,12 @@ export function createAdminRouter(
     mutationLimit,
     moderationStaff,
     asyncHandler(controller.deleteStory),
+  );
+  router.get(
+    "/comments/stats",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.commentsStats),
   );
   router.get(
     "/comments",

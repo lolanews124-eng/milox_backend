@@ -65,6 +65,7 @@ import {
 import type {
   AdminAuditLogRecord,
   AdminCommentRecord,
+  AdminCommentsStatsRecord,
   AdminDashboardRecord,
   AdminInterestTagRecord,
   AdminModerationActionRecord,
@@ -91,6 +92,7 @@ import type {
   AdminUserDetailRecord,
   AdminUserRecord,
   AdminUsersStatsRecord,
+  AdminVerificationStatsRecord,
 } from "../application/admin-view.js";
 
 const adminUserSelect = {
@@ -174,16 +176,39 @@ const openReportPostFilter: Prisma.PostWhereInput = {
   },
 };
 
+const openReportCommentFilter: Prisma.CommentWhereInput = {
+  reports: {
+    some: {
+      status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+    },
+  },
+};
+
 const commentAdminSelect = {
   id: true,
   postId: true,
+  parentId: true,
+  depth: true,
+  replyCount: true,
   body: true,
   likeCount: true,
   isHidden: true,
   deletedAt: true,
   createdAt: true,
   author: {
-    select: { id: true, username: true },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      isVerifiedBadge: true,
+      profilePhotoMediaId: true,
+    },
+  },
+  reports: {
+    where: {
+      status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+    },
+    select: { id: true },
   },
 } satisfies Prisma.CommentSelect;
 
@@ -386,6 +411,33 @@ export class PrismaAdminRepository implements AdminRepository {
     };
   }
 
+  async verificationStats(): Promise<AdminVerificationStatsRecord> {
+    const activeWhere = {
+      deletedAt: null,
+      status: UserStatus.ACTIVE,
+    } as const;
+
+    const [totalActive, pendingBadge, verifiedBadge, emailUnverified] = await Promise.all([
+      this.database.user.count({ where: activeWhere }),
+      this.database.user.count({
+        where: { ...activeWhere, isVerifiedBadge: false },
+      }),
+      this.database.user.count({
+        where: { ...activeWhere, isVerifiedBadge: true },
+      }),
+      this.database.user.count({
+        where: { ...activeWhere, emailVerifiedAt: null },
+      }),
+    ]);
+
+    return {
+      totalActive,
+      pendingBadge,
+      verifiedBadge,
+      emailUnverified,
+    };
+  }
+
   async listUsers(
     query: AdminUserQuery,
   ): Promise<AdminPage<AdminUserRecord>> {
@@ -408,6 +460,11 @@ export class PrismaAdminRepository implements AdminRepository {
             },
           }
         : {}),
+      ...(query.emailVerified === true
+        ? { emailVerifiedAt: { not: null } }
+        : query.emailVerified === false
+          ? { emailVerifiedAt: null }
+          : {}),
       ...(query.q
         ? {
             OR: [
@@ -1020,22 +1077,55 @@ export class PrismaAdminRepository implements AdminRepository {
   async listComments(
     query: AdminCommentQuery,
   ): Promise<AdminPage<AdminCommentRecord>> {
+    const bucket = query.bucket ?? "all";
     const where: Prisma.CommentWhereInput = {
-      ...(query.includeDeleted ? {} : { deletedAt: null }),
-      ...(query.hidden !== undefined ? { isHidden: query.hidden } : {}),
       ...(query.q
         ? {
             OR: [
               { body: { contains: query.q, mode: "insensitive" } },
+              ...(isUuid(query.q) ? [{ id: query.q }] : []),
               {
                 author: {
                   username: { contains: query.q, mode: "insensitive" },
                 },
               },
+              {
+                author: {
+                  displayName: { contains: query.q, mode: "insensitive" },
+                },
+              },
             ],
           }
         : {}),
+      ...(query.createdFrom || query.createdTo
+        ? {
+            createdAt: {
+              ...(query.createdFrom ? { gte: query.createdFrom } : {}),
+              ...(query.createdTo ? { lte: query.createdTo } : {}),
+            },
+          }
+        : {}),
     };
+
+    if (bucket === "removed") {
+      where.deletedAt = { not: null };
+    } else {
+      where.deletedAt = null;
+      if (bucket === "reported") {
+        Object.assign(where, openReportCommentFilter);
+      } else if (bucket === "hidden") {
+        where.isHidden = true;
+      } else if (bucket === "replies") {
+        where.depth = { gt: 0 };
+      } else if (query.hidden !== undefined) {
+        where.isHidden = query.hidden;
+      }
+    }
+
+    if (query.includeDeleted && bucket !== "removed") {
+      delete where.deletedAt;
+    }
+
     const [rows, total] = await this.database.$transaction([
       this.database.comment.findMany({
         where,
@@ -1049,6 +1139,41 @@ export class PrismaAdminRepository implements AdminRepository {
     return {
       items: rows.map(mapAdminComment),
       total,
+    };
+  }
+
+  async commentsStats(): Promise<AdminCommentsStatsRecord> {
+    const [
+      totalComments,
+      visibleComments,
+      reportedComments,
+      hiddenComments,
+      removedComments,
+      replyComments,
+    ] = await Promise.all([
+      this.database.comment.count({ where: { deletedAt: null } }),
+      this.database.comment.count({
+        where: { deletedAt: null, isHidden: false },
+      }),
+      this.database.comment.count({
+        where: { deletedAt: null, ...openReportCommentFilter },
+      }),
+      this.database.comment.count({
+        where: { deletedAt: null, isHidden: true },
+      }),
+      this.database.comment.count({ where: { deletedAt: { not: null } } }),
+      this.database.comment.count({
+        where: { deletedAt: null, depth: { gt: 0 } },
+      }),
+    ]);
+
+    return {
+      totalComments,
+      visibleComments,
+      reportedComments,
+      hiddenComments,
+      removedComments,
+      replyComments,
     };
   }
 
@@ -2911,10 +3036,17 @@ function mapAdminComment(
   return {
     id: comment.id,
     postId: comment.postId,
+    parentId: comment.parentId,
+    depth: comment.depth,
+    replyCount: comment.replyCount,
     authorId: comment.author.id,
     authorUsername: comment.author.username,
+    authorDisplayName: comment.author.displayName,
+    authorIsVerifiedBadge: comment.author.isVerifiedBadge,
+    authorProfilePhotoMediaId: comment.author.profilePhotoMediaId,
     bodyPreview: truncatePreview(comment.body),
     likeCount: comment.likeCount,
+    hasOpenReport: comment.reports.length > 0,
     isHidden: comment.isHidden,
     deletedAt: comment.deletedAt,
     createdAt: comment.createdAt,

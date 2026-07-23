@@ -29,6 +29,10 @@ export const adminUserQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  emailVerified: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   ...offsetPageSchema,
 });
 
@@ -110,7 +114,21 @@ export const deletePostSchema = z
 
 export const deleteStorySchema = deletePostSchema;
 
-export const adminCommentQuerySchema = adminPostQuerySchema;
+export const adminCommentQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  hidden: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  includeDeleted: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  bucket: z.enum(["all", "reported", "hidden", "removed", "replies"]).optional(),
+  createdFrom: z.coerce.date().optional(),
+  createdTo: z.coerce.date().optional(),
+  ...offsetPageSchema,
+});
 
 export const adminCommentIdParamSchema = z.object({
   commentId: z.uuid(),

@@ -3,6 +3,7 @@ import type { ReportStatus, UserRole, UserStatus } from "@prisma/client";
 import type {
   AdminAuditLogRecord,
   AdminCommentRecord,
+  AdminCommentsStatsRecord,
   AdminDashboardRecord,
   AdminInterestTagRecord,
   AdminModerationActionRecord,
@@ -29,6 +30,7 @@ import type {
   AdminUserDetailRecord,
   AdminUserRecord,
   AdminUsersStatsRecord,
+  AdminVerificationStatsRecord,
 } from "../admin-view.js";
 
 export interface OffsetPage {
@@ -42,6 +44,7 @@ export interface AdminUserQuery extends OffsetPage {
   verified?: boolean;
   online?: boolean;
   reported?: boolean;
+  emailVerified?: boolean;
 }
 
 export interface AdminReportQuery extends OffsetPage {
@@ -88,6 +91,9 @@ export interface AdminCommentQuery extends OffsetPage {
   q?: string;
   hidden?: boolean;
   includeDeleted?: boolean;
+  bucket?: "all" | "reported" | "hidden" | "removed" | "replies";
+  createdFrom?: Date;
+  createdTo?: Date;
 }
 
 export interface UpdateCommentVisibilityData {
@@ -283,6 +289,7 @@ export class AdminStateConflictError extends Error {}
 export interface AdminRepository {
   dashboard(now: Date): Promise<AdminDashboardRecord>;
   usersStats(now: Date): Promise<AdminUsersStatsRecord>;
+  verificationStats(): Promise<AdminVerificationStatsRecord>;
   listUsers(query: AdminUserQuery): Promise<AdminPage<AdminUserRecord>>;
   getUserById(userId: string): Promise<AdminUserDetailRecord | null>;
   listUserModerationHistory(
@@ -310,6 +317,7 @@ export interface AdminRepository {
   listComments(
     query: AdminCommentQuery,
   ): Promise<AdminPage<AdminCommentRecord>>;
+  commentsStats(): Promise<AdminCommentsStatsRecord>;
   updateCommentVisibility(
     data: UpdateCommentVisibilityData,
   ): Promise<AdminCommentRecord | null>;

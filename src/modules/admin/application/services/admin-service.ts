@@ -10,6 +10,7 @@ import {
 import {
   presentAdminAuditLog,
   presentAdminComment,
+  presentAdminCommentsStats,
   presentAdminInterestTag,
   presentAdminModerationAction,
   presentAdminPost,
@@ -34,6 +35,7 @@ import {
   presentAdminUser,
   presentAdminUserDetail,
   presentAdminUsersStats,
+  presentAdminVerificationStats,
 } from "../admin-view.js";
 
 export class AdminService {
@@ -48,12 +50,18 @@ export class AdminService {
     return presentAdminUsersStats(stats);
   }
 
+  async verificationStats(): Promise<object> {
+    const stats = await this.repository.verificationStats();
+    return presentAdminVerificationStats(stats);
+  }
+
   async listUsers(options: {
     q?: string | undefined;
     status?: UserStatus | undefined;
     verified?: boolean | undefined;
     online?: boolean | undefined;
     reported?: boolean | undefined;
+    emailVerified?: boolean | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -65,6 +73,7 @@ export class AdminService {
       ...(options.verified !== undefined ? { verified: options.verified } : {}),
       ...(options.online ? { online: true } : {}),
       ...(options.reported ? { reported: true } : {}),
+      ...(options.emailVerified !== undefined ? { emailVerified: options.emailVerified } : {}),
     });
     return {
       items: result.items.map(presentAdminUser),
@@ -394,6 +403,9 @@ export class AdminService {
     q?: string | undefined;
     hidden?: boolean | undefined;
     includeDeleted?: boolean | undefined;
+    bucket?: "all" | "reported" | "hidden" | "removed" | "replies" | undefined;
+    createdFrom?: Date | undefined;
+    createdTo?: Date | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -403,6 +415,9 @@ export class AdminService {
       ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
       ...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
       ...(options.includeDeleted ? { includeDeleted: true } : {}),
+      ...(options.bucket ? { bucket: options.bucket } : {}),
+      ...(options.createdFrom ? { createdFrom: options.createdFrom } : {}),
+      ...(options.createdTo ? { createdTo: options.createdTo } : {}),
     });
     return {
       items: result.items.map(presentAdminComment),
@@ -411,6 +426,11 @@ export class AdminService {
       pageSize: options.pageSize,
       totalPages: Math.ceil(result.total / options.pageSize),
     };
+  }
+
+  async commentsStats(): Promise<object> {
+    const stats = await this.repository.commentsStats();
+    return presentAdminCommentsStats(stats);
   }
 
   async updateCommentVisibility(

@@ -16,6 +16,13 @@ export interface AdminUsersStatsRecord {
   reportedUsers: number;
 }
 
+export interface AdminVerificationStatsRecord {
+  pendingBadge: number;
+  verifiedBadge: number;
+  emailUnverified: number;
+  totalActive: number;
+}
+
 export interface AdminDashboardRecord {
   totalUsers: number;
   dailyActiveUsers: number;
@@ -92,6 +99,10 @@ export function presentAdminUser(user: AdminUserRecord): object {
 }
 
 export function presentAdminUsersStats(stats: AdminUsersStatsRecord): object {
+  return { ...stats };
+}
+
+export function presentAdminVerificationStats(stats: AdminVerificationStatsRecord): object {
   return { ...stats };
 }
 
@@ -187,13 +198,29 @@ export interface AdminPostRecord {
   createdAt: Date;
 }
 
+export interface AdminCommentsStatsRecord {
+  totalComments: number;
+  visibleComments: number;
+  reportedComments: number;
+  hiddenComments: number;
+  removedComments: number;
+  replyComments: number;
+}
+
 export interface AdminCommentRecord {
   id: string;
   postId: string;
+  parentId: string | null;
+  depth: number;
+  replyCount: number;
   authorId: string;
   authorUsername: string;
+  authorDisplayName: string | null;
+  authorIsVerifiedBadge: boolean;
+  authorProfilePhotoMediaId: string | null;
   bodyPreview: string | null;
   likeCount: number;
+  hasOpenReport: boolean;
   isHidden: boolean;
   deletedAt: Date | null;
   createdAt: Date;
@@ -497,14 +524,25 @@ export function presentAdminStoriesStats(stats: AdminStoriesStatsRecord): object
   return { ...stats };
 }
 
+export function presentAdminCommentsStats(stats: AdminCommentsStatsRecord): object {
+  return { ...stats };
+}
+
 export function presentAdminComment(comment: AdminCommentRecord): object {
   return {
     id: comment.id,
     postId: comment.postId,
+    parentId: comment.parentId,
+    depth: comment.depth,
+    replyCount: comment.replyCount,
     authorId: comment.authorId,
     authorUsername: comment.authorUsername,
+    authorDisplayName: comment.authorDisplayName,
+    authorIsVerifiedBadge: comment.authorIsVerifiedBadge,
+    authorProfilePhotoMediaId: comment.authorProfilePhotoMediaId,
     bodyPreview: comment.bodyPreview,
     likeCount: comment.likeCount,
+    hasOpenReport: comment.hasOpenReport,
     isHidden: comment.isHidden,
     deletedAt: comment.deletedAt?.toISOString() ?? null,
     createdAt: comment.createdAt.toISOString(),
