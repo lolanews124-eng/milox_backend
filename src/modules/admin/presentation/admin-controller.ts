@@ -69,6 +69,14 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
+  usersStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.usersStats();
+    response.status(200).json(success(request, data));
+  };
+
   getUser = async (request: Request, response: Response): Promise<void> => {
     const { userId } = adminUserIdParamSchema.parse(request.params);
     const data = await this.admin.getUser(userId);
@@ -125,6 +133,11 @@ export class AdminController {
   listPosts = async (request: Request, response: Response): Promise<void> => {
     const query = adminPostQuerySchema.parse(request.query);
     const data = await this.admin.listPosts(query);
+    response.status(200).json(success(request, data));
+  };
+
+  postsStats = async (request: Request, response: Response): Promise<void> => {
+    const data = await this.admin.postsStats();
     response.status(200).json(success(request, data));
   };
 

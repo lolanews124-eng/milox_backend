@@ -13,6 +13,7 @@ import {
   presentAdminInterestTag,
   presentAdminModerationAction,
   presentAdminPost,
+  presentAdminPostsStats,
   presentAdminPremiumPlan,
   presentAdminAd,
   presentAdminAnalytics,
@@ -26,6 +27,7 @@ import {
   presentAdminReport,
   presentAdminUser,
   presentAdminUserDetail,
+  presentAdminUsersStats,
 } from "../admin-view.js";
 
 export class AdminService {
@@ -35,10 +37,17 @@ export class AdminService {
     return this.repository.dashboard(new Date());
   }
 
+  async usersStats(): Promise<object> {
+    const stats = await this.repository.usersStats(new Date());
+    return presentAdminUsersStats(stats);
+  }
+
   async listUsers(options: {
     q?: string | undefined;
     status?: UserStatus | undefined;
     verified?: boolean | undefined;
+    online?: boolean | undefined;
+    reported?: boolean | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -48,6 +57,8 @@ export class AdminService {
       ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
       ...(options.status ? { status: options.status } : {}),
       ...(options.verified !== undefined ? { verified: options.verified } : {}),
+      ...(options.online ? { online: true } : {}),
+      ...(options.reported ? { reported: true } : {}),
     });
     return {
       items: result.items.map(presentAdminUser),
@@ -208,6 +219,10 @@ export class AdminService {
     q?: string | undefined;
     hidden?: boolean | undefined;
     includeDeleted?: boolean | undefined;
+    bucket?: "all" | "reported" | "pending" | "hidden" | "removed" | undefined;
+    mediaKind?: "image" | "video" | "text" | "audio" | undefined;
+    createdFrom?: Date | undefined;
+    createdTo?: Date | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -217,6 +232,10 @@ export class AdminService {
       ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
       ...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
       ...(options.includeDeleted ? { includeDeleted: true } : {}),
+      ...(options.bucket ? { bucket: options.bucket } : {}),
+      ...(options.mediaKind ? { mediaKind: options.mediaKind } : {}),
+      ...(options.createdFrom ? { createdFrom: options.createdFrom } : {}),
+      ...(options.createdTo ? { createdTo: options.createdTo } : {}),
     });
     return {
       items: result.items.map(presentAdminPost),
@@ -225,6 +244,11 @@ export class AdminService {
       pageSize: options.pageSize,
       totalPages: Math.ceil(result.total / options.pageSize),
     };
+  }
+
+  async postsStats(): Promise<object> {
+    const stats = await this.repository.postsStats();
+    return presentAdminPostsStats(stats);
   }
 
   async updatePostVisibility(

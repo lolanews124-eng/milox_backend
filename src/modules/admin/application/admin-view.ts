@@ -5,6 +5,17 @@ import type {
   UserStatus,
 } from "@prisma/client";
 
+export interface AdminUsersStatsRecord {
+  totalUsers: number;
+  verifiedUsers: number;
+  onlineNow: number;
+  newUsersToday: number;
+  maleUsers: number;
+  femaleUsers: number;
+  suspendedUsers: number;
+  reportedUsers: number;
+}
+
 export interface AdminDashboardRecord {
   totalUsers: number;
   dailyActiveUsers: number;
@@ -27,6 +38,8 @@ export interface AdminUserRecord {
   status: UserStatus;
   isVerifiedBadge: boolean;
   country: string | null;
+  profilePhotoMediaId: string | null;
+  lastSeenAt: Date | null;
   followerCount: number;
   followingCount: number;
   postCount: number;
@@ -65,6 +78,8 @@ export function presentAdminUser(user: AdminUserRecord): object {
     status: user.status,
     isVerifiedBadge: user.isVerifiedBadge,
     country: user.country,
+    profilePhotoMediaId: user.profilePhotoMediaId,
+    lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
     followerCount: user.followerCount,
     followingCount: user.followingCount,
     postCount: user.postCount,
@@ -74,6 +89,10 @@ export function presentAdminUser(user: AdminUserRecord): object {
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
+}
+
+export function presentAdminUsersStats(stats: AdminUsersStatsRecord): object {
+  return { ...stats };
 }
 
 export function presentAdminReport(report: AdminReportRecord): object {
@@ -99,6 +118,7 @@ export interface AdminUserDetailRecord extends AdminUserRecord {
   bio: string | null;
   country: string;
   gender: string;
+  ageRange: string;
   isPrivateAccount: boolean;
   lastSeenAt: Date | null;
   reportsAgainstCount: number;
@@ -114,16 +134,30 @@ export interface AdminModerationActionRecord {
   createdAt: Date;
 }
 
+export interface AdminPostsStatsRecord {
+  totalPosts: number;
+  approvedPosts: number;
+  reportedPosts: number;
+  pendingReviewPosts: number;
+  hiddenPosts: number;
+  removedPosts: number;
+}
+
 export interface AdminPostRecord {
   id: string;
   authorId: string;
   authorUsername: string;
   authorDisplayName: string | null;
+  authorIsVerifiedBadge: boolean;
+  authorProfilePhotoMediaId: string | null;
   bodyPreview: string | null;
   mediaCount: number;
   mediaPreview: Array<{ id: string; mimeType: string }>;
   likeCount: number;
   commentCount: number;
+  shareCount: number;
+  hasOpenReport: boolean;
+  hasPendingReview: boolean;
   isHidden: boolean;
   deletedAt: Date | null;
   createdAt: Date;
@@ -308,6 +342,7 @@ export function presentAdminUserDetail(user: AdminUserDetailRecord): object {
     bio: user.bio,
     country: user.country,
     gender: user.gender,
+    ageRange: user.ageRange,
     isPrivateAccount: user.isPrivateAccount,
     lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
     reportsAgainstCount: user.reportsAgainstCount,
@@ -334,15 +369,24 @@ export function presentAdminPost(post: AdminPostRecord): object {
     authorId: post.authorId,
     authorUsername: post.authorUsername,
     authorDisplayName: post.authorDisplayName,
+    authorIsVerifiedBadge: post.authorIsVerifiedBadge,
+    authorProfilePhotoMediaId: post.authorProfilePhotoMediaId,
     bodyPreview: post.bodyPreview,
     mediaCount: post.mediaCount,
     mediaPreview: post.mediaPreview,
     likeCount: post.likeCount,
     commentCount: post.commentCount,
+    shareCount: post.shareCount,
+    hasOpenReport: post.hasOpenReport,
+    hasPendingReview: post.hasPendingReview,
     isHidden: post.isHidden,
     deletedAt: post.deletedAt?.toISOString() ?? null,
     createdAt: post.createdAt.toISOString(),
   };
+}
+
+export function presentAdminPostsStats(stats: AdminPostsStatsRecord): object {
+  return { ...stats };
 }
 
 export function presentAdminComment(comment: AdminCommentRecord): object {

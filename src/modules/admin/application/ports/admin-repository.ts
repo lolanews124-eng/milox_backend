@@ -7,6 +7,7 @@ import type {
   AdminInterestTagRecord,
   AdminModerationActionRecord,
   AdminPostRecord,
+  AdminPostsStatsRecord,
   AdminPremiumPlanRecord,
   AdminAdRecord,
   AdminAnalyticsRecord,
@@ -21,6 +22,7 @@ import type {
   AdminReportRecord,
   AdminUserDetailRecord,
   AdminUserRecord,
+  AdminUsersStatsRecord,
 } from "../admin-view.js";
 
 export interface OffsetPage {
@@ -32,6 +34,8 @@ export interface AdminUserQuery extends OffsetPage {
   q?: string;
   status?: UserStatus;
   verified?: boolean;
+  online?: boolean;
+  reported?: boolean;
 }
 
 export interface AdminReportQuery extends OffsetPage {
@@ -42,6 +46,10 @@ export interface AdminPostQuery extends OffsetPage {
   q?: string;
   hidden?: boolean;
   includeDeleted?: boolean;
+  bucket?: "all" | "reported" | "pending" | "hidden" | "removed";
+  mediaKind?: "image" | "video" | "text" | "audio";
+  createdFrom?: Date;
+  createdTo?: Date;
 }
 
 export interface UpdatePostVisibilityData {
@@ -244,6 +252,7 @@ export class AdminStateConflictError extends Error {}
 
 export interface AdminRepository {
   dashboard(now: Date): Promise<AdminDashboardRecord>;
+  usersStats(now: Date): Promise<AdminUsersStatsRecord>;
   listUsers(query: AdminUserQuery): Promise<AdminPage<AdminUserRecord>>;
   getUserById(userId: string): Promise<AdminUserDetailRecord | null>;
   listUserModerationHistory(
@@ -260,6 +269,7 @@ export interface AdminRepository {
     data: ResolveReportData,
   ): Promise<AdminReportRecord | null>;
   listPosts(query: AdminPostQuery): Promise<AdminPage<AdminPostRecord>>;
+  postsStats(): Promise<AdminPostsStatsRecord>;
   updatePostVisibility(
     data: UpdatePostVisibilityData,
   ): Promise<AdminPostRecord | null>;

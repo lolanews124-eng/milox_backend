@@ -21,6 +21,14 @@ export const adminUserQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  online: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  reported: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   ...offsetPageSchema,
 });
 
@@ -39,6 +47,10 @@ export const adminPostQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  bucket: z.enum(["all", "reported", "pending", "hidden", "removed"]).optional(),
+  mediaKind: z.enum(["image", "video", "text", "audio"]).optional(),
+  createdFrom: z.coerce.date().optional(),
+  createdTo: z.coerce.date().optional(),
   ...offsetPageSchema,
 });
 

@@ -62,6 +62,7 @@ import type {
   AdminInterestTagRecord,
   AdminModerationActionRecord,
   AdminPostRecord,
+  AdminPostsStatsRecord,
   AdminPremiumPlanRecord,
   AdminAdRecord,
   AdminAnalyticsRecord,
@@ -76,6 +77,7 @@ import type {
   AdminReportRecord,
   AdminUserDetailRecord,
   AdminUserRecord,
+  AdminUsersStatsRecord,
 } from "../application/admin-view.js";
 
 const adminUserSelect = {
@@ -88,6 +90,8 @@ const adminUserSelect = {
   status: true,
   isVerifiedBadge: true,
   country: true,
+  profilePhotoMediaId: true,
+  lastSeenAt: true,
   followerCount: true,
   followingCount: true,
   postCount: true,
@@ -120,11 +124,18 @@ const postAdminSelect = {
   body: true,
   likeCount: true,
   commentCount: true,
+  shareCount: true,
   isHidden: true,
   deletedAt: true,
   createdAt: true,
   author: {
-    select: { id: true, username: true, displayName: true },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      isVerifiedBadge: true,
+      profilePhotoMediaId: true,
+    },
   },
   media: {
     orderBy: { sortOrder: "asc" },
@@ -132,6 +143,12 @@ const postAdminSelect = {
     select: {
       mediaAsset: { select: { id: true, mimeType: true } },
     },
+  },
+  reports: {
+    where: {
+      status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+    },
+    select: { status: true },
   },
   _count: { select: { media: true } },
 } satisfies Prisma.PostSelect;
@@ -221,12 +238,92 @@ export class PrismaAdminRepository implements AdminRepository {
     });
   }
 
+  async usersStats(now: Date): Promise<AdminUsersStatsRecord> {
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const onlineSince = new Date(now.getTime() - 15 * 60 * 1000);
+    const activeWhere = {
+      deletedAt: null,
+      status: { not: UserStatus.DELETED },
+    } as const;
+
+    const [
+      totalUsers,
+      verifiedUsers,
+      onlineNow,
+      newUsersToday,
+      suspendedUsers,
+      reportedUsers,
+      genderGroups,
+    ] = await Promise.all([
+      this.database.user.count({ where: activeWhere }),
+      this.database.user.count({
+        where: { ...activeWhere, isVerifiedBadge: true },
+      }),
+      this.database.user.count({
+        where: { ...activeWhere, lastSeenAt: { gte: onlineSince } },
+      }),
+      this.database.user.count({
+        where: { ...activeWhere, createdAt: { gte: dayStart } },
+      }),
+      this.database.user.count({ where: { status: UserStatus.SUSPENDED } }),
+      this.database.user.count({
+        where: {
+          ...activeWhere,
+          reportsAgainst: {
+            some: {
+              status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+            },
+          },
+        },
+      }),
+      this.database.user.groupBy({
+        by: ["gender"],
+        where: activeWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const maleUsers =
+      genderGroups.find((row) => row.gender === "MALE")?._count._all ?? 0;
+    const femaleUsers =
+      genderGroups.find((row) => row.gender === "FEMALE")?._count._all ?? 0;
+
+    return {
+      totalUsers,
+      verifiedUsers,
+      onlineNow,
+      newUsersToday,
+      maleUsers,
+      femaleUsers,
+      suspendedUsers,
+      reportedUsers,
+    };
+  }
+
   async listUsers(
     query: AdminUserQuery,
   ): Promise<AdminPage<AdminUserRecord>> {
     const where: Prisma.UserWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.verified !== undefined ? { isVerifiedBadge: query.verified } : {}),
+      ...(query.online
+        ? {
+            lastSeenAt: {
+              gte: new Date(Date.now() - 15 * 60 * 1000),
+            },
+          }
+        : {}),
+      ...(query.reported
+        ? {
+            reportsAgainst: {
+              some: {
+                status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+              },
+            },
+          }
+        : {}),
       ...(query.q
         ? {
             OR: [
@@ -258,6 +355,7 @@ export class PrismaAdminRepository implements AdminRepository {
         bio: true,
         country: true,
         gender: true,
+        ageRange: true,
         isPrivateAccount: true,
         lastSeenAt: true,
       },
@@ -497,13 +595,21 @@ export class PrismaAdminRepository implements AdminRepository {
   async listPosts(
     query: AdminPostQuery,
   ): Promise<AdminPage<AdminPostRecord>> {
+    const openReportFilter = {
+      reports: {
+        some: {
+          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+        },
+      },
+    } as const;
+
+    const bucket = query.bucket ?? "all";
     const where: Prisma.PostWhereInput = {
-      ...(query.includeDeleted ? {} : { deletedAt: null }),
-      ...(query.hidden !== undefined ? { isHidden: query.hidden } : {}),
       ...(query.q
         ? {
             OR: [
               { body: { contains: query.q, mode: "insensitive" } },
+              ...(isUuid(query.q) ? [{ id: query.q }] : []),
               {
                 author: {
                   username: { contains: query.q, mode: "insensitive" },
@@ -517,7 +623,58 @@ export class PrismaAdminRepository implements AdminRepository {
             ],
           }
         : {}),
+      ...(query.createdFrom || query.createdTo
+        ? {
+            createdAt: {
+              ...(query.createdFrom ? { gte: query.createdFrom } : {}),
+              ...(query.createdTo ? { lte: query.createdTo } : {}),
+            },
+          }
+        : {}),
+      ...(query.mediaKind === "text"
+        ? { media: { none: {} }, body: { not: null } }
+        : query.mediaKind === "image"
+          ? {
+              media: {
+                some: { mediaAsset: { mimeType: { startsWith: "image/" } } },
+              },
+            }
+          : query.mediaKind === "video"
+            ? {
+                media: {
+                  some: { mediaAsset: { mimeType: { startsWith: "video/" } } },
+                },
+              }
+            : query.mediaKind === "audio"
+              ? {
+                  media: {
+                    some: { mediaAsset: { mimeType: { startsWith: "audio/" } } },
+                  },
+                }
+              : {}),
     };
+
+    if (bucket === "removed") {
+      where.deletedAt = { not: null };
+    } else {
+      where.deletedAt = null;
+      if (bucket === "reported") {
+        Object.assign(where, openReportFilter);
+      } else if (bucket === "pending") {
+        where.reports = {
+          some: { status: ReportStatus.UNDER_REVIEW },
+        };
+      } else if (bucket === "hidden") {
+        where.isHidden = true;
+      } else if (query.hidden !== undefined) {
+        where.isHidden = query.hidden;
+      }
+    }
+
+    if (query.includeDeleted && bucket !== "removed") {
+      delete where.deletedAt;
+    }
+
     const [rows, total] = await this.database.$transaction([
       this.database.post.findMany({
         where,
@@ -531,6 +688,46 @@ export class PrismaAdminRepository implements AdminRepository {
     return {
       items: rows.map((post) => mapAdminPost(post)),
       total,
+    };
+  }
+
+  async postsStats(): Promise<AdminPostsStatsRecord> {
+    const openReportFilter = {
+      reports: {
+        some: {
+          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+        },
+      },
+    } as const;
+
+    const [totalPosts, approvedPosts, reportedPosts, pendingReviewPosts, hiddenPosts, removedPosts] =
+      await Promise.all([
+        this.database.post.count({ where: { deletedAt: null } }),
+        this.database.post.count({
+          where: { deletedAt: null, isHidden: false },
+        }),
+        this.database.post.count({
+          where: { deletedAt: null, ...openReportFilter },
+        }),
+        this.database.post.count({
+          where: {
+            deletedAt: null,
+            reports: { some: { status: ReportStatus.UNDER_REVIEW } },
+          },
+        }),
+        this.database.post.count({
+          where: { deletedAt: null, isHidden: true },
+        }),
+        this.database.post.count({ where: { deletedAt: { not: null } } }),
+      ]);
+
+    return {
+      totalPosts,
+      approvedPosts,
+      reportedPosts,
+      pendingReviewPosts,
+      hiddenPosts,
+      removedPosts,
     };
   }
 
@@ -2062,14 +2259,25 @@ function truncatePreview(body: string | null): string | null {
   return `${trimmed.slice(0, 157)}…`;
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 function mapAdminPost(
   post: Prisma.PostGetPayload<{ select: typeof postAdminSelect }>,
 ): AdminPostRecord {
+  const hasPendingReview = post.reports.some(
+    (report) => report.status === ReportStatus.UNDER_REVIEW,
+  );
   return {
     id: post.id,
     authorId: post.author.id,
     authorUsername: post.author.username,
     authorDisplayName: post.author.displayName,
+    authorIsVerifiedBadge: post.author.isVerifiedBadge,
+    authorProfilePhotoMediaId: post.author.profilePhotoMediaId,
     bodyPreview: truncatePreview(post.body),
     mediaCount: post._count.media,
     mediaPreview: post.media.map((row) => ({
@@ -2078,6 +2286,9 @@ function mapAdminPost(
     })),
     likeCount: post.likeCount,
     commentCount: post.commentCount,
+    shareCount: post.shareCount,
+    hasOpenReport: post.reports.length > 0,
+    hasPendingReview,
     isHidden: post.isHidden,
     deletedAt: post.deletedAt,
     createdAt: post.createdAt,

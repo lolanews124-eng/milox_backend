@@ -42,6 +42,12 @@ export function createAdminRouter(
     asyncHandler(controller.listUsers),
   );
   router.get(
+    "/users/stats",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.usersStats),
+  );
+  router.get(
     "/users/:userId",
     readLimit,
     adminOnly,
@@ -76,6 +82,12 @@ export function createAdminRouter(
     readLimit,
     moderationStaff,
     asyncHandler(controller.listPosts),
+  );
+  router.get(
+    "/posts/stats",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.postsStats),
   );
   router.patch(
     "/posts/:postId/visibility",
