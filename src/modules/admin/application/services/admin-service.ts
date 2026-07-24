@@ -38,6 +38,7 @@ import {
   presentAdminUsersStats,
   presentAdminVerificationStats,
 } from "../admin-view.js";
+import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 
 export class AdminService {
   constructor(private readonly repository: AdminRepository) {}
@@ -910,6 +911,9 @@ export class AdminService {
         metaDescription: input.metaDescription ?? null,
         ...(input.status !== undefined ? { status: input.status } : {}),
       });
+      if (post.status === "PUBLISHED") {
+        void notifyIndexNow(["/blog", `/blog/${post.slug}`, "/sitemap.xml"]);
+      }
       return presentAdminBlogPost(post);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
@@ -947,6 +951,9 @@ export class AdminService {
         ...(input.status !== undefined ? { status: input.status } : {}),
       });
       if (!post) throw new AppError("NOT_FOUND", "Blog post not found", 404);
+      if (post.status === "PUBLISHED") {
+        void notifyIndexNow(["/blog", `/blog/${post.slug}`, "/sitemap.xml"]);
+      }
       return presentAdminBlogPost(post);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {

@@ -8,6 +8,8 @@ import { createApp } from "./app.js";
 import { getConfig, getAllowedOrigins } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { ensureDefaultInterestTags } from "./infrastructure/interest-tags.js";
+import { notifyIndexNow } from "./infrastructure/indexnow.js";
+import { ensureLaunchBlogPost } from "./infrastructure/launch-blog-post.js";
 import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
 import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
@@ -92,6 +94,16 @@ void (async () => {
     await ensureDefaultInterestTags(prisma);
   } catch (error: unknown) {
     console.error("Could not ensure default interest tags", error);
+  }
+
+  try {
+    const blog = await ensureLaunchBlogPost(prisma);
+    console.info(
+      `Launch blog post ensured (${blog.slug})${blog.created ? " — created" : " — updated"}`,
+    );
+    void notifyIndexNow(["/blog", `/blog/${blog.slug}`, "/sitemap.xml"]);
+  } catch (error: unknown) {
+    console.error("Could not ensure launch blog post", error);
   }
 
   httpServer.listen(port, () => {
