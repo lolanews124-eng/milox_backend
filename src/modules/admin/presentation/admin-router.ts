@@ -2,12 +2,50 @@ import {
   UserRole,
   type PrismaClient,
 } from "@prisma/client";
-import { Router, type RequestHandler } from "express";
+import {
+  Router,
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
+import multer, { MulterError } from "multer";
 
+import { AppError } from "../../../shared/errors/app-error.js";
 import { asyncHandler } from "../../../shared/http/async-handler.js";
 import { createRateLimit } from "../../../shared/http/rate-limit.js";
 import { requireCurrentRole } from "./admin-authorization.js";
 import type { AdminController } from "./admin-controller.js";
+
+const blogImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1,
+    fields: 4,
+  },
+});
+
+const blogImageMiddleware: RequestHandler = (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
+  blogImageUpload.single("file")(request, response, (error: unknown) => {
+    if (error instanceof MulterError) {
+      const tooLarge = error.code === "LIMIT_FILE_SIZE";
+      next(
+        new AppError(
+          tooLarge ? "PAYLOAD_TOO_LARGE" : "VALIDATION_ERROR",
+          tooLarge ? "Image must be 10 MB or smaller" : "Invalid file upload",
+          tooLarge ? 413 : 400,
+        ),
+      );
+      return;
+    }
+    next(error);
+  });
+};
 
 export function createAdminRouter(
   controller: AdminController,
@@ -27,6 +65,7 @@ export function createAdminRouter(
   const superAdminOnly = requireCurrentRole(database, [UserRole.SUPER_ADMIN]);
   const readLimit = createRateLimit(300, 10 * 60 * 1_000);
   const mutationLimit = createRateLimit(60, 10 * 60 * 1_000);
+  const uploadLimit = createRateLimit(30, 10 * 60 * 1_000);
 
   router.use(authenticate);
   router.get(
@@ -292,6 +331,13 @@ export function createAdminRouter(
     mutationLimit,
     adminOnly,
     asyncHandler(controller.updateBlogPost),
+  );
+  router.post(
+    "/blog-uploads",
+    uploadLimit,
+    adminOnly,
+    blogImageMiddleware,
+    asyncHandler(controller.uploadBlogImage),
   );
   router.get(
     "/matches/stats",

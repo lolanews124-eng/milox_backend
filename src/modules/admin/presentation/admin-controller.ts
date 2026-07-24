@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
 import path from "node:path";
+import { MediaKind } from "@prisma/client";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import type { MediaService } from "../../media/application/services/media-service.js";
 import type { AdminService } from "../application/services/admin-service.js";
 import {
   adminAdIdParamSchema,
@@ -61,6 +63,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly uploadRoot: string,
+    private readonly media: MediaService,
   ) {}
 
   dashboard = async (
@@ -424,6 +427,32 @@ export class AdminController {
     const input = updateBlogPostSchema.parse(request.body as unknown);
     const data = await this.admin.updateBlogPost(requireUser(request), postId, input);
     response.status(200).json(success(request, data));
+  };
+
+  uploadBlogImage = async (request: Request, response: Response): Promise<void> => {
+    if (!request.file) {
+      throw new AppError("VALIDATION_ERROR", "Image file is required", 400, [
+        { field: "file", issue: "required" },
+      ]);
+    }
+    const actor = requireUser(request);
+    const asset = (await this.media.uploadImage(
+      actor,
+      MediaKind.POST_IMAGE,
+      request.file.buffer,
+    )) as { id: string; url: string | null; mimeType: string; width: number | null; height: number | null };
+    if (!asset.url) {
+      throw new AppError("INTERNAL_ERROR", "Uploaded image has no public URL", 500);
+    }
+    response.status(201).json(
+      success(request, {
+        id: asset.id,
+        url: asset.url,
+        mimeType: asset.mimeType,
+        width: asset.width,
+        height: asset.height,
+      }),
+    );
   };
 
   listMatches = async (request: Request, response: Response): Promise<void> => {
