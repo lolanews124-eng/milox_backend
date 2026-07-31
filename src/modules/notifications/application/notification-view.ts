@@ -16,9 +16,12 @@ export interface NotificationViewRecord {
   actor: PostAuthorViewRecord | null;
 }
 
+import type { NotificationPreview } from "./notification-preview.js";
+
 export function presentNotification(
   notification: NotificationViewRecord,
   config: AppConfig,
+  preview: NotificationPreview | null = null,
 ): object {
   return {
     id: notification.id,
@@ -27,6 +30,7 @@ export function presentNotification(
       ? presentPublicAuthor(notification.actor, config)
       : null,
     payload: notification.payload,
+    preview,
     isRead: notification.isRead,
     readAt: notification.readAt?.toISOString() ?? null,
     createdAt: notification.createdAt.toISOString(),

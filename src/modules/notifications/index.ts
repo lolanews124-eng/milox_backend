@@ -21,7 +21,7 @@ export function createNotificationService(
   const cursors = new FeedCursorCodec(
     config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
   );
-  return new NotificationService(repository, cursors, config);
+  return new NotificationService(repository, cursors, config, database);
 }
 
 export function createNotificationModule(

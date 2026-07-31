@@ -34,8 +34,10 @@ export interface AuthSession {
 export interface PrivateAuthUser {
   id: string;
   username: string;
+  displayName: string | null;
   email: string;
   emailVerified: boolean;
+  isVerifiedBadge: boolean;
   ageRange: AgeRange;
   country: string;
   gender: Gender;
@@ -293,8 +295,10 @@ function mapPrivateUser(user: AuthUser): PrivateAuthUser {
   return {
     id: user.id,
     username: user.username,
+    displayName: user.displayName,
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
+    isVerifiedBadge: user.isVerifiedBadge,
     ageRange: user.ageRange,
     country: user.country,
     gender: user.gender,

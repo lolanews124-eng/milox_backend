@@ -1,3 +1,4 @@
+import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../src/config/env.js";
@@ -90,10 +91,15 @@ describe("NotificationService", () => {
 function createService(
   repository: NotificationRepository,
 ): NotificationService {
+  const database = {
+    post: { findMany: vi.fn().mockResolvedValue([]) },
+  } as unknown as PrismaClient;
+
   return new NotificationService(
     repository,
     new FeedCursorCodec(config.JWT_ACCESS_SECRET),
     config,
+    database,
   );
 }
 

@@ -3,6 +3,7 @@ import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 export interface AuthUser {
   id: string;
   username: string;
+  displayName: string | null;
   email: string;
   passwordHash: string;
   ageRange: AgeRange;
@@ -10,6 +11,7 @@ export interface AuthUser {
   gender: Gender;
   role: UserRole;
   status: UserStatus;
+  isVerifiedBadge: boolean;
   emailVerifiedAt: Date | null;
   createdAt: Date;
 }

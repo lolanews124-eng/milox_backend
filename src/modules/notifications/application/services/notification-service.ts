@@ -1,6 +1,7 @@
 import type {
   NotificationType,
   Prisma,
+  PrismaClient,
 } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
@@ -15,6 +16,9 @@ import {
 import {
   presentNotification,
 } from "../notification-view.js";
+import {
+  buildNotificationPreviews,
+} from "../notification-preview.js";
 
 export interface NotificationPage {
   items: object[];
@@ -27,6 +31,7 @@ export class NotificationService {
     private readonly repository: NotificationRepository,
     private readonly cursors: FeedCursorCodec,
     private readonly config: AppConfig,
+    private readonly database: PrismaClient,
   ) {}
 
   async list(
@@ -60,9 +65,14 @@ export class NotificationService {
     const hasMore = rows.length > options.limit;
     const pageRows = rows.slice(0, options.limit);
     const last = pageRows.at(-1);
+    const previews = await buildNotificationPreviews(
+      pageRows,
+      this.database,
+      this.config,
+    );
     return {
       items: pageRows.map((row) =>
-        presentNotification(row, this.config),
+        presentNotification(row, this.config, previews.get(row.id) ?? null),
       ),
       nextCursor:
         hasMore && last
@@ -110,9 +120,17 @@ export class NotificationService {
     payload: Prisma.InputJsonObject;
   }): Promise<object | null> {
     const notification = await this.repository.create(data);
-    return notification
-      ? presentNotification(notification, this.config)
-      : null;
+    if (!notification) return null;
+    const previews = await buildNotificationPreviews(
+      [notification],
+      this.database,
+      this.config,
+    );
+    return presentNotification(
+      notification,
+      this.config,
+      previews.get(notification.id) ?? null,
+    );
   }
 
   resolveMessageTarget(

@@ -18,6 +18,7 @@ import type { SignupRewardsWriter } from "../../rewards/application/ports/reward
 const authUserSelect = {
   id: true,
   username: true,
+  displayName: true,
   email: true,
   passwordHash: true,
   ageRange: true,
@@ -25,6 +26,7 @@ const authUserSelect = {
   gender: true,
   role: true,
   status: true,
+  isVerifiedBadge: true,
   emailVerifiedAt: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;

@@ -1,3 +1,4 @@
+import type { PrismaClient } from "@prisma/client";
 import express, { type RequestHandler } from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
@@ -76,10 +77,15 @@ describe("notification HTTP contract", () => {
 });
 
 function createTestApp(repository: NotificationRepository) {
+  const database = {
+    post: { findMany: vi.fn().mockResolvedValue([]) },
+  } as unknown as PrismaClient;
+
   const service = new NotificationService(
     repository,
     new FeedCursorCodec(config.JWT_ACCESS_SECRET),
     config,
+    database,
   );
   const controller = new NotificationController(service);
   const authenticate: RequestHandler = (req, _res, next) => {
