@@ -386,3 +386,33 @@ export const adminHashtagQuerySchema = z.object({
 export const adminHashtagIdParamSchema = z.object({
   hashtagId: z.uuid(),
 });
+
+const officialMessageButtonSchema = z
+  .object({
+    label: z.string().trim().min(1).max(64),
+    actionType: z.enum(["OPEN_URL", "NAVIGATE"]),
+    url: z.string().trim().url().max(500).optional(),
+    route: z.string().trim().min(1).max(64).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.actionType === "OPEN_URL" && !value.url) {
+      context.addIssue({
+        code: "custom",
+        message: "url is required for OPEN_URL buttons",
+        path: ["url"],
+      });
+    }
+    if (value.actionType === "NAVIGATE" && !value.route) {
+      context.addIssue({
+        code: "custom",
+        message: "route is required for NAVIGATE buttons",
+        path: ["route"],
+      });
+    }
+  });
+
+export const broadcastOfficialMessageSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
+  buttons: z.array(officialMessageButtonSchema).max(4).optional(),
+  mediaId: z.uuid().optional(),
+});

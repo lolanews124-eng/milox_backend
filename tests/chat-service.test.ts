@@ -184,6 +184,7 @@ function messageFixture(
     replyToId: null,
     type: "TEXT",
     body: "hello privately",
+    metadata: null,
     deliveryStatus: "SENT",
     editedAt: null,
     deletedForEveryoneAt: overrides.deleted
@@ -198,7 +199,10 @@ function messageFixture(
 function conversationFixture(hidePrivateFields: boolean): ConversationViewRecord {
   return {
     id: conversationId,
+    kind: "MATCH",
     matchId: "11111111-1111-4111-8111-111111111111",
+    isOfficial: false,
+    isReadOnly: false,
     peer: {
       id: peerId,
       username: "peer",

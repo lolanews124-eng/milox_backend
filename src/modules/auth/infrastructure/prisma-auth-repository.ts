@@ -4,6 +4,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 
+import type { SignupOfficialChatWriter } from "../../official-chat/infrastructure/prisma-official-chat-repository.js";
 import type {
   AuthRepository,
   AuthUser,
@@ -27,6 +28,7 @@ const authUserSelect = {
   role: true,
   status: true,
   isVerifiedBadge: true,
+  isSystemAccount: true,
   emailVerifiedAt: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;
@@ -35,6 +37,7 @@ export class PrismaAuthRepository implements AuthRepository {
   constructor(
     private readonly database: PrismaClient,
     private readonly signupRewards?: SignupRewardsWriter,
+    private readonly signupOfficialChat?: SignupOfficialChatWriter,
   ) {}
 
   findUserByEmail(email: string): Promise<AuthUser | null> {
@@ -58,8 +61,10 @@ export class PrismaAuthRepository implements AuthRepository {
           data: {
             username: data.username,
             usernameNormalized: data.usernameNormalized,
+            usernameChangedAt: new Date(),
             email: data.email,
             passwordHash: data.passwordHash,
+            displayName: data.displayName,
             ageRange: data.ageRange,
             country: data.country,
             gender: data.gender,
@@ -96,6 +101,16 @@ export class PrismaAuthRepository implements AuthRepository {
             username: user.username,
             ...(data.referralCode ? { referralCode: data.referralCode } : {}),
           });
+        }
+
+        if (this.signupOfficialChat) {
+          await this.signupOfficialChat.bootstrapWelcomeInTransaction(
+            transaction,
+            {
+              userId: user.id,
+              displayName: data.displayName,
+            },
+          );
         }
 
         return user;

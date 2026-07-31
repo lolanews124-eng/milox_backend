@@ -13,6 +13,7 @@ import {
 } from "./presentation/auth-middleware.js";
 import { createAuthRouter } from "./presentation/auth-router.js";
 import type { SignupRewardsWriter } from "../rewards/application/ports/rewards-repository.js";
+import type { SignupOfficialChatWriter } from "../official-chat/infrastructure/prisma-official-chat-repository.js";
 
 export interface AuthModule {
   router: Router;
@@ -26,9 +27,14 @@ export function createAuthModule(
   config: AppConfig,
   database: PrismaClient,
   signupRewards?: SignupRewardsWriter,
+  signupOfficialChat?: SignupOfficialChatWriter,
 ): AuthModule {
   const crypto = new CryptoService(config);
-  const repository = new PrismaAuthRepository(database, signupRewards);
+  const repository = new PrismaAuthRepository(
+    database,
+    signupRewards,
+    signupOfficialChat,
+  );
   const service = new AuthService(repository, crypto, config);
   const controller = new AuthController(service, config);
 

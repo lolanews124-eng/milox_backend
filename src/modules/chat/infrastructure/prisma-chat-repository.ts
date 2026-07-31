@@ -1,4 +1,5 @@
 import {
+  ConversationKind,
   ConversationStatus,
   MatchStatus,
   MediaKind,
@@ -34,6 +35,7 @@ import { visibleUserCardWhere } from "../../posts/infrastructure/post-query-poli
 import {
   conversationViewSelect,
   messageViewSelect,
+  activeConversationWhere,
 } from "./chat-query-policy.js";
 
 const CREATE_SCOPE = "messages.create";
@@ -147,9 +149,12 @@ export class PrismaChatRepository implements ChatRepository {
             data.senderId,
             data.conversationId,
           ),
-          select: { id: true },
+          select: { id: true, kind: true },
         });
         if (!conversation) return null;
+        if (conversation.kind === ConversationKind.OFFICIAL) {
+          throw new ChatActionConflictError("read_only");
+        }
 
         if (data.mediaId) {
           const media = await transaction.mediaAsset.findFirst({
@@ -493,7 +498,10 @@ export class PrismaChatRepository implements ChatRepository {
       where: {
         id: conversationId,
         status: ConversationStatus.ACTIVE,
-        match: { is: { status: MatchStatus.ACTIVE } },
+        OR: [
+          { kind: ConversationKind.OFFICIAL },
+          { match: { is: { status: MatchStatus.ACTIVE } } },
+        ],
       },
       select: {
         members: {
@@ -634,31 +642,6 @@ export class PrismaChatRepository implements ChatRepository {
   }
 }
 
-function activeConversationWhere(
-  userId: string,
-  conversationId?: string,
-): Prisma.ConversationWhereInput {
-  return {
-    ...(conversationId ? { id: conversationId } : {}),
-    status: ConversationStatus.ACTIVE,
-    members: { some: { userId, leftAt: null } },
-    match: {
-      is: {
-        status: MatchStatus.ACTIVE,
-        OR: [
-          {
-            userAId: userId,
-            userB: { is: visibleUserCardWhere(userId) },
-          },
-          {
-            userBId: userId,
-            userA: { is: visibleUserCardWhere(userId) },
-          },
-        ],
-      },
-    },
-  };
-}
 
 function conversationCursorWhere(
   before: ConversationPageQuery["before"],
@@ -694,10 +677,20 @@ function mapConversation(
 ): ConversationViewRecord {
   const member = row.members[0];
   if (!member) throw new Error("Conversation member projection is missing");
+  const isOfficial = row.kind === ConversationKind.OFFICIAL;
+  const peer = isOfficial
+    ? row.peerMembers[0]?.user
+    : row.match.userAId === userId
+      ? row.match.userB
+      : row.match.userA;
+  if (!peer) throw new Error("Conversation peer projection is missing");
   return {
     id: row.id,
+    kind: row.kind,
     matchId: row.matchId,
-    peer: row.match.userAId === userId ? row.match.userB : row.match.userA,
+    isOfficial,
+    isReadOnly: isOfficial,
+    peer,
     unreadCount: member.unreadCount,
     isMuted: member.isMuted,
     isPinned: member.isPinned,

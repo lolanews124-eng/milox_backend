@@ -4,6 +4,8 @@ import { MediaKind } from "@prisma/client";
 
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { MediaService } from "../../media/application/services/media-service.js";
+import type { OfficialChatService } from "../../official-chat/application/official-chat-service.js";
+import type { OfficialMessageButton } from "../../official-chat/official-chat-types.js";
 import type { AdminService } from "../application/services/admin-service.js";
 import {
   adminAdIdParamSchema,
@@ -39,6 +41,7 @@ import {
   adminSubscriptionQuerySchema,
   adminUserIdParamSchema,
   adminUserQuerySchema,
+  broadcastOfficialMessageSchema,
   changeStaffRoleSchema,
   changeUserStatusSchema,
   createAdSchema,
@@ -64,6 +67,7 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly uploadRoot: string,
     private readonly media: MediaService,
+    private readonly officialChat?: OfficialChatService,
   ) {}
 
   dashboard = async (
@@ -582,6 +586,43 @@ export class AdminController {
     const { hashtagId } = adminHashtagIdParamSchema.parse(request.params);
     const data = await this.admin.deleteHashtag(requireUser(request), hashtagId);
     response.status(200).json(success(request, data));
+  };
+
+  broadcastOfficialMessage = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    if (!this.officialChat) {
+      throw new AppError(
+        "SERVICE_UNAVAILABLE",
+        "Official messaging is not configured",
+        503,
+      );
+    }
+    const input = broadcastOfficialMessageSchema.parse(request.body);
+    const buttons = input.buttons?.map(
+      (button): OfficialMessageButton => ({
+        label: button.label,
+        action:
+          button.actionType === "OPEN_URL"
+            ? { type: "OPEN_URL", url: button.url! }
+            : { type: "NAVIGATE", route: button.route! },
+      }),
+    );
+    void this.officialChat
+      .broadcast({
+        body: input.body,
+        ...(buttons?.length ? { buttons } : {}),
+        ...(input.mediaId ? { mediaId: input.mediaId } : {}),
+      })
+      .catch((error: unknown) => {
+        console.error("Official message broadcast failed", error);
+      });
+    response.status(202).json(
+      success(request, {
+        message: "Broadcast started for all users",
+      }),
+    );
   };
 }
 

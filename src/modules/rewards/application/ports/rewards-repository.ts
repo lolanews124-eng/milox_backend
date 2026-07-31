@@ -8,6 +8,8 @@ export class InsufficientWalletBalanceError extends Error {}
 
 export class RewardedAdDailyLimitError extends Error {}
 
+export class InvalidReferralCodeError extends Error {}
+
 export interface WalletSummary {
   balance: number;
   lifetimeEarned: number;

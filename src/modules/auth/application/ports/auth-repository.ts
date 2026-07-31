@@ -12,6 +12,7 @@ export interface AuthUser {
   role: UserRole;
   status: UserStatus;
   isVerifiedBadge: boolean;
+  isSystemAccount: boolean;
   emailVerifiedAt: Date | null;
   createdAt: Date;
 }
@@ -21,6 +22,7 @@ export interface CreateAccountData {
   usernameNormalized: string;
   email: string;
   passwordHash: string;
+  displayName: string;
   ageRange: AgeRange;
   country: string;
   gender: Gender;

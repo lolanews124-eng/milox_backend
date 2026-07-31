@@ -8,6 +8,7 @@ import { createApp } from "./app.js";
 import { getConfig, getAllowedOrigins } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { ensureDefaultInterestTags } from "./infrastructure/interest-tags.js";
+import { ensureMiloxOfficialUser } from "./infrastructure/milox-official-user.js";
 import { notifyIndexNow } from "./infrastructure/indexnow.js";
 import { ensureLaunchBlogPost } from "./infrastructure/launch-blog-post.js";
 import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
@@ -16,6 +17,7 @@ import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
 import { NotificationOutboxWorker } from "./jobs/notifications/notification-outbox-worker.js";
 import { CryptoService } from "./modules/auth/application/services/crypto-service.js";
 import { createChatService } from "./modules/chat/index.js";
+import { createOfficialChatModule } from "./modules/official-chat/index.js";
 import {
   registerChatGateway,
   type ChatClientToServerEvents,
@@ -34,66 +36,76 @@ const port = config.PORT;
 const chatOutboxHooks = {
   wake: () => {},
 };
-const app = createApp({
-  chatOutboxWake: () => chatOutboxHooks.wake(),
-});
-const httpServer = createServer(app);
 
-const io = new Server<
+let io: Server<
   ChatClientToServerEvents,
   ChatServerToClientEvents,
   Record<never, never>,
   ChatSocketData
->(httpServer, {
-  cors: {
-    origin: getAllowedOrigins(config),
-    credentials: true,
-  },
-});
-const chatService = createChatService(config, prisma);
-const chatOutboxWorker = new ChatOutboxWorker(
-  prisma,
-  chatService,
-  io,
-  config,
-);
-chatOutboxHooks.wake = () => chatOutboxWorker.wake();
-const notificationService = createNotificationService(config, prisma);
-const pushSender = createPushSender(
-  new PrismaPushDeviceRepository(prisma),
-  config,
-);
-const notificationOutboxWorker = new NotificationOutboxWorker(
-  prisma,
-  notificationService,
-  io,
-  config,
-  pushSender,
-);
+>;
+let chatOutboxWorker: ChatOutboxWorker;
+let notificationOutboxWorker: NotificationOutboxWorker;
+let httpServer: ReturnType<typeof createServer>;
 
-io.use((socket, next) => {
-  const token: unknown = socket.handshake.auth.token;
-  if (typeof token !== "string") {
-    next(unauthenticatedSocketError());
-    return;
-  }
-  void crypto
-    .verifyAccessToken(token)
-    .then((claims) => {
-      socket.data.auth = claims;
-      next();
-    })
-    .catch(() => {
+async function bootstrap(): Promise<void> {
+  const officialChat = await createOfficialChatModule(prisma);
+  const app = createApp({
+    chatOutboxWake: () => chatOutboxHooks.wake(),
+    signupOfficialChat: officialChat.signupWriter,
+    officialChat: officialChat.service,
+  });
+  httpServer = createServer(app);
+
+  io = new Server(httpServer, {
+    cors: {
+      origin: getAllowedOrigins(config),
+      credentials: true,
+    },
+  });
+  const chatService = createChatService(config, prisma);
+  chatOutboxWorker = new ChatOutboxWorker(prisma, chatService, io, config);
+  chatOutboxHooks.wake = () => chatOutboxWorker.wake();
+  const notificationService = createNotificationService(config, prisma);
+  const pushSender = createPushSender(
+    new PrismaPushDeviceRepository(prisma),
+    config,
+  );
+  notificationOutboxWorker = new NotificationOutboxWorker(
+    prisma,
+    notificationService,
+    io,
+    config,
+    pushSender,
+  );
+
+  io.use((socket, next) => {
+    const token: unknown = socket.handshake.auth.token;
+    if (typeof token !== "string") {
       next(unauthenticatedSocketError());
-    });
-});
-registerChatGateway(io, chatService);
+      return;
+    }
+    void crypto
+      .verifyAccessToken(token)
+      .then((claims) => {
+        socket.data.auth = claims;
+        next();
+      })
+      .catch(() => {
+        next(unauthenticatedSocketError());
+      });
+  });
+  registerChatGateway(io, chatService);
 
-void (async () => {
   try {
     await ensureDefaultInterestTags(prisma);
   } catch (error: unknown) {
     console.error("Could not ensure default interest tags", error);
+  }
+
+  try {
+    await ensureMiloxOfficialUser(prisma);
+  } catch (error: unknown) {
+    console.error("Could not ensure Milox Official user", error);
   }
 
   try {
@@ -113,7 +125,12 @@ void (async () => {
     void chatOutboxWorker.start();
     void notificationOutboxWorker.start();
   });
-})();
+}
+
+void bootstrap().catch((error: unknown) => {
+  console.error("Failed to start Milox API", error);
+  process.exit(1);
+});
 
 async function shutdown(signal: string): Promise<void> {
   console.info(`Received ${signal}; shutting down`);

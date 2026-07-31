@@ -54,7 +54,31 @@ describe("UserService privacy projections", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND", statusCode: 404 });
   });
 
-  it("enforces the 30-day username cooldown", async () => {
+  it("reports incomplete profiles from getMe projection", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findById).mockResolvedValue(
+      profileFixture({
+        profilePhoto: null,
+        relationshipGoal: null,
+        interests: [],
+      }),
+    );
+    const service = createService(repository);
+
+    const output = await service.getMe("user-id");
+
+    expect(output).toMatchObject({
+      profileComplete: false,
+      profileCompletionMissing: expect.arrayContaining([
+        "profilePhoto",
+        "relationshipGoal",
+        "interests",
+      ]),
+      canChangeUsername: false,
+    });
+  });
+
+  it("enforces the 15-day username cooldown", async () => {
     const repository = createRepository();
     vi.mocked(repository.findById).mockResolvedValue(
       profileFixture({ usernameChangedAt: new Date() }),

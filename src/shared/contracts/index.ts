@@ -22,3 +22,13 @@ export {
   type CountryName,
 } from "./countries.js";
 export { ageRangeSchema, countrySchema } from "./profile-fields.js";
+export {
+  PROFILE_COMPLETION_FIELD_LABELS,
+  USERNAME_COOLDOWN_DAYS,
+  USERNAME_COOLDOWN_MS,
+  assessProfileCompletion,
+  canChangeUsername,
+  usernameChangeAvailableAt,
+  type ProfileCompletionField,
+  type ProfileCompletionInput,
+} from "./profile-completion.js";

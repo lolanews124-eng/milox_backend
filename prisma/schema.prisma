@@ -107,6 +107,11 @@ enum ConversationStatus {
   CLOSED
 }
 
+enum ConversationKind {
+  MATCH
+  OFFICIAL
+}
+
 enum MessageType {
   TEXT
   IMAGE
@@ -236,6 +241,8 @@ model User {
   websiteUrl          String?           @db.VarChar(255)
   instagramHandle     String?           @db.VarChar(64)
   isVerifiedBadge     Boolean           @default(false)
+  /// System-owned accounts (e.g. Milox Official) cannot sign in via the app.
+  isSystemAccount     Boolean           @default(false)
   isPrivateAccount    Boolean           @default(false)
   hideAge             Boolean           @default(false)
   hideCountry         Boolean           @default(false)
@@ -302,6 +309,7 @@ model User {
   referralsMade       Referral[]          @relation("ReferralsMade")
   referralReceived    Referral?           @relation("ReferralReceived")
   pushDevices         PushDevice[]
+  officialConversation Conversation? @relation("OfficialConversationRecipient")
 
   @@index([status, createdAt])
   @@index([referredByUserId])
@@ -708,17 +716,22 @@ model Match {
 // -----------------------------------------------------------------------------
 
 model Conversation {
-  id        String             @id @default(uuid()) @db.Uuid
-  matchId   String             @unique @db.Uuid
-  status    ConversationStatus @default(ACTIVE)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id              String             @id @default(uuid()) @db.Uuid
+  kind            ConversationKind   @default(MATCH)
+  matchId         String?            @unique @db.Uuid
+  /// App user who owns this official inbox (one per user).
+  recipientUserId String?            @unique @db.Uuid
+  status          ConversationStatus @default(ACTIVE)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
-  match    Match                @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  members  ConversationMember[]
-  messages Message[]
+  match         Match?               @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  recipientUser User?                @relation("OfficialConversationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  members       ConversationMember[]
+  messages      Message[]
 
   @@index([status, updatedAt])
+  @@index([kind, recipientUserId])
   @@map("conversations")
 }
 
@@ -758,6 +771,8 @@ model Message {
   seenAt               DateTime?
   deletedForEveryoneAt DateTime?
   editedAt             DateTime?
+  /// Rich payloads (e.g. official message action buttons).
+  metadata             Json?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
 

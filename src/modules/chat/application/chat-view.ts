@@ -1,4 +1,5 @@
 import type {
+  ConversationKind,
   MessageDeliveryStatus,
   MessageType,
 } from "@prisma/client";
@@ -26,6 +27,7 @@ export interface MessageViewRecord {
   replyToId: string | null;
   type: MessageType;
   body: string | null;
+  metadata: unknown;
   deliveryStatus: MessageDeliveryStatus;
   deletedForEveryoneAt: Date | null;
   editedAt: Date | null;
@@ -36,7 +38,10 @@ export interface MessageViewRecord {
 
 export interface ConversationViewRecord {
   id: string;
-  matchId: string;
+  kind: ConversationKind;
+  matchId: string | null;
+  isOfficial: boolean;
+  isReadOnly: boolean;
   peer: PostAuthorViewRecord;
   unreadCount: number;
   isMuted: boolean;
@@ -57,6 +62,7 @@ export function presentMessage(
     senderId: message.senderId,
     type: message.type,
     body: deleted ? null : message.body,
+    metadata: deleted ? null : normalizeMessageMetadata(message.metadata),
     media:
       deleted || !message.mediaAsset
         ? null
@@ -85,7 +91,10 @@ export function presentConversation(
 ): object {
   return {
     id: conversation.id,
+    kind: conversation.kind,
     matchId: conversation.matchId,
+    isOfficial: conversation.isOfficial,
+    isReadOnly: conversation.isReadOnly,
     peer: presentPublicAuthor(conversation.peer, config),
     lastMessage: conversation.lastMessage
       ? presentMessage(conversation.lastMessage, config)
@@ -96,4 +105,41 @@ export function presentConversation(
     isArchived: conversation.isArchived,
     updatedAt: conversation.updatedAt.toISOString(),
   };
+}
+
+function normalizeMessageMetadata(metadata: unknown): object | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+  const buttons = (metadata as { buttons?: unknown }).buttons;
+  if (!Array.isArray(buttons) || buttons.length === 0) return null;
+  const normalized = buttons
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return null;
+      }
+      const label = (entry as { label?: unknown }).label;
+      const action = (entry as { action?: unknown }).action;
+      if (typeof label !== "string" || !label.trim()) return null;
+      if (!action || typeof action !== "object" || Array.isArray(action)) {
+        return null;
+      }
+      const type = (action as { type?: unknown }).type;
+      if (type === "OPEN_URL") {
+        const url = (action as { url?: unknown }).url;
+        if (typeof url !== "string" || !url.trim()) return null;
+        return { label: label.trim(), action: { type, url: url.trim() } };
+      }
+      if (type === "NAVIGATE") {
+        const route = (action as { route?: unknown }).route;
+        if (typeof route !== "string" || !route.trim()) return null;
+        return {
+          label: label.trim(),
+          action: { type, route: route.trim() },
+        };
+      }
+      return null;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  return normalized.length > 0 ? { buttons: normalized } : null;
 }

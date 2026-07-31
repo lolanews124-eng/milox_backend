@@ -195,6 +195,15 @@ export class ChatService {
         replayed: created.replayed,
       };
     } catch (error) {
+      if (error instanceof ChatActionConflictError) {
+        if (error.message === "read_only") {
+          throw new AppError(
+            "READ_ONLY_CONVERSATION",
+            "This conversation cannot receive replies",
+            403,
+          );
+        }
+      }
       if (error instanceof ChatMediaOwnershipError) {
         throw new AppError(
           "MEDIA_NOT_OWNED",

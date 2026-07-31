@@ -2,6 +2,7 @@ import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { InvalidReferralCodeError } from "../../../rewards/application/ports/rewards-repository.js";
 import { DuplicateAccountError } from "../ports/auth-repository.js";
 import type {
   AuthRepository,
@@ -18,6 +19,7 @@ export interface SignupInput {
   username: string;
   email: string;
   password: string;
+  displayName: string;
   ageRange: AgeRange;
   country: string;
   gender: Gender;
@@ -67,6 +69,7 @@ export class AuthService {
         usernameNormalized: normalizeUsername(input.username),
         email: normalizeEmail(input.email),
         passwordHash,
+        displayName: input.displayName.trim(),
         ageRange: input.ageRange,
         country: input.country,
         gender: input.gender,
@@ -86,6 +89,13 @@ export class AuthService {
         const code =
           error.field === "email" ? "EMAIL_ALREADY_REGISTERED" : "USERNAME_TAKEN";
         throw new AppError(code, `${capitalize(error.field)} is already in use`, 409);
+      }
+      if (error instanceof InvalidReferralCodeError) {
+        throw new AppError(
+          "INVALID_REFERRAL_CODE",
+          "This invite code is not valid",
+          400,
+        );
       }
       throw error;
     }
@@ -116,6 +126,14 @@ export class AuthService {
         "ACCOUNT_SUSPENDED",
         "This account is not currently active",
         403,
+      );
+    }
+
+    if (user.isSystemAccount) {
+      throw new AppError(
+        "INVALID_CREDENTIALS",
+        "Invalid email or password",
+        401,
       );
     }
 

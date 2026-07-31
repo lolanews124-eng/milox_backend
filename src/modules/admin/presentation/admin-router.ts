@@ -417,6 +417,12 @@ export function createAdminRouter(
     adminOnly,
     asyncHandler(controller.retryEmailJob),
   );
+  router.post(
+    "/official-messages/broadcast",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.broadcastOfficialMessage),
+  );
   router.get(
     "/hashtags",
     readLimit,

@@ -9,6 +9,8 @@ import { PrismaAdminRepository } from "./infrastructure/prisma-admin-repository.
 import { AdminController } from "./presentation/admin-controller.js";
 import { createAdminRouter } from "./presentation/admin-router.js";
 
+import type { OfficialChatService } from "../official-chat/application/official-chat-service.js";
+
 export interface AdminModule {
   router: Router;
   service: AdminService;
@@ -18,6 +20,7 @@ export function createAdminModule(
   config: AppConfig,
   database: PrismaClient,
   authenticate: RequestHandler,
+  officialChat?: OfficialChatService,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
   const service = new AdminService(repository);
@@ -29,6 +32,7 @@ export function createAdminModule(
     service,
     config.UPLOAD_ROOT,
     mediaService,
+    officialChat,
   );
   return {
     router: createAdminRouter(controller, database, authenticate),

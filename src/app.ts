@@ -9,6 +9,8 @@ import { getConfig, getAllowedOrigins, type AppConfig } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { createAdminModule } from "./modules/admin/index.js";
 import { createAuthModule } from "./modules/auth/index.js";
+import type { SignupOfficialChatWriter } from "./modules/official-chat/infrastructure/prisma-official-chat-repository.js";
+import type { OfficialChatService } from "./modules/official-chat/application/official-chat-service.js";
 import { createBlogModule } from "./modules/blog/index.js";
 import { createChatModule } from "./modules/chat/index.js";
 import { createCommentModule } from "./modules/comments/index.js";
@@ -35,20 +37,32 @@ export interface AppDependencies {
   config?: AppConfig;
   database?: PrismaClient;
   chatOutboxWake?: () => void;
+  signupOfficialChat?: SignupOfficialChatWriter;
+  officialChat?: OfficialChatService;
 }
 
 export function createApp(dependencies: AppDependencies = {}): Express {
   const config = dependencies.config ?? getConfig();
   const database = dependencies.database ?? prisma;
   const rewardsRepository = new PrismaRewardsRepository(database, config);
-  const auth = createAuthModule(config, database, rewardsRepository);
+  const auth = createAuthModule(
+    config,
+    database,
+    rewardsRepository,
+    dependencies.signupOfficialChat,
+  );
   const rewards = createRewardsModule(
     config,
     database,
     auth.authenticate,
     rewardsRepository,
   );
-  const admin = createAdminModule(config, database, auth.authenticate);
+  const admin = createAdminModule(
+    config,
+    database,
+    auth.authenticate,
+    dependencies.officialChat,
+  );
   const blog = createBlogModule(database);
   const posts = createPostModule(config, database, {
     authenticate: auth.authenticate,

@@ -19,7 +19,11 @@ import type {
   WalletSummary,
   WalletTransactionRecord,
 } from "../application/ports/rewards-repository.js";
-import { InsufficientWalletBalanceError, RewardedAdDailyLimitError } from "../application/ports/rewards-repository.js";
+import {
+  InsufficientWalletBalanceError,
+  InvalidReferralCodeError,
+  RewardedAdDailyLimitError,
+} from "../application/ports/rewards-repository.js";
 
 export { InsufficientWalletBalanceError, RewardedAdDailyLimitError };
 
@@ -33,9 +37,16 @@ export class PrismaRewardsRepository implements RewardsRepository {
     transaction: Prisma.TransactionClient,
     input: SignupRewardsInput,
   ): Promise<void> {
-    const referrerId = input.referralCode
-      ? await this.resolveReferrerInTransaction(transaction, input.referralCode)
-      : null;
+    let referrerId: string | null = null;
+    if (input.referralCode) {
+      referrerId = await this.resolveReferrerInTransaction(
+        transaction,
+        input.referralCode,
+      );
+      if (!referrerId) {
+        throw new InvalidReferralCodeError();
+      }
+    }
 
     await transaction.wallet.create({
       data: {

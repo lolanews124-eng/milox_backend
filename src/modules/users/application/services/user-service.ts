@@ -1,4 +1,10 @@
 import { ageRangeLabel } from "../../../../shared/contracts/age-ranges.js";
+import {
+  USERNAME_COOLDOWN_DAYS,
+  assessProfileCompletion,
+  canChangeUsername,
+  usernameChangeAvailableAt,
+} from "../../../../shared/contracts/profile-completion.js";
 import type { AgeRange, RelationshipGoal } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
@@ -30,7 +36,6 @@ const RESERVED_USERNAMES = new Set([
   "staff",
   "support",
 ]);
-const USERNAME_COOLDOWN_DAYS = 30;
 
 export interface UpdateProfileInput {
   username?: string | undefined;
@@ -130,13 +135,11 @@ export class UserService {
       }
       if (normalized !== current.usernameNormalized) {
         if (
-          current.usernameChangedAt &&
-          current.usernameChangedAt >
-            new Date(Date.now() - USERNAME_COOLDOWN_DAYS * 86_400_000)
+          !canChangeUsername(current.usernameChangedAt, current.createdAt)
         ) {
           throw new AppError(
             "USERNAME_CHANGE_LIMITED",
-            "Username can be changed once every 30 days",
+            `Username can be changed once every ${USERNAME_COOLDOWN_DAYS} days`,
             429,
           );
         }
@@ -315,6 +318,24 @@ function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
     hasIncomingPendingInterest: false,
     isMatched: false,
   };
+  const profilePhotoUrl = mediaUrl(user.profilePhoto?.id, config);
+  const completion = assessProfileCompletion({
+    displayName: user.displayName,
+    profilePhotoId: user.profilePhoto?.id ?? null,
+    profilePhotoUrl,
+    ageRange: user.ageRange,
+    country: user.country,
+    relationshipGoal: user.relationshipGoal,
+    interests: user.interests.map(({ tag }) => tag.slug),
+  });
+  const usernameChangeAllowed = canChangeUsername(
+    user.usernameChangedAt,
+    user.createdAt,
+  );
+  const nextUsernameChangeAt = usernameChangeAvailableAt(
+    user.usernameChangedAt,
+    user.createdAt,
+  );
   return {
     ...mapPublicProfile(user, relation, config),
     email: user.email,
@@ -329,6 +350,13 @@ function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
     hideLastSeen: user.hideLastSeen,
     hideOnline: user.hideOnline,
     walletBalance: user.wallet?.balance ?? 0,
+    profileComplete: completion.isComplete,
+    profileCompletionMissing: completion.missingFields,
+    usernameChangedAt: user.usernameChangedAt?.toISOString() ?? null,
+    canChangeUsername: usernameChangeAllowed,
+    canChangeUsernameAt: usernameChangeAllowed
+      ? null
+      : nextUsernameChangeAt.toISOString(),
   };
 }
 
