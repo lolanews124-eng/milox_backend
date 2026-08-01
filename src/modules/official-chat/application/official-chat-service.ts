@@ -10,6 +10,10 @@ export interface OfficialBroadcastResult {
 export class OfficialChatService {
   constructor(private readonly repository: PrismaOfficialChatRepository) {}
 
+  countBroadcastRecipients(): Promise<number> {
+    return this.repository.countBroadcastRecipients();
+  }
+
   broadcast(
     input: BroadcastOfficialMessageInput,
   ): Promise<OfficialBroadcastResult> {

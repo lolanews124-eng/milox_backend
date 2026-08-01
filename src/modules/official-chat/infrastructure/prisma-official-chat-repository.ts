@@ -51,6 +51,12 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
     );
   }
 
+  async countBroadcastRecipients(): Promise<number> {
+    return this.database.user.count({
+      where: activeBroadcastRecipientWhere(),
+    });
+  }
+
   async broadcastToAllUsers(
     input: BroadcastOfficialMessageInput,
   ): Promise<OfficialBroadcastStats> {

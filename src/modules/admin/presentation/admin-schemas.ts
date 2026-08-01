@@ -416,3 +416,7 @@ export const broadcastOfficialMessageSchema = z.object({
   buttons: z.array(officialMessageButtonSchema).max(4).optional(),
   mediaId: z.uuid().optional(),
 });
+
+export const officialBroadcastJobIdParamSchema = z.object({
+  jobId: z.uuid(),
+});

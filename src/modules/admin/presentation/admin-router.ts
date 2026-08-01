@@ -424,6 +424,12 @@ export function createAdminRouter(
     asyncHandler(controller.broadcastOfficialMessage),
   );
   router.get(
+    "/official-messages/broadcast/:jobId",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.getOfficialBroadcastJob),
+  );
+  router.get(
     "/hashtags",
     readLimit,
     adminOnly,

@@ -5,6 +5,7 @@ import { MediaKind } from "@prisma/client";
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { MediaService } from "../../media/application/services/media-service.js";
 import type { OfficialChatService } from "../../official-chat/application/official-chat-service.js";
+import { officialBroadcastJobStore } from "../../official-chat/application/official-broadcast-job-store.js";
 import type { OfficialMessageButton } from "../../official-chat/official-chat-types.js";
 import type { AdminService } from "../application/services/admin-service.js";
 import {
@@ -42,6 +43,7 @@ import {
   adminUserIdParamSchema,
   adminUserQuerySchema,
   broadcastOfficialMessageSchema,
+  officialBroadcastJobIdParamSchema,
   changeStaffRoleSchema,
   changeUserStatusSchema,
   createAdSchema,
@@ -615,32 +617,67 @@ export class AdminController {
       ...(input.mediaId ? { mediaId: input.mediaId } : {}),
     };
 
-    const result = await this.officialChat.broadcast(payload);
-    if (result.sent === 0 && result.failed > 0) {
-      throw new AppError(
-        "BROADCAST_FAILED",
-        "Could not deliver the official message to any users",
-        500,
-      );
-    }
-    if (result.total === 0) {
+    const total = await this.officialChat.countBroadcastRecipients();
+    if (total === 0) {
       throw new AppError(
         "NO_RECIPIENTS",
         "No active user accounts are available to receive this message",
         400,
       );
     }
-    response.status(200).json(
-      success(request, {
-        message:
+
+    const job = officialBroadcastJobStore.create(total);
+
+    void this.officialChat
+      .broadcast(payload)
+      .then((result) => {
+        if (result.sent === 0 && result.failed > 0) {
+          officialBroadcastJobStore.fail(
+            job.id,
+            "Could not deliver the official message to any users",
+          );
+          return;
+        }
+        const message =
           result.failed > 0
             ? `Delivered to ${result.sent} of ${result.total} users (${result.failed} failed)`
-            : `Delivered to all ${result.sent} active users`,
-        sent: result.sent,
-        failed: result.failed,
-        total: result.total,
+            : `Delivered to all ${result.sent} active users`;
+        officialBroadcastJobStore.complete(job.id, result, message);
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Official message broadcast failed";
+        officialBroadcastJobStore.fail(job.id, message);
+        console.error("Official message broadcast job failed", {
+          jobId: job.id,
+          error,
+        });
+      });
+
+    response.status(202).json(
+      success(request, {
+        jobId: job.id,
+        status: job.status,
+        sent: job.sent,
+        failed: job.failed,
+        total: job.total,
+        message: `Broadcast started for ${total} users. Delivery continues in the background.`,
       }),
     );
+  };
+
+  getOfficialBroadcastJob = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { jobId } = officialBroadcastJobIdParamSchema.parse(request.params);
+    const job = officialBroadcastJobStore.get(jobId);
+    if (!job) {
+      throw new AppError("NOT_FOUND", "Broadcast job not found or expired", 404);
+    }
+    response.status(200).json(success(request, job));
   };
 }
 
