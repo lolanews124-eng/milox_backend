@@ -3,6 +3,12 @@ import type { OfficialMessageButton } from "./official-chat-types.js";
 export const MILOX_OFFICIAL_USERNAME = "milox";
 export const MILOX_OFFICIAL_DISPLAY_NAME = "Milox Official";
 
+/** Stable media id for the Milox Official avatar shown in chat. */
+export const MILOX_OFFICIAL_AVATAR_MEDIA_ID =
+  "a0000000-0000-4000-8000-000000000001";
+export const MILOX_OFFICIAL_AVATAR_STORAGE_KEY =
+  "public/branding/milox-official-avatar.webp";
+
 export const OFFICIAL_WELCOME_BUTTONS: OfficialMessageButton[] = [
   {
     label: "Discover people",

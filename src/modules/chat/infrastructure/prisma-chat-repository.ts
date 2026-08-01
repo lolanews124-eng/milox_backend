@@ -35,6 +35,7 @@ import type {
   MessageViewRecord,
 } from "../application/chat-view.js";
 import {
+  MILOX_OFFICIAL_AVATAR_MEDIA_ID,
   MILOX_OFFICIAL_DISPLAY_NAME,
   MILOX_OFFICIAL_USERNAME,
 } from "../../official-chat/official-chat-config.js";
@@ -731,7 +732,7 @@ function officialPeerFallback(userId?: string): PostAuthorViewRecord {
     followingCount: 0,
     postCount: 0,
     createdAt: new Date(0),
-    profilePhoto: null,
+    profilePhoto: { id: MILOX_OFFICIAL_AVATAR_MEDIA_ID },
     coverPhoto: null,
     interests: [],
   };
