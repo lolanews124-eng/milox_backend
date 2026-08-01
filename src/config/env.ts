@@ -112,3 +112,30 @@ export function getAllowedOrigins(config: AppConfig): string[] {
   ];
   return [...new Set(merged.map(normalizeOrigin))];
 }
+
+/** Vercel preview deploys use unique subdomains (e.g. milox-admin-git-main.vercel.app). */
+const VERCEL_ADMIN_ORIGIN =
+  /^https:\/\/milox-admin[a-z0-9-]*\.vercel\.app$/i;
+
+export function isAllowedCorsOrigin(
+  config: AppConfig,
+  origin: string | undefined,
+): boolean {
+  if (!origin) return true;
+  const normalized = normalizeOrigin(origin);
+  if (getAllowedOrigins(config).includes(normalized)) return true;
+  return VERCEL_ADMIN_ORIGIN.test(normalized);
+}
+
+export function createCorsOriginChecker(config: AppConfig) {
+  return (
+    origin: string | undefined,
+    callback: (error: Error | null, allow?: boolean) => void,
+  ) => {
+    if (isAllowedCorsOrigin(config, origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin ${origin ?? "unknown"} not allowed by CORS`));
+  };
+}

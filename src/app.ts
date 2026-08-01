@@ -5,7 +5,7 @@ import helmet from "helmet";
 
 import type { PrismaClient } from "@prisma/client";
 
-import { getConfig, getAllowedOrigins, type AppConfig } from "./config/env.js";
+import { getConfig, createCorsOriginChecker, type AppConfig } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { createAdminModule } from "./modules/admin/index.js";
 import { createAuthModule } from "./modules/auth/index.js";
@@ -139,7 +139,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   );
   app.use(
     cors({
-      origin: getAllowedOrigins(config),
+      origin: createCorsOriginChecker(config),
       credentials: true,
     }),
   );

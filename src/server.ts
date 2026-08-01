@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 
 import { createApp } from "./app.js";
-import { getConfig, getAllowedOrigins } from "./config/env.js";
+import { getConfig, createCorsOriginChecker } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { ensureDefaultInterestTags } from "./infrastructure/interest-tags.js";
 import { ensureMiloxOfficialUser } from "./infrastructure/milox-official-user.js";
@@ -60,7 +60,7 @@ async function bootstrap(): Promise<void> {
 
   io = new Server(httpServer, {
     cors: {
-      origin: getAllowedOrigins(config),
+      origin: createCorsOriginChecker(config),
       credentials: true,
     },
   });
