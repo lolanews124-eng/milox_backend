@@ -1,6 +1,5 @@
 import {
   OutboxStatus,
-  Prisma,
   type OutboxEvent,
   type PrismaClient,
 } from "@prisma/client";
@@ -9,6 +8,7 @@ import { z } from "zod";
 import type { AppConfig } from "../../config/env.js";
 import type { ChatService } from "../../modules/chat/application/services/chat-service.js";
 import type { ChatIo } from "../../modules/chat/realtime/chat-gateway.js";
+import { runSerializableTransaction } from "../../shared/prisma-serializable-transaction.js";
 
 const createdPayloadSchema = z.object({
   messageId: z.uuid(),
@@ -74,7 +74,13 @@ export class ChatOutboxWorker {
       do {
         this.pendingWake = false;
         for (let processed = 0; processed < 100; processed += 1) {
-          const event = await this.claimNextEvent();
+          let event: OutboxEvent | null;
+          try {
+            event = await this.claimNextEvent();
+          } catch (error) {
+            console.error("Chat outbox claim failed", error);
+            break;
+          }
           if (!event) break;
           try {
             await this.deliver(event);
@@ -150,31 +156,28 @@ export class ChatOutboxWorker {
   }
 
   private claimNextEvent(): Promise<OutboxEvent | null> {
-    return this.database.$transaction(
-      async (transaction) => {
-        const event = await transaction.outboxEvent.findFirst({
-          where: {
-            eventType: { in: CHAT_EVENTS },
-            status: OutboxStatus.PENDING,
-            availableAt: { lte: new Date() },
-          },
-          orderBy: { createdAt: "asc" },
-        });
-        if (!event) return null;
-        const claimed = await transaction.outboxEvent.updateMany({
-          where: { id: event.id, status: OutboxStatus.PENDING },
-          data: {
-            status: OutboxStatus.PROCESSING,
-            attempts: { increment: 1 },
-          },
-        });
-        if (claimed.count !== 1) return null;
-        return transaction.outboxEvent.findUnique({
-          where: { id: event.id },
-        });
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+    return runSerializableTransaction(this.database, async (transaction) => {
+      const event = await transaction.outboxEvent.findFirst({
+        where: {
+          eventType: { in: CHAT_EVENTS },
+          status: OutboxStatus.PENDING,
+          availableAt: { lte: new Date() },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!event) return null;
+      const claimed = await transaction.outboxEvent.updateMany({
+        where: { id: event.id, status: OutboxStatus.PENDING },
+        data: {
+          status: OutboxStatus.PROCESSING,
+          attempts: { increment: 1 },
+        },
+      });
+      if (claimed.count !== 1) return null;
+      return transaction.outboxEvent.findUnique({
+        where: { id: event.id },
+      });
+    });
   }
 
   private async failOrRetry(
