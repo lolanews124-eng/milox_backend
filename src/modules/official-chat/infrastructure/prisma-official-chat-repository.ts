@@ -5,7 +5,7 @@ import {
   MessageType,
 } from "@prisma/client";
 
-import type { MiloxOfficialUserRecord } from "../../infrastructure/milox-official-user.js";
+import type { MiloxOfficialUserRecord } from "../../../infrastructure/milox-official-user.js";
 import {
   buildOfficialWelcomeBody,
   OFFICIAL_WELCOME_BUTTONS,

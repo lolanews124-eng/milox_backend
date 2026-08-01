@@ -675,14 +675,16 @@ function mapConversation(
   row: ConversationRow,
   userId: string,
 ): ConversationViewRecord {
-  const member = row.members[0];
+  const member = row.members.find((entry) => entry.userId === userId);
   if (!member) throw new Error("Conversation member projection is missing");
   const isOfficial = row.kind === ConversationKind.OFFICIAL;
   const peer = isOfficial
-    ? row.peerMembers[0]?.user
-    : row.match.userAId === userId
-      ? row.match.userB
-      : row.match.userA;
+    ? row.members.find((entry) => entry.userId !== userId)?.user
+    : row.match
+      ? row.match.userAId === userId
+        ? row.match.userB
+        : row.match.userA
+      : null;
   if (!peer) throw new Error("Conversation peer projection is missing");
   return {
     id: row.id,

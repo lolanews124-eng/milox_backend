@@ -40,19 +40,13 @@ export function conversationViewSelect(userId: string) {
     recipientUserId: true,
     updatedAt: true,
     members: {
-      where: { userId },
-      take: 1,
+      where: { leftAt: null },
       select: {
+        userId: true,
         unreadCount: true,
         isMuted: true,
         isPinned: true,
         isArchived: true,
-      },
-    },
-    peerMembers: {
-      where: { userId: { not: userId }, leftAt: null },
-      take: 1,
-      select: {
         user: { select: publicAuthorSelect() },
       },
     },

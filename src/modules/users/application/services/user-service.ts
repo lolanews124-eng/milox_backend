@@ -321,6 +321,7 @@ function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
   const profilePhotoUrl = mediaUrl(user.profilePhoto?.id, config);
   const completion = assessProfileCompletion({
     displayName: user.displayName,
+    username: user.username,
     profilePhotoId: user.profilePhoto?.id ?? null,
     profilePhotoUrl,
     ageRange: user.ageRange,

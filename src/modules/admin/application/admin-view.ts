@@ -356,7 +356,7 @@ export interface AdminConversationMemberRecord {
 export interface AdminConversationRecord {
   id: string;
   status: string;
-  matchId: string;
+  matchId: string | null;
   messageCount: number;
   openReportCount: number;
   lastMessageAt: Date | null;

@@ -11,6 +11,7 @@ export type ProfileCompletionField = keyof typeof PROFILE_COMPLETION_FIELD_LABEL
 
 export interface ProfileCompletionInput {
   displayName: string | null;
+  username?: string | null;
   profilePhotoId?: string | null;
   profilePhotoUrl?: string | null;
   ageRange?: string | null;
@@ -25,7 +26,7 @@ export function assessProfileCompletion(input: ProfileCompletionInput): {
 } {
   const missing: ProfileCompletionField[] = [];
 
-  const displayName = input.displayName?.trim() ?? "";
+  const displayName = (input.displayName?.trim() || input.username?.trim()) ?? "";
   if (displayName.length < 2) {
     missing.push("displayName");
   }
