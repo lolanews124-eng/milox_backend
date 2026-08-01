@@ -609,34 +609,34 @@ export class AdminController {
             : { type: "NAVIGATE", route: button.route! },
       }),
     );
-    const result = await this.officialChat.broadcast({
+    const payload = {
       body: input.body,
       ...(buttons?.length ? { buttons } : {}),
       ...(input.mediaId ? { mediaId: input.mediaId } : {}),
-    });
-    if (result.sent === 0 && result.failed > 0) {
-      throw new AppError(
-        "BROADCAST_FAILED",
-        "Could not deliver the official message to any users",
-        500,
-      );
-    }
-    if (result.sent === 0) {
-      throw new AppError(
-        "NO_RECIPIENTS",
-        "No active member accounts are available to receive this message",
-        400,
-      );
-    }
-    response.status(200).json(
+    };
+
+    void this.officialChat
+      .broadcast(payload)
+      .then((result) => {
+        if (result.sent === 0 && result.failed > 0) {
+          console.error("Official broadcast delivered to zero users", result);
+          return;
+        }
+        if (result.sent === 0) {
+          console.warn("Official broadcast skipped: no active recipients", result);
+          return;
+        }
+        console.info("Official broadcast completed", result);
+      })
+      .catch((error: unknown) => {
+        console.error("Official broadcast failed", error);
+      });
+
+    response.status(202).json(
       success(request, {
         message:
-          result.failed > 0
-            ? `Delivered to ${result.sent} users (${result.failed} failed)`
-            : `Delivered to ${result.sent} users`,
-        sent: result.sent,
-        failed: result.failed,
-        total: result.sent + result.failed,
+          "Broadcast started. Messages are being delivered to active users in the background.",
+        status: "processing" as const,
       }),
     );
   };

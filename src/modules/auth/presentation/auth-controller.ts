@@ -128,11 +128,11 @@ export class AuthController {
     const platform = request.header("x-client-platform")?.trim().toLowerCase();
     const isMobile = platform === "mobile";
     const isAdmin = platform === "admin";
-    if (!isMobile) {
+    if (!isMobile && !isAdmin) {
       response.cookie(
         REFRESH_COOKIE,
         session.refreshToken,
-        this.refreshCookieOptions(isAdmin ? 1 : undefined),
+        this.refreshCookieOptions(),
       );
     }
 

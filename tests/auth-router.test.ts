@@ -167,8 +167,7 @@ describe("auth HTTP contract", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.data.refreshToken).toEqual(expect.any(String));
-    expect(response.headers["set-cookie"]?.[0]).toContain("milox_rt=");
-    expect(response.headers["set-cookie"]?.[0]).toContain("Max-Age=86400");
+    expect(response.headers["set-cookie"]).toBeUndefined();
   });
 
   it("returns the standard validation error envelope", async () => {
