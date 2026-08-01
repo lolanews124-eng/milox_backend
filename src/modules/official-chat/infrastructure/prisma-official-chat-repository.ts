@@ -26,6 +26,7 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
   constructor(
     private readonly database: PrismaClient,
     private readonly officialUser: MiloxOfficialUserRecord,
+    private readonly wakeOutbox?: () => void,
   ) {}
 
   async bootstrapWelcomeInTransaction(
@@ -42,10 +43,11 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
 
   async broadcastToAllUsers(
     input: BroadcastOfficialMessageInput,
-  ): Promise<{ sent: number }> {
+  ): Promise<{ sent: number; failed: number }> {
     const metadata = buildMetadata(input.buttons);
     const messageType = input.mediaId ? MessageType.IMAGE : MessageType.SYSTEM;
     let sent = 0;
+    let failed = 0;
     const batchSize = 200;
     let cursor: string | undefined;
 
@@ -64,70 +66,85 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
       if (users.length === 0) break;
 
       for (const user of users) {
-        await this.database.$transaction(async (transaction) => {
-          const conversation = await this.ensureOfficialConversationInTransaction(
-            transaction,
-            user.id,
-            this.officialUser.id,
-          );
-          const createdAt = new Date();
-          const message = await transaction.message.create({
-            data: {
-              conversationId: conversation.id,
-              senderId: this.officialUser.id,
-              type: messageType,
-              body: input.body,
-              ...(input.mediaId ? { mediaAssetId: input.mediaId } : {}),
-              ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
-            },
-            select: { id: true },
-          });
-          await transaction.conversation.update({
-            where: { id: conversation.id },
-            data: { updatedAt: createdAt },
-          });
-          await transaction.conversationMember.update({
-            where: {
-              conversationId_userId: {
+        try {
+          await this.database.$transaction(async (transaction) => {
+            const conversation = await this.ensureOfficialConversationInTransaction(
+              transaction,
+              user.id,
+              this.officialUser.id,
+            );
+            const createdAt = new Date();
+            const message = await transaction.message.create({
+              data: {
+                conversationId: conversation.id,
+                senderId: this.officialUser.id,
+                type: messageType,
+                body: input.body,
+                ...(input.mediaId ? { mediaAssetId: input.mediaId } : {}),
+                ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
+              },
+              select: { id: true },
+            });
+            await transaction.conversation.update({
+              where: { id: conversation.id },
+              data: { updatedAt: createdAt },
+            });
+            await transaction.conversationMember.upsert({
+              where: {
+                conversationId_userId: {
+                  conversationId: conversation.id,
+                  userId: user.id,
+                },
+              },
+              create: {
                 conversationId: conversation.id,
                 userId: user.id,
+                unreadCount: 1,
+                isPinned: true,
               },
-            },
-            data: {
-              unreadCount: { increment: 1 },
-              isArchived: false,
-            },
+              update: {
+                unreadCount: { increment: 1 },
+                isArchived: false,
+              },
+            });
+            const eventPayload = {
+              messageId: message.id,
+              conversationId: conversation.id,
+              senderId: this.officialUser.id,
+            };
+            await transaction.outboxEvent.createMany({
+              data: [
+                {
+                  eventType: "chat.message.created",
+                  aggregateType: "message",
+                  aggregateId: message.id,
+                  payload: eventPayload,
+                },
+                {
+                  eventType: "message.created",
+                  aggregateType: "message",
+                  aggregateId: message.id,
+                  payload: eventPayload,
+                },
+              ],
+            });
           });
-          const eventPayload = {
-            messageId: message.id,
-            conversationId: conversation.id,
-            senderId: this.officialUser.id,
-          };
-          await transaction.outboxEvent.createMany({
-            data: [
-              {
-                eventType: "chat.message.created",
-                aggregateType: "message",
-                aggregateId: message.id,
-                payload: eventPayload,
-              },
-              {
-                eventType: "message.created",
-                aggregateType: "message",
-                aggregateId: message.id,
-                payload: eventPayload,
-              },
-            ],
+          this.wakeOutbox?.();
+          sent += 1;
+        } catch (error: unknown) {
+          failed += 1;
+          console.error("Official message broadcast failed for user", {
+            userId: user.id,
+            error,
           });
-        });
-        sent += 1;
+        }
       }
 
       cursor = users[users.length - 1]?.id;
       if (users.length < batchSize) break;
     }
 
-    return { sent };
+    return { sent, failed };
   }
 
   private async ensureOfficialConversationInTransaction(
@@ -141,6 +158,12 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
       select: { id: true },
     });
     if (existing) {
+      await this.ensureOfficialMembersInTransaction(
+        transaction,
+        existing.id,
+        userId,
+        officialUserId,
+      );
       if (options?.sendWelcome) {
         const welcomeExists = await transaction.message.findFirst({
           where: {
@@ -202,6 +225,41 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
     return { id: conversation.id, createdWelcome: false };
   }
 
+  private async ensureOfficialMembersInTransaction(
+    transaction: Prisma.TransactionClient,
+    conversationId: string,
+    recipientUserId: string,
+    officialUserId: string,
+  ): Promise<void> {
+    await transaction.conversationMember.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId: recipientUserId,
+        },
+      },
+      create: {
+        conversationId,
+        userId: recipientUserId,
+        isPinned: true,
+      },
+      update: {},
+    });
+    await transaction.conversationMember.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId: officialUserId,
+        },
+      },
+      create: {
+        conversationId,
+        userId: officialUserId,
+      },
+      update: {},
+    });
+  }
+
   private async createWelcomeMessage(
     transaction: Prisma.TransactionClient,
     conversationId: string,
@@ -243,14 +301,20 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
         },
       ],
     });
-    await transaction.conversationMember.update({
+    await transaction.conversationMember.upsert({
       where: {
         conversationId_userId: {
           conversationId,
           userId: recipientUserId,
         },
       },
-      data: { unreadCount: 1 },
+      create: {
+        conversationId,
+        userId: recipientUserId,
+        unreadCount: 1,
+        isPinned: true,
+      },
+      update: { unreadCount: 1 },
     });
   }
 }

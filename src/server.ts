@@ -48,7 +48,9 @@ let notificationOutboxWorker: NotificationOutboxWorker;
 let httpServer: ReturnType<typeof createServer>;
 
 async function bootstrap(): Promise<void> {
-  const officialChat = await createOfficialChatModule(prisma);
+  const officialChat = await createOfficialChatModule(prisma, {
+    wakeOutbox: () => chatOutboxHooks.wake(),
+  });
   const app = createApp({
     chatOutboxWake: () => chatOutboxHooks.wake(),
     signupOfficialChat: officialChat.signupWriter,

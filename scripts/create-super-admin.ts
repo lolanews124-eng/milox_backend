@@ -49,11 +49,30 @@ const createArgsSchema = z
   })
   .strict();
 
-const promoteArgsSchema = z
+const STAFF_ROLES = new Set<UserRole>([
+  UserRole.MODERATOR,
+  UserRole.ADMIN,
+  UserRole.SUPER_ADMIN,
+]);
+
+const resetArgsSchema = z
   .object({
     email: z.string().trim().email().max(255).transform((v) => v.toLowerCase()),
+    password: passwordSchema,
   })
   .strict();
+
+function parseResetInput(): z.infer<typeof resetArgsSchema> {
+  const email = readFlag("--email") ?? process.env.SUPER_ADMIN_EMAIL;
+  const password =
+    readFlag("--password") ?? process.env.SUPER_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error(
+      "Reset mode requires --email and --password (or SUPER_ADMIN_* env vars).",
+    );
+  }
+  return resetArgsSchema.parse({ email, password });
+}
 
 async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, {
@@ -80,6 +99,7 @@ Options:
   --gender          MALE | FEMALE | NON_BINARY | OTHER | PREFER_NOT_TO_SAY
   --age-range       One of: ${AGE_RANGE_VALUES.join(", ")} (default: AGE_25_28)
   --promote         Promote existing user to SUPER_ADMIN instead of creating
+  --reset-password  Set a new password for an existing staff account
   --help            Show this help
 
 Environment (optional):
@@ -125,6 +145,12 @@ function parseCreateInput(): z.infer<typeof createArgsSchema> {
     ...(ageRangeRaw ? { ageRange: ageRangeRaw } : {}),
   });
 }
+
+const promoteArgsSchema = z
+  .object({
+    email: z.string().trim().email().max(255).transform((v) => v.toLowerCase()),
+  })
+  .strict();
 
 function parsePromoteInput(): z.infer<typeof promoteArgsSchema> {
   const email = readFlag("--email") ?? process.env.SUPER_ADMIN_EMAIL;
@@ -235,6 +261,57 @@ async function promoteSuperAdmin(
   console.log(`  role:     ${updated.role}`);
 }
 
+async function resetStaffPassword(
+  input: z.infer<typeof resetArgsSchema>,
+): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { email: input.email },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      status: true,
+      deletedAt: true,
+    },
+  });
+
+  if (!user || user.deletedAt) {
+    throw new Error(`No active user found with email ${input.email}.`);
+  }
+
+  if (!STAFF_ROLES.has(user.role)) {
+    throw new Error(
+      `@${user.username} (${user.email}) is role=${user.role}. Promote first: npm run admin:create-super -- --promote --email ${input.email}`,
+    );
+  }
+
+  if (user.status !== UserStatus.ACTIVE) {
+    throw new Error(
+      `Staff account ${input.email} is ${user.status}. Restore it to ACTIVE before resetting the password.`,
+    );
+  }
+
+  const passwordHash = await hashPassword(input.password);
+  await prisma.$transaction(async (transaction) => {
+    await transaction.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+    await transaction.refreshSession.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  });
+
+  console.log("Staff password reset:");
+  console.log(`  id:       ${user.id}`);
+  console.log(`  username: ${user.username}`);
+  console.log(`  email:    ${user.email}`);
+  console.log(`  role:     ${user.role}`);
+  console.log("\nSign in via the admin panel or POST /api/v1/auth/login.");
+}
+
 async function main(): Promise<void> {
   if (hasFlag("--help") || hasFlag("-h")) {
     printHelp();
@@ -243,6 +320,11 @@ async function main(): Promise<void> {
 
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is not set. Load apps/api/.env on the server.");
+  }
+
+  if (hasFlag("--reset-password")) {
+    await resetStaffPassword(parseResetInput());
+    return;
   }
 
   if (hasFlag("--promote")) {

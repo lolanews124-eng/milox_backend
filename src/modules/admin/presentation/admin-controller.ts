@@ -609,18 +609,26 @@ export class AdminController {
             : { type: "NAVIGATE", route: button.route! },
       }),
     );
-    void this.officialChat
-      .broadcast({
-        body: input.body,
-        ...(buttons?.length ? { buttons } : {}),
-        ...(input.mediaId ? { mediaId: input.mediaId } : {}),
-      })
-      .catch((error: unknown) => {
-        console.error("Official message broadcast failed", error);
-      });
-    response.status(202).json(
+    const result = await this.officialChat.broadcast({
+      body: input.body,
+      ...(buttons?.length ? { buttons } : {}),
+      ...(input.mediaId ? { mediaId: input.mediaId } : {}),
+    });
+    if (result.sent === 0 && result.failed > 0) {
+      throw new AppError(
+        "BROADCAST_FAILED",
+        "Could not deliver the official message to any users",
+        500,
+      );
+    }
+    response.status(200).json(
       success(request, {
-        message: "Broadcast started for all users",
+        message:
+          result.failed > 0
+            ? `Delivered to ${result.sent} users (${result.failed} failed)`
+            : `Delivered to ${result.sent} users`,
+        sent: result.sent,
+        failed: result.failed,
       }),
     );
   };

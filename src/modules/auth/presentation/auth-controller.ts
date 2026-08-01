@@ -148,14 +148,17 @@ export class AuthController {
   private refreshCookieOptions(): {
     httpOnly: true;
     secure: boolean;
-    sameSite: "strict";
+    sameSite: "strict" | "none";
     path: string;
     maxAge: number;
   } {
+    const crossSiteAdmin =
+      this.config.NODE_ENV === "production" &&
+      Boolean(this.config.ADMIN_ORIGIN);
     return {
       httpOnly: true,
       secure: this.config.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: crossSiteAdmin ? "none" : "strict",
       path: "/api/v1/auth",
       maxAge: this.config.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
     };

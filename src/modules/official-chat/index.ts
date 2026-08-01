@@ -12,11 +12,20 @@ export interface OfficialChatModule {
   signupWriter: SignupOfficialChatWriter;
 }
 
+export interface OfficialChatModuleOptions {
+  wakeOutbox?: () => void;
+}
+
 export async function createOfficialChatModule(
   database: PrismaClient,
+  options: OfficialChatModuleOptions = {},
 ): Promise<OfficialChatModule> {
   const official = await ensureMiloxOfficialUser(database);
-  const repository = new PrismaOfficialChatRepository(database, official);
+  const repository = new PrismaOfficialChatRepository(
+    database,
+    official,
+    options.wakeOutbox,
+  );
   return {
     service: new OfficialChatService(repository),
     signupWriter: repository,
