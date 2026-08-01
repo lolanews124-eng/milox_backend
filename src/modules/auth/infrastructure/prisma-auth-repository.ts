@@ -104,13 +104,21 @@ export class PrismaAuthRepository implements AuthRepository {
         }
 
         if (this.signupOfficialChat) {
-          await this.signupOfficialChat.bootstrapWelcomeInTransaction(
-            transaction,
-            {
+          try {
+            await this.signupOfficialChat.bootstrapWelcomeInTransaction(
+              transaction,
+              {
+                userId: user.id,
+                displayName: data.displayName,
+              },
+            );
+          } catch (error: unknown) {
+            // Signup must succeed even when official chat schema or welcome setup fails.
+            console.error("Signup official chat bootstrap failed", {
               userId: user.id,
-              displayName: data.displayName,
-            },
-          );
+              error,
+            });
+          }
         }
 
         return user;
