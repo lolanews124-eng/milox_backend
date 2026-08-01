@@ -2,6 +2,7 @@ import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { isStaffRole } from "../../../../shared/user-visibility.js";
 import { InvalidReferralCodeError } from "../../../rewards/application/ports/rewards-repository.js";
 import { DuplicateAccountError } from "../ports/auth-repository.js";
 import type {
@@ -10,9 +11,12 @@ import type {
 } from "../ports/auth-repository.js";
 import type { CryptoService } from "./crypto-service.js";
 
+export type AuthClientKind = "consumer" | "admin";
+
 export interface RequestContext {
   ip?: string;
   userAgent?: string;
+  clientKind?: AuthClientKind;
 }
 
 export interface SignupInput {
@@ -137,6 +141,8 @@ export class AuthService {
       );
     }
 
+    assertClientAccess(user.role, context.clientKind ?? "consumer");
+
     return this.createSession(user, context);
   }
 
@@ -173,6 +179,18 @@ export class AuthService {
         "This account is not currently active",
         403,
       );
+    }
+
+    if (result.user.isSystemAccount) {
+      await this.repository.revokeAllUserSessions(result.user.id);
+      throw new AppError("INVALID_TOKEN", "Invalid refresh token", 401);
+    }
+
+    try {
+      assertClientAccess(result.user.role, context.clientKind ?? "consumer");
+    } catch (error) {
+      await this.repository.revokeAllUserSessions(result.user.id);
+      throw error;
     }
 
     return {
@@ -298,6 +316,27 @@ export class AuthService {
       role: user.role,
       emailVerified: Boolean(user.emailVerifiedAt),
     });
+  }
+}
+
+function assertClientAccess(
+  role: UserRole,
+  clientKind: AuthClientKind,
+): void {
+  const staff = isStaffRole(role);
+  if (staff && clientKind !== "admin") {
+    throw new AppError(
+      "STAFF_LOGIN_FORBIDDEN",
+      "Staff accounts must sign in through the admin panel",
+      403,
+    );
+  }
+  if (!staff && clientKind === "admin") {
+    throw new AppError(
+      "INVALID_CREDENTIALS",
+      "Invalid email or password",
+      401,
+    );
   }
 }
 

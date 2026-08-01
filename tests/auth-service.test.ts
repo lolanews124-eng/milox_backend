@@ -47,6 +47,104 @@ describe("auth utilities", () => {
 });
 
 describe("AuthService", () => {
+  it("blocks staff login on consumer clients", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findUserByEmail).mockResolvedValue({
+      id: "fca0622f-cba7-4398-bfe7-11842c026990",
+      username: "miloxadmin",
+      displayName: "Admin",
+      email: "admin@milox.in",
+      passwordHash: "hash",
+      ageRange: "AGE_25_28",
+      country: "India",
+      gender: "PREFER_NOT_TO_SAY",
+      role: "SUPER_ADMIN",
+      status: "ACTIVE",
+      isVerifiedBadge: false,
+      isSystemAccount: false,
+      emailVerifiedAt: new Date(),
+      createdAt: new Date(),
+    });
+    const crypto = new CryptoService(config);
+    vi.spyOn(crypto, "verifyLoginPassword").mockResolvedValue(true);
+    const service = new AuthService(repository, crypto, config);
+
+    await expect(
+      service.login("admin@milox.in", "password", { clientKind: "consumer" }),
+    ).rejects.toMatchObject({
+      code: "STAFF_LOGIN_FORBIDDEN",
+      statusCode: 403,
+    });
+  });
+
+  it("allows staff login on admin clients", async () => {
+    const repository = createRepository();
+    const staffUser = {
+      id: "fca0622f-cba7-4398-bfe7-11842c026990",
+      username: "miloxadmin",
+      displayName: "Admin",
+      email: "admin@milox.in",
+      passwordHash: "hash",
+      ageRange: "AGE_25_28" as const,
+      country: "India",
+      gender: "PREFER_NOT_TO_SAY" as const,
+      role: "SUPER_ADMIN" as const,
+      status: "ACTIVE" as const,
+      isVerifiedBadge: false,
+      isSystemAccount: false,
+      emailVerifiedAt: new Date(),
+      createdAt: new Date(),
+    };
+    vi.mocked(repository.findUserByEmail).mockResolvedValue(staffUser);
+    vi.mocked(repository.createRefreshSession).mockResolvedValue(undefined);
+    const crypto = new CryptoService(config);
+    vi.spyOn(crypto, "verifyLoginPassword").mockResolvedValue(true);
+    vi.spyOn(crypto, "createAccessToken").mockResolvedValue("access-token");
+    vi.spyOn(crypto, "createOpaqueToken").mockReturnValue({
+      raw: "refresh-token",
+      hash: "refresh-hash",
+    });
+    vi.spyOn(crypto, "createId").mockReturnValue("session-id");
+    const service = new AuthService(repository, crypto, config);
+
+    await expect(
+      service.login("admin@milox.in", "password", { clientKind: "admin" }),
+    ).resolves.toMatchObject({
+      accessToken: "access-token",
+      user: { role: "SUPER_ADMIN" },
+    });
+  });
+
+  it("blocks regular users from admin client login", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findUserByEmail).mockResolvedValue({
+      id: "fca0622f-cba7-4398-bfe7-11842c026990",
+      username: "night_user",
+      displayName: "Night",
+      email: "night@example.com",
+      passwordHash: "hash",
+      ageRange: "AGE_25_28",
+      country: "India",
+      gender: "PREFER_NOT_TO_SAY",
+      role: "USER",
+      status: "ACTIVE",
+      isVerifiedBadge: false,
+      isSystemAccount: false,
+      emailVerifiedAt: new Date(),
+      createdAt: new Date(),
+    });
+    const crypto = new CryptoService(config);
+    vi.spyOn(crypto, "verifyLoginPassword").mockResolvedValue(true);
+    const service = new AuthService(repository, crypto, config);
+
+    await expect(
+      service.login("night@example.com", "password", { clientKind: "admin" }),
+    ).rejects.toMatchObject({
+      code: "INVALID_CREDENTIALS",
+      statusCode: 401,
+    });
+  });
+
   it("does not reveal whether a forgot-password email exists", async () => {
     const repository = createRepository();
     vi.mocked(repository.findUserByEmail).mockResolvedValue(null);

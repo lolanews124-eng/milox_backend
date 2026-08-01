@@ -71,7 +71,7 @@ export class UserService {
     const user = await this.repository.findByUsername(
       normalizeUsername(username),
     );
-    if (!user) {
+    if (!user || user.role !== "USER") {
       throw new AppError("NOT_FOUND", "User not found", 404);
     }
     const relation = await this.repository.getViewerRelation(

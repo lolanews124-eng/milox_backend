@@ -4,6 +4,8 @@ import {
   type Prisma,
 } from "@prisma/client";
 
+import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
+
 export function visibleAuthorWhere(
   viewerId?: string,
 ): Prisma.UserWhereInput {
@@ -30,6 +32,7 @@ export function visibleUserCardWhere(
   const base: Prisma.UserWhereInput = {
     status: UserStatus.ACTIVE,
     deletedAt: null,
+    ...consumerPlatformUserWhere(),
   };
   if (!viewerId) return base;
   return {

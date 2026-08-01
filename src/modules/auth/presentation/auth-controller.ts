@@ -7,6 +7,7 @@ import type {
   AuthSession,
   RequestContext,
 } from "../application/services/auth-service.js";
+import { resolveAuthClientKind } from "./auth-client-kind.js";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -26,7 +27,7 @@ export class AuthController {
 
   signup = async (request: Request, response: Response): Promise<void> => {
     const input = signupSchema.parse(request.body);
-    const session = await this.auth.signup(input, requestContext(request));
+    const session = await this.auth.signup(input, requestContext(request, this.config));
     this.sendSession(request, response, session, 201);
   };
 
@@ -35,7 +36,7 @@ export class AuthController {
     const session = await this.auth.login(
       input.email,
       input.password,
-      requestContext(request),
+      requestContext(request, this.config),
     );
     this.sendSession(request, response, session, 200);
   };
@@ -50,7 +51,7 @@ export class AuthController {
 
     const session = await this.auth.refresh(
       refreshToken,
-      requestContext(request),
+      requestContext(request, this.config),
     );
     this.sendSession(request, response, session, 200);
   };
@@ -165,11 +166,12 @@ export class AuthController {
   }
 }
 
-function requestContext(request: Request): RequestContext {
+function requestContext(request: Request, config: AppConfig): RequestContext {
   const userAgent = request.header("user-agent");
   return {
     ...(request.ip ? { ip: request.ip } : {}),
     ...(userAgent ? { userAgent } : {}),
+    clientKind: resolveAuthClientKind(request, config),
   };
 }
 

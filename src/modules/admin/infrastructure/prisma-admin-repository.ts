@@ -18,6 +18,8 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 
+import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
+
 import type {
   AdminAuditLogQuery,
   AdminCommentQuery,
@@ -298,12 +300,17 @@ export class PrismaAdminRepository implements AdminRepository {
         commerceRows,
       ] = await Promise.all([
         transaction.user.count({
-          where: { status: { not: UserStatus.DELETED }, deletedAt: null },
+          where: {
+            status: { not: UserStatus.DELETED },
+            deletedAt: null,
+            ...consumerPlatformUserWhere(),
+          },
         }),
         transaction.user.count({
           where: {
             status: UserStatus.ACTIVE,
             deletedAt: null,
+            ...consumerPlatformUserWhere(),
             OR: [
               { lastSeenAt: { gte: dayStart } },
               { lastLoginAt: { gte: dayStart } },
@@ -311,7 +318,11 @@ export class PrismaAdminRepository implements AdminRepository {
           },
         }),
         transaction.user.count({
-          where: { createdAt: { gte: dayStart }, deletedAt: null },
+          where: {
+            createdAt: { gte: dayStart },
+            deletedAt: null,
+            ...consumerPlatformUserWhere(),
+          },
         }),
         transaction.post.count({ where: { deletedAt: null } }),
         transaction.comment.count({ where: { deletedAt: null } }),
@@ -359,6 +370,7 @@ export class PrismaAdminRepository implements AdminRepository {
     const activeWhere = {
       deletedAt: null,
       status: { not: UserStatus.DELETED },
+      ...consumerPlatformUserWhere(),
     } as const;
 
     const [
@@ -419,6 +431,7 @@ export class PrismaAdminRepository implements AdminRepository {
     const activeWhere = {
       deletedAt: null,
       status: UserStatus.ACTIVE,
+      ...consumerPlatformUserWhere(),
     } as const;
 
     const [totalActive, pendingBadge, verifiedBadge, emailUnverified] = await Promise.all([
@@ -446,6 +459,7 @@ export class PrismaAdminRepository implements AdminRepository {
     query: AdminUserQuery,
   ): Promise<AdminPage<AdminUserRecord>> {
     const where: Prisma.UserWhereInput = {
+      ...consumerPlatformUserWhere(),
       ...(query.status ? { status: query.status } : {}),
       ...(query.verified !== undefined ? { isVerifiedBadge: query.verified } : {}),
       ...(query.online
