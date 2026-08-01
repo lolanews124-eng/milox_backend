@@ -1,4 +1,5 @@
 import {
+  ConversationKind,
   ConversationStatus,
   MatchStatus,
   NotificationType,
@@ -131,10 +132,15 @@ export class PrismaNotificationRepository
       where: {
         id: conversationId,
         status: ConversationStatus.ACTIVE,
-        match: { is: { status: MatchStatus.ACTIVE } },
         members: { some: { userId: senderId, leftAt: null } },
+        OR: [
+          { kind: ConversationKind.OFFICIAL, recipientUserId: { not: null } },
+          { match: { is: { status: MatchStatus.ACTIVE } } },
+        ],
       },
       select: {
+        kind: true,
+        recipientUserId: true,
         members: {
           where: {
             userId: { not: senderId },
@@ -146,7 +152,24 @@ export class PrismaNotificationRepository
         },
       },
     });
-    const recipientId = conversation?.members[0]?.userId;
+    if (!conversation) return null;
+
+    if (conversation.kind === ConversationKind.OFFICIAL) {
+      const recipientId = conversation.recipientUserId;
+      if (!recipientId || recipientId === senderId) return null;
+      const muted = await this.database.conversationMember.findFirst({
+        where: {
+          conversationId,
+          userId: recipientId,
+          leftAt: null,
+          isMuted: true,
+        },
+        select: { id: true },
+      });
+      return muted ? null : { recipientId };
+    }
+
+    const recipientId = conversation.members[0]?.userId;
     return recipientId ? { recipientId } : null;
   }
 

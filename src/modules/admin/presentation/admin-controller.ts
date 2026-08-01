@@ -621,6 +621,13 @@ export class AdminController {
         500,
       );
     }
+    if (result.sent === 0) {
+      throw new AppError(
+        "NO_RECIPIENTS",
+        "No active member accounts are available to receive this message",
+        400,
+      );
+    }
     response.status(200).json(
       success(request, {
         message:
@@ -629,6 +636,7 @@ export class AdminController {
             : `Delivered to ${result.sent} users`,
         sent: result.sent,
         failed: result.failed,
+        total: result.sent + result.failed,
       }),
     );
   };

@@ -60,7 +60,7 @@ describe("PrismaOfficialChatRepository.broadcastToAllUsers", () => {
     expect(transaction.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         senderId: "official-1",
-        type: MessageType.SYSTEM,
+        type: MessageType.TEXT,
         body: "Hello everyone",
       }),
       select: { id: true },

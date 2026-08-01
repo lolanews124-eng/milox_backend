@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 
 import type { MiloxOfficialUserRecord } from "../../../infrastructure/milox-official-user.js";
+import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
 import {
   buildOfficialWelcomeBody,
   OFFICIAL_WELCOME_BUTTONS,
@@ -45,16 +46,17 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
     input: BroadcastOfficialMessageInput,
   ): Promise<{ sent: number; failed: number }> {
     const metadata = buildMetadata(input.buttons);
-    const messageType = input.mediaId ? MessageType.IMAGE : MessageType.SYSTEM;
+    const messageType = input.mediaId ? MessageType.IMAGE : MessageType.TEXT;
     let sent = 0;
     let failed = 0;
     const batchSize = 200;
     let cursor: string | undefined;
+    let shouldWakeOutbox = false;
 
     for (;;) {
       const users = await this.database.user.findMany({
         where: {
-          isSystemAccount: false,
+          ...consumerPlatformUserWhere(),
           status: "ACTIVE",
           deletedAt: null,
           ...(cursor ? { id: { gt: cursor } } : {}),
@@ -105,6 +107,7 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
               update: {
                 unreadCount: { increment: 1 },
                 isArchived: false,
+                leftAt: null,
               },
             });
             const eventPayload = {
@@ -129,7 +132,7 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
               ],
             });
           });
-          this.wakeOutbox?.();
+          shouldWakeOutbox = true;
           sent += 1;
         } catch (error: unknown) {
           failed += 1;
@@ -142,6 +145,10 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
 
       cursor = users[users.length - 1]?.id;
       if (users.length < batchSize) break;
+    }
+
+    if (shouldWakeOutbox) {
+      this.wakeOutbox?.();
     }
 
     return { sent, failed };
@@ -158,6 +165,13 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
       select: { id: true },
     });
     if (existing) {
+      await transaction.conversation.update({
+        where: { id: existing.id },
+        data: {
+          kind: ConversationKind.OFFICIAL,
+          status: ConversationStatus.ACTIVE,
+        },
+      });
       await this.ensureOfficialMembersInTransaction(
         transaction,
         existing.id,
@@ -243,7 +257,10 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
         userId: recipientUserId,
         isPinned: true,
       },
-      update: {},
+      update: {
+        leftAt: null,
+        isArchived: false,
+      },
     });
     await transaction.conversationMember.upsert({
       where: {
@@ -256,7 +273,9 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
         conversationId,
         userId: officialUserId,
       },
-      update: {},
+      update: {
+        leftAt: null,
+      },
     });
   }
 

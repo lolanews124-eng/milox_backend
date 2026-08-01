@@ -7,6 +7,8 @@ import {
   MessageDeliveryStatus,
   Prisma,
   type PrismaClient,
+  AgeRange,
+  Gender,
 } from "@prisma/client";
 
 import type {
@@ -27,10 +29,15 @@ import {
   ChatMediaOwnershipError,
   ChatReplyNotFoundError,
 } from "../application/ports/chat-repository.js";
+import type { PostAuthorViewRecord } from "../../posts/application/post-view.js";
 import type {
   ConversationViewRecord,
   MessageViewRecord,
 } from "../application/chat-view.js";
+import {
+  MILOX_OFFICIAL_DISPLAY_NAME,
+  MILOX_OFFICIAL_USERNAME,
+} from "../../official-chat/official-chat-config.js";
 import { visibleUserCardWhere } from "../../posts/infrastructure/post-query-policy.js";
 import {
   conversationViewSelect,
@@ -679,7 +686,8 @@ function mapConversation(
   if (!member) throw new Error("Conversation member projection is missing");
   const isOfficial = row.kind === ConversationKind.OFFICIAL;
   const peer = isOfficial
-    ? row.members.find((entry) => entry.userId !== userId)?.user
+    ? (row.members.find((entry) => entry.userId !== userId)?.user ??
+      officialPeerFallback(row.members.find((entry) => entry.userId !== userId)?.userId))
     : row.match
       ? row.match.userAId === userId
         ? row.match.userB
@@ -699,5 +707,32 @@ function mapConversation(
     isArchived: member.isArchived,
     updatedAt: row.updatedAt,
     lastMessage: row.messages[0] ?? null,
+  };
+}
+
+function officialPeerFallback(userId?: string): PostAuthorViewRecord {
+  return {
+    id: userId ?? "milox-official",
+    username: MILOX_OFFICIAL_USERNAME,
+    displayName: MILOX_OFFICIAL_DISPLAY_NAME,
+    bio: null,
+    ageRange: AgeRange.AGE_25_28,
+    gender: Gender.OTHER,
+    country: "Global",
+    relationshipGoal: null,
+    websiteUrl: null,
+    instagramHandle: null,
+    isVerifiedBadge: true,
+    isPrivateAccount: false,
+    hideAge: true,
+    hideCountry: true,
+    hideOnline: true,
+    followerCount: 0,
+    followingCount: 0,
+    postCount: 0,
+    createdAt: new Date(0),
+    profilePhoto: null,
+    coverPhoto: null,
+    interests: [],
   };
 }
