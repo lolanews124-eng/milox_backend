@@ -6,7 +6,7 @@ import {
 } from "@prisma/client";
 
 import type { MiloxOfficialUserRecord } from "../../../infrastructure/milox-official-user.js";
-import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
+import { activeBroadcastRecipientWhere } from "../../../shared/user-visibility.js";
 import {
   buildOfficialWelcomeBody,
   OFFICIAL_WELCOME_BUTTONS,
@@ -16,11 +16,20 @@ import type {
   OfficialMessageMetadata,
 } from "../official-chat-types.js";
 
+const RECIPIENT_PAGE_SIZE = 500;
+const DELIVERY_CONCURRENCY = 12;
+
 export interface SignupOfficialChatWriter {
   bootstrapWelcomeInTransaction(
     transaction: Prisma.TransactionClient,
     input: { userId: string; displayName: string },
   ): Promise<void>;
+}
+
+export interface OfficialBroadcastStats {
+  sent: number;
+  failed: number;
+  total: number;
 }
 
 export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
@@ -44,114 +53,141 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
 
   async broadcastToAllUsers(
     input: BroadcastOfficialMessageInput,
-  ): Promise<{ sent: number; failed: number }> {
+  ): Promise<OfficialBroadcastStats> {
+    const recipientWhere = activeBroadcastRecipientWhere();
+    const total = await this.database.user.count({ where: recipientWhere });
+    if (total === 0) {
+      return { sent: 0, failed: 0, total: 0 };
+    }
+
     const metadata = buildMetadata(input.buttons);
     const messageType = input.mediaId ? MessageType.IMAGE : MessageType.TEXT;
     let sent = 0;
     let failed = 0;
-    const batchSize = 200;
     let cursor: string | undefined;
-    let shouldWakeOutbox = false;
+    let processedSinceWake = 0;
 
     for (;;) {
       const users = await this.database.user.findMany({
         where: {
-          ...consumerPlatformUserWhere(),
-          status: "ACTIVE",
-          deletedAt: null,
+          ...recipientWhere,
           ...(cursor ? { id: { gt: cursor } } : {}),
         },
         orderBy: { id: "asc" },
-        take: batchSize,
+        take: RECIPIENT_PAGE_SIZE,
         select: { id: true },
       });
       if (users.length === 0) break;
 
-      for (const user of users) {
-        try {
-          await this.database.$transaction(async (transaction) => {
-            const conversation = await this.ensureOfficialConversationInTransaction(
-              transaction,
+      const pageResults = await mapWithConcurrency(
+        users,
+        DELIVERY_CONCURRENCY,
+        async (user) => {
+          try {
+            await this.deliverOfficialMessageToUser(
               user.id,
-              this.officialUser.id,
+              input.body,
+              messageType,
+              metadata,
+              input.mediaId,
             );
-            const createdAt = new Date();
-            const message = await transaction.message.create({
-              data: {
-                conversationId: conversation.id,
-                senderId: this.officialUser.id,
-                type: messageType,
-                body: input.body,
-                ...(input.mediaId ? { mediaAssetId: input.mediaId } : {}),
-                ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
-              },
-              select: { id: true },
+            return true;
+          } catch (error: unknown) {
+            console.error("Official message broadcast failed for user", {
+              userId: user.id,
+              error,
             });
-            await transaction.conversation.update({
-              where: { id: conversation.id },
-              data: { updatedAt: createdAt },
-            });
-            await transaction.conversationMember.upsert({
-              where: {
-                conversationId_userId: {
-                  conversationId: conversation.id,
-                  userId: user.id,
-                },
-              },
-              create: {
-                conversationId: conversation.id,
-                userId: user.id,
-                unreadCount: 1,
-                isPinned: true,
-              },
-              update: {
-                unreadCount: { increment: 1 },
-                isArchived: false,
-                leftAt: null,
-              },
-            });
-            const eventPayload = {
-              messageId: message.id,
-              conversationId: conversation.id,
-              senderId: this.officialUser.id,
-            };
-            await transaction.outboxEvent.createMany({
-              data: [
-                {
-                  eventType: "chat.message.created",
-                  aggregateType: "message",
-                  aggregateId: message.id,
-                  payload: eventPayload,
-                },
-                {
-                  eventType: "message.created",
-                  aggregateType: "message",
-                  aggregateId: message.id,
-                  payload: eventPayload,
-                },
-              ],
-            });
-          });
-          shouldWakeOutbox = true;
-          sent += 1;
-        } catch (error: unknown) {
-          failed += 1;
-          console.error("Official message broadcast failed for user", {
-            userId: user.id,
-            error,
-          });
-        }
+            return false;
+          }
+        },
+      );
+
+      sent += pageResults.filter(Boolean).length;
+      failed += pageResults.filter((delivered) => !delivered).length;
+      processedSinceWake += users.length;
+      if (processedSinceWake >= 50) {
+        this.wakeOutbox?.();
+        processedSinceWake = 0;
       }
 
       cursor = users[users.length - 1]?.id;
-      if (users.length < batchSize) break;
+      if (users.length < RECIPIENT_PAGE_SIZE) break;
     }
 
-    if (shouldWakeOutbox) {
-      this.wakeOutbox?.();
-    }
+    this.wakeOutbox?.();
+    return { sent, failed, total };
+  }
 
-    return { sent, failed };
+  private async deliverOfficialMessageToUser(
+    userId: string,
+    body: string,
+    messageType: MessageType,
+    metadata: OfficialMessageMetadata | null,
+    mediaId?: string,
+  ): Promise<void> {
+    await this.database.$transaction(async (transaction) => {
+      const conversation = await this.ensureOfficialConversationInTransaction(
+        transaction,
+        userId,
+        this.officialUser.id,
+      );
+      const createdAt = new Date();
+      const message = await transaction.message.create({
+        data: {
+          conversationId: conversation.id,
+          senderId: this.officialUser.id,
+          type: messageType,
+          body,
+          ...(mediaId ? { mediaAssetId: mediaId } : {}),
+          ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
+        },
+        select: { id: true },
+      });
+      await transaction.conversation.update({
+        where: { id: conversation.id },
+        data: { updatedAt: createdAt },
+      });
+      await transaction.conversationMember.upsert({
+        where: {
+          conversationId_userId: {
+            conversationId: conversation.id,
+            userId,
+          },
+        },
+        create: {
+          conversationId: conversation.id,
+          userId,
+          unreadCount: 1,
+          isPinned: true,
+        },
+        update: {
+          unreadCount: { increment: 1 },
+          isArchived: false,
+          leftAt: null,
+        },
+      });
+      const eventPayload = {
+        messageId: message.id,
+        conversationId: conversation.id,
+        senderId: this.officialUser.id,
+      };
+      await transaction.outboxEvent.createMany({
+        data: [
+          {
+            eventType: "chat.message.created",
+            aggregateType: "message",
+            aggregateId: message.id,
+            payload: eventPayload,
+          },
+          {
+            eventType: "message.created",
+            aggregateType: "message",
+            aggregateId: message.id,
+            payload: eventPayload,
+          },
+        ],
+      });
+    });
   }
 
   private async ensureOfficialConversationInTransaction(
@@ -336,6 +372,29 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
       update: { unreadCount: 1 },
     });
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) return;
+      results[current] = await mapper(items[current]!);
+    }
+  }
+
+  const workers = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
 }
 
 function buildMetadata(

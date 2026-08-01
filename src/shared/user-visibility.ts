@@ -1,4 +1,4 @@
-import { UserRole, type Prisma } from "@prisma/client";
+import { UserRole, UserStatus, type Prisma } from "@prisma/client";
 
 export const STAFF_ROLES: readonly UserRole[] = [
   UserRole.MODERATOR,
@@ -15,5 +15,14 @@ export function consumerPlatformUserWhere(): Prisma.UserWhereInput {
   return {
     role: UserRole.USER,
     isSystemAccount: false,
+  };
+}
+
+/** Every human account that should receive Milox Official broadcasts. */
+export function activeBroadcastRecipientWhere(): Prisma.UserWhereInput {
+  return {
+    isSystemAccount: false,
+    status: UserStatus.ACTIVE,
+    deletedAt: null,
   };
 }

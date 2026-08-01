@@ -4,6 +4,7 @@ import type { PrismaOfficialChatRepository } from "../infrastructure/prisma-offi
 export interface OfficialBroadcastResult {
   sent: number;
   failed: number;
+  total: number;
 }
 
 export class OfficialChatService {

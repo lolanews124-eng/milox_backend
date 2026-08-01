@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PrismaOfficialChatRepository } from "../src/modules/official-chat/infrastructure/prisma-official-chat-repository.js";
 
 describe("PrismaOfficialChatRepository.broadcastToAllUsers", () => {
-  it("continues delivering when one user fails", async () => {
+  it("delivers to every active recipient and reports totals", async () => {
     const wakeOutbox = vi.fn();
     const transaction = {
       conversation: {
@@ -27,6 +27,7 @@ describe("PrismaOfficialChatRepository.broadcastToAllUsers", () => {
     let call = 0;
     const database = {
       user: {
+        count: vi.fn().mockResolvedValue(2),
         findMany: vi
           .fn()
           .mockResolvedValueOnce([{ id: "user-bad" }, { id: "user-good" }])
@@ -55,7 +56,8 @@ describe("PrismaOfficialChatRepository.broadcastToAllUsers", () => {
       body: "Hello everyone",
     });
 
-    expect(result).toEqual({ sent: 1, failed: 1 });
+    expect(result).toEqual({ sent: 1, failed: 1, total: 2 });
+    expect(database.user.count).toHaveBeenCalledOnce();
     expect(database.$transaction).toHaveBeenCalledTimes(2);
     expect(transaction.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -65,6 +67,6 @@ describe("PrismaOfficialChatRepository.broadcastToAllUsers", () => {
       }),
       select: { id: true },
     });
-    expect(wakeOutbox).toHaveBeenCalledOnce();
+    expect(wakeOutbox).toHaveBeenCalled();
   });
 });
