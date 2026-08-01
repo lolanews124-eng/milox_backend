@@ -125,12 +125,14 @@ export class AuthController {
     session: AuthSession,
     status: number,
   ): void {
-    const isMobile = request.header("x-client-platform") === "mobile";
+    const platform = request.header("x-client-platform")?.trim().toLowerCase();
+    const isMobile = platform === "mobile";
+    const isAdmin = platform === "admin";
     if (!isMobile) {
       response.cookie(
         REFRESH_COOKIE,
         session.refreshToken,
-        this.refreshCookieOptions(),
+        this.refreshCookieOptions(isAdmin ? 1 : undefined),
       );
     }
 
@@ -138,7 +140,7 @@ export class AuthController {
       success: true,
       data: {
         accessToken: session.accessToken,
-        ...(isMobile ? { refreshToken: session.refreshToken } : {}),
+        ...(isMobile || isAdmin ? { refreshToken: session.refreshToken } : {}),
         expiresIn: session.expiresIn,
         user: session.user,
       },
@@ -146,7 +148,7 @@ export class AuthController {
     });
   }
 
-  private refreshCookieOptions(): {
+  private refreshCookieOptions(maxAgeDays?: number): {
     httpOnly: true;
     secure: boolean;
     sameSite: "strict" | "none";
@@ -161,7 +163,7 @@ export class AuthController {
       secure: this.config.NODE_ENV === "production",
       sameSite: crossSiteAdmin ? "none" : "strict",
       path: "/api/v1/auth",
-      maxAge: this.config.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+      maxAge: (maxAgeDays ?? this.config.REFRESH_TOKEN_TTL_DAYS) * 24 * 60 * 60 * 1000,
     };
   }
 }

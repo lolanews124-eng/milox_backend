@@ -129,6 +129,48 @@ describe("auth HTTP contract", () => {
     expect(response.headers["set-cookie"]).toBeUndefined();
   });
 
+  it("returns the refresh token to an admin client and sets a one-day cookie", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.createAccount).mockImplementation(
+      (data: CreateAccountData) =>
+        Promise.resolve({
+          id: "fca0622f-cba7-4398-bfe7-11842c026990",
+          username: data.username,
+          displayName: data.displayName,
+          email: data.email,
+          passwordHash: data.passwordHash,
+          ageRange: data.ageRange,
+          country: data.country,
+          gender: data.gender,
+          role: "USER",
+          status: "ACTIVE",
+          isVerifiedBadge: false,
+          isSystemAccount: false,
+          emailVerifiedAt: null,
+          createdAt: new Date(),
+        }),
+    );
+    const app = createTestApp(repository);
+
+    const response = await request(app)
+      .post("/api/v1/auth/signup")
+      .set("X-Client-Platform", "admin")
+      .send({
+        username: "admin_user",
+        email: "admin@example.com",
+        password: "long-enough-password",
+        displayName: "Admin User",
+        ageRange: "AGE_25_28",
+        country: "India",
+        gender: "OTHER",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.refreshToken).toEqual(expect.any(String));
+    expect(response.headers["set-cookie"]?.[0]).toContain("milox_rt=");
+    expect(response.headers["set-cookie"]?.[0]).toContain("Max-Age=86400");
+  });
+
   it("returns the standard validation error envelope", async () => {
     const app = createTestApp(createRepository());
     const response = await request(app).post("/api/v1/auth/signup").send({
