@@ -319,6 +319,21 @@ export const adminMatchQuerySchema = z.object({
   ...offsetPageSchema,
 });
 
+export const adminReferralQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  referrerUserId: z.uuid().optional(),
+  ...offsetPageSchema,
+});
+
+export const adminReferralCodeParamSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(3)
+    .max(16)
+    .transform((value) => value.toUpperCase()),
+});
+
 export const adminConversationQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   bucket: z.enum(["all", "active", "closed", "reported"]).optional(),

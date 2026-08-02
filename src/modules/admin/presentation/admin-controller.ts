@@ -20,6 +20,8 @@ import {
   adminEmailJobQuerySchema,
   adminHashtagIdParamSchema,
   adminHashtagQuerySchema,
+  adminReferralCodeParamSchema,
+  adminReferralQuerySchema,
   adminMatchQuerySchema,
   adminConversationQuerySchema,
   adminConversationIdParamSchema,
@@ -469,6 +471,37 @@ export class AdminController {
 
   matchesStats = async (request: Request, response: Response): Promise<void> => {
     const data = await this.admin.matchesStats();
+    response.status(200).json(success(request, data));
+  };
+
+  referralsStats = async (request: Request, response: Response): Promise<void> => {
+    const data = await this.admin.referralsStats();
+    response.status(200).json(success(request, data));
+  };
+
+  listReferrals = async (request: Request, response: Response): Promise<void> => {
+    const query = adminReferralQuerySchema.parse(request.query);
+    const data = await this.admin.listReferrals(query);
+    response.status(200).json(success(request, data));
+  };
+
+  listReferralLeaderboard = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminReferralQuerySchema
+      .pick({ page: true, pageSize: true })
+      .parse(request.query);
+    const data = await this.admin.listReferralLeaderboard(query);
+    response.status(200).json(success(request, data));
+  };
+
+  lookupReferralCode = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { code } = adminReferralCodeParamSchema.parse(request.params);
+    const data = await this.admin.lookupReferralCode(code);
     response.status(200).json(success(request, data));
   };
 

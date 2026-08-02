@@ -26,6 +26,10 @@ import {
   presentAdminHashtag,
   presentAdminMatch,
   presentAdminMatchesStats,
+  presentAdminReferral,
+  presentAdminReferralCodeLookup,
+  presentAdminReferralLeaderboard,
+  presentAdminReferralsStats,
   presentAdminConversation,
   presentAdminConversationsStats,
   presentAdminConversationMessage,
@@ -983,6 +987,45 @@ export class AdminService {
   async matchesStats(): Promise<object> {
     const stats = await this.repository.matchesStats(new Date());
     return presentAdminMatchesStats(stats);
+  }
+
+  async referralsStats(): Promise<object> {
+    const stats = await this.repository.referralsStats(new Date());
+    return presentAdminReferralsStats(stats);
+  }
+
+  async listReferrals(options: {
+    q?: string | undefined;
+    referrerUserId?: string | undefined;
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listReferrals({
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(options.q ? { q: options.q.trim() } : {}),
+      ...(options.referrerUserId ? { referrerUserId: options.referrerUserId } : {}),
+    });
+    return paginate(result, options, presentAdminReferral);
+  }
+
+  async listReferralLeaderboard(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listReferralLeaderboard({
+      page: options.page,
+      pageSize: options.pageSize,
+    });
+    return paginate(result, options, presentAdminReferralLeaderboard);
+  }
+
+  async lookupReferralCode(code: string): Promise<object> {
+    const row = await this.repository.lookupReferralCode(code);
+    if (!row) {
+      throw new AppError("NOT_FOUND", "Referral code not found", 404);
+    }
+    return presentAdminReferralCodeLookup(row);
   }
 
   async listConversations(options: {

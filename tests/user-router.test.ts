@@ -103,6 +103,10 @@ function createRepository(): UserRepository {
     findByUsername: vi.fn(),
     searchUsers: vi.fn(),
     getViewerRelation: vi.fn(),
+    getPremiumStatus: vi.fn().mockResolvedValue({
+      isPremium: false,
+      premiumExpiresAt: null,
+    }),
     updateProfile: vi.fn(),
     updatePrivacy: vi.fn(),
     softDelete: vi.fn(),

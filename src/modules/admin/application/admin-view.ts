@@ -14,6 +14,7 @@ export interface AdminUsersStatsRecord {
   femaleUsers: number;
   suspendedUsers: number;
   reportedUsers: number;
+  deletedUsers: number;
 }
 
 export interface AdminVerificationStatsRecord {
@@ -27,6 +28,7 @@ export interface AdminDashboardRecord {
   totalUsers: number;
   dailyActiveUsers: number;
   newUsersToday: number;
+  deletedUsers: number;
   totalPosts: number;
   totalComments: number;
   totalMessages: number;
@@ -53,6 +55,7 @@ export interface AdminUserRecord {
   lastLoginAt: Date | null;
   bannedAt: Date | null;
   banReason: string | null;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,6 +96,7 @@ export function presentAdminUser(user: AdminUserRecord): object {
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     bannedAt: user.bannedAt?.toISOString() ?? null,
     banReason: user.banReason,
+    deletedAt: user.deletedAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
@@ -335,6 +339,56 @@ export interface AdminMatchesStatsRecord {
   unmatchedMatches: number;
   withMessages: number;
   matchedToday: number;
+}
+
+export interface AdminReferralsStatsRecord {
+  totalReferrals: number;
+  referralsToday: number;
+  referralsLast7Days: number;
+  referralsLast30Days: number;
+  activeReferrers: number;
+  referralCodesIssued: number;
+  referredSignupShare: number;
+  totalRewardPointsPaid: number;
+  rewardPerReferral: number;
+  sharingActive: boolean;
+  referralsTrend: Array<{ date: string; count: number }>;
+}
+
+export interface AdminReferralRecord {
+  id: string;
+  referrerUserId: string;
+  referrerUsername: string;
+  referrerDisplayName: string | null;
+  referredUserId: string;
+  referredUsername: string;
+  referredDisplayName: string | null;
+  rewardPoints: number;
+  status: string;
+  createdAt: Date;
+}
+
+export interface AdminReferralLeaderboardRecord {
+  userId: string;
+  username: string;
+  displayName: string | null;
+  profilePhotoMediaId: string | null;
+  referralCode: string;
+  referralCount: number;
+  totalEarned: number;
+  lastReferralAt: Date | null;
+}
+
+export interface AdminReferralCodeLookupRecord {
+  code: string;
+  userId: string;
+  username: string;
+  displayName: string | null;
+  profilePhotoMediaId: string | null;
+  userStatus: string;
+  referralCount: number;
+  totalEarned: number;
+  codeCreatedAt: Date;
 }
 
 export interface AdminConversationsStatsRecord {
@@ -697,6 +751,56 @@ export function presentAdminMatch(match: AdminMatchRecord): object {
 
 export function presentAdminMatchesStats(stats: AdminMatchesStatsRecord): object {
   return { ...stats };
+}
+
+export function presentAdminReferralsStats(stats: AdminReferralsStatsRecord): object {
+  return { ...stats };
+}
+
+export function presentAdminReferral(referral: AdminReferralRecord): object {
+  return {
+    id: referral.id,
+    referrerUserId: referral.referrerUserId,
+    referrerUsername: referral.referrerUsername,
+    referrerDisplayName: referral.referrerDisplayName,
+    referredUserId: referral.referredUserId,
+    referredUsername: referral.referredUsername,
+    referredDisplayName: referral.referredDisplayName,
+    rewardPoints: referral.rewardPoints,
+    status: referral.status,
+    createdAt: referral.createdAt.toISOString(),
+  };
+}
+
+export function presentAdminReferralLeaderboard(
+  row: AdminReferralLeaderboardRecord,
+): object {
+  return {
+    userId: row.userId,
+    username: row.username,
+    displayName: row.displayName,
+    profilePhotoMediaId: row.profilePhotoMediaId,
+    referralCode: row.referralCode,
+    referralCount: row.referralCount,
+    totalEarned: row.totalEarned,
+    lastReferralAt: row.lastReferralAt?.toISOString() ?? null,
+  };
+}
+
+export function presentAdminReferralCodeLookup(
+  row: AdminReferralCodeLookupRecord,
+): object {
+  return {
+    code: row.code,
+    userId: row.userId,
+    username: row.username,
+    displayName: row.displayName,
+    profilePhotoMediaId: row.profilePhotoMediaId,
+    userStatus: row.userStatus,
+    referralCount: row.referralCount,
+    totalEarned: row.totalEarned,
+    codeCreatedAt: row.codeCreatedAt.toISOString(),
+  };
 }
 
 export function presentAdminConversation(

@@ -346,6 +346,30 @@ export function createAdminRouter(
     asyncHandler(controller.matchesStats),
   );
   router.get(
+    "/referrals/stats",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.referralsStats),
+  );
+  router.get(
+    "/referrals/leaderboard",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listReferralLeaderboard),
+  );
+  router.get(
+    "/referrals/codes/:code",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.lookupReferralCode),
+  );
+  router.get(
+    "/referrals",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listReferrals),
+  );
+  router.get(
     "/matches",
     readLimit,
     adminOnly,

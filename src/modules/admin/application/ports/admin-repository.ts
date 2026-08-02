@@ -20,6 +20,10 @@ import type {
   AdminHashtagRecord,
   AdminMatchRecord,
   AdminMatchesStatsRecord,
+  AdminReferralCodeLookupRecord,
+  AdminReferralLeaderboardRecord,
+  AdminReferralRecord,
+  AdminReferralsStatsRecord,
   AdminConversationsStatsRecord,
   AdminConversationRecord,
   AdminConversationMessageRecord,
@@ -250,6 +254,11 @@ export interface AdminMatchQuery extends OffsetPage {
   q?: string;
 }
 
+export interface AdminReferralQuery extends OffsetPage {
+  q?: string;
+  referrerUserId?: string;
+}
+
 export interface AdminConversationQuery extends OffsetPage {
   q?: string;
   bucket?: "all" | "active" | "closed" | "reported";
@@ -390,6 +399,12 @@ export interface AdminRepository {
   analytics(now: Date): Promise<AdminAnalyticsRecord>;
   listMatches(query: AdminMatchQuery): Promise<AdminPage<AdminMatchRecord>>;
   matchesStats(now: Date): Promise<AdminMatchesStatsRecord>;
+  referralsStats(now: Date): Promise<AdminReferralsStatsRecord>;
+  listReferrals(query: AdminReferralQuery): Promise<AdminPage<AdminReferralRecord>>;
+  listReferralLeaderboard(
+    query: OffsetPage,
+  ): Promise<AdminPage<AdminReferralLeaderboardRecord>>;
+  lookupReferralCode(code: string): Promise<AdminReferralCodeLookupRecord | null>;
   listConversations(
     query: AdminConversationQuery,
   ): Promise<AdminPage<AdminConversationRecord>>;

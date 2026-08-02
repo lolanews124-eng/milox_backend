@@ -19,12 +19,14 @@ import {
 } from "@prisma/client";
 
 import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
+import { normalizeReferralCode } from "../../rewards/infrastructure/referral-code.js";
 
 import type {
   AdminAuditLogQuery,
   AdminCommentQuery,
   AdminPage,
   AdminPostQuery,
+  AdminReferralQuery,
   AdminStoryQuery,
   AdminReportQuery,
   AdminRepository,
@@ -87,6 +89,10 @@ import type {
   AdminHashtagRecord,
   AdminMatchRecord,
   AdminMatchesStatsRecord,
+  AdminReferralCodeLookupRecord,
+  AdminReferralLeaderboardRecord,
+  AdminReferralRecord,
+  AdminReferralsStatsRecord,
   AdminConversationsStatsRecord,
   AdminConversationRecord,
   AdminConversationMessageRecord,
@@ -119,6 +125,7 @@ const adminUserSelect = {
   lastLoginAt: true,
   bannedAt: true,
   banReason: true,
+  deletedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
@@ -293,6 +300,7 @@ export class PrismaAdminRepository implements AdminRepository {
         totalUsers,
         dailyActiveUsers,
         newUsersToday,
+        deletedUsers,
         totalPosts,
         totalComments,
         totalMessages,
@@ -324,6 +332,12 @@ export class PrismaAdminRepository implements AdminRepository {
             ...consumerPlatformUserWhere(),
           },
         }),
+        transaction.user.count({
+          where: {
+            deletedAt: { not: null },
+            ...consumerPlatformUserWhere(),
+          },
+        }),
         transaction.post.count({ where: { deletedAt: null } }),
         transaction.comment.count({ where: { deletedAt: null } }),
         transaction.message.count({
@@ -352,6 +366,7 @@ export class PrismaAdminRepository implements AdminRepository {
         totalUsers,
         dailyActiveUsers,
         newUsersToday,
+        deletedUsers,
         totalPosts,
         totalComments,
         totalMessages,
@@ -380,6 +395,7 @@ export class PrismaAdminRepository implements AdminRepository {
       newUsersToday,
       suspendedUsers,
       reportedUsers,
+      deletedUsers,
       genderGroups,
     ] = await Promise.all([
       this.database.user.count({ where: activeWhere }),
@@ -403,6 +419,12 @@ export class PrismaAdminRepository implements AdminRepository {
           },
         },
       }),
+      this.database.user.count({
+        where: {
+          deletedAt: { not: null },
+          ...consumerPlatformUserWhere(),
+        },
+      }),
       this.database.user.groupBy({
         by: ["gender"],
         where: activeWhere,
@@ -424,6 +446,7 @@ export class PrismaAdminRepository implements AdminRepository {
       femaleUsers,
       suspendedUsers,
       reportedUsers,
+      deletedUsers,
     };
   }
 
@@ -2158,6 +2181,248 @@ export class PrismaAdminRepository implements AdminRepository {
       unmatchedMatches,
       withMessages,
       matchedToday,
+    };
+  }
+
+  async referralsStats(now: Date): Promise<AdminReferralsStatsRecord> {
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+    const monthStart = new Date(dayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
+    const trendStart = new Date(dayStart.getTime() - 13 * 24 * 60 * 60 * 1000);
+    const consumerWhere = consumerPlatformUserWhere();
+
+    const [
+      totalReferrals,
+      referralsToday,
+      referralsLast7Days,
+      referralsLast30Days,
+      referralCodesIssued,
+      referredSignups,
+      totalConsumerUsers,
+      rewardAggregate,
+      sampleReferral,
+      trendRows,
+      referrerGroups,
+    ] = await Promise.all([
+      this.database.referral.count(),
+      this.database.referral.count({ where: { createdAt: { gte: dayStart } } }),
+      this.database.referral.count({ where: { createdAt: { gte: weekStart } } }),
+      this.database.referral.count({ where: { createdAt: { gte: monthStart } } }),
+      this.database.referralCode.count(),
+      this.database.user.count({
+        where: { ...consumerWhere, referredByUserId: { not: null } },
+      }),
+      this.database.user.count({ where: consumerWhere }),
+      this.database.referral.aggregate({ _sum: { rewardPoints: true } }),
+      this.database.referral.findFirst({
+        select: { rewardPoints: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.database.referral.findMany({
+        where: { createdAt: { gte: trendStart } },
+        select: { createdAt: true },
+      }),
+      this.database.referral.groupBy({
+        by: ["referrerUserId"],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const referredSignupShare = totalConsumerUsers
+      ? Math.round((referredSignups / totalConsumerUsers) * 1000) / 10
+      : 0;
+
+    return {
+      totalReferrals,
+      referralsToday,
+      referralsLast7Days,
+      referralsLast30Days,
+      activeReferrers: referrerGroups.length,
+      referralCodesIssued,
+      referredSignupShare,
+      totalRewardPointsPaid: rewardAggregate._sum.rewardPoints ?? 0,
+      rewardPerReferral: sampleReferral?.rewardPoints ?? 0,
+      sharingActive: referralsLast7Days > 0,
+      referralsTrend: buildDailySeries(
+        trendStart,
+        14,
+        trendRows.map((row) => row.createdAt),
+      ),
+    };
+  }
+
+  async listReferrals(
+    query: AdminReferralQuery,
+  ): Promise<AdminPage<AdminReferralRecord>> {
+    const where: Prisma.ReferralWhereInput = {
+      ...(query.referrerUserId ? { referrerUserId: query.referrerUserId } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              {
+                referrer: {
+                  username: { contains: query.q, mode: "insensitive" },
+                },
+              },
+              {
+                referrer: {
+                  displayName: { contains: query.q, mode: "insensitive" },
+                },
+              },
+              {
+                referred: {
+                  username: { contains: query.q, mode: "insensitive" },
+                },
+              },
+              {
+                referred: {
+                  displayName: { contains: query.q, mode: "insensitive" },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total] = await this.database.$transaction([
+      this.database.referral.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: {
+          id: true,
+          referrerUserId: true,
+          referredUserId: true,
+          rewardPoints: true,
+          status: true,
+          createdAt: true,
+          referrer: {
+            select: { username: true, displayName: true },
+          },
+          referred: {
+            select: { username: true, displayName: true },
+          },
+        },
+      }),
+      this.database.referral.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        referrerUserId: row.referrerUserId,
+        referrerUsername: row.referrer.username,
+        referrerDisplayName: row.referrer.displayName,
+        referredUserId: row.referredUserId,
+        referredUsername: row.referred.username,
+        referredDisplayName: row.referred.displayName,
+        rewardPoints: row.rewardPoints,
+        status: row.status,
+        createdAt: row.createdAt,
+      })),
+      total,
+    };
+  }
+
+  async listReferralLeaderboard(
+    query: OffsetPage,
+  ): Promise<AdminPage<AdminReferralLeaderboardRecord>> {
+    const grouped = await this.database.referral.groupBy({
+      by: ["referrerUserId"],
+      _count: { _all: true },
+      _sum: { rewardPoints: true },
+      _max: { createdAt: true },
+      orderBy: { _count: { referrerUserId: "desc" } },
+    });
+
+    const total = grouped.length;
+    const pageRows = grouped.slice(
+      (query.page - 1) * query.pageSize,
+      query.page * query.pageSize,
+    );
+    const userIds = pageRows.map((row) => row.referrerUserId);
+    if (userIds.length === 0) {
+      return { items: [], total };
+    }
+
+    const [users, codes] = await Promise.all([
+      this.database.user.findMany({
+        where: { id: { in: userIds } },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          profilePhotoMediaId: true,
+        },
+      }),
+      this.database.referralCode.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, code: true },
+      }),
+    ]);
+
+    const userById = new Map(users.map((user) => [user.id, user]));
+    const codeByUserId = new Map(codes.map((code) => [code.userId, code.code]));
+
+    return {
+      items: pageRows.map((row) => {
+        const user = userById.get(row.referrerUserId);
+        return {
+          userId: row.referrerUserId,
+          username: user?.username ?? "unknown",
+          displayName: user?.displayName ?? null,
+          profilePhotoMediaId: user?.profilePhotoMediaId ?? null,
+          referralCode: codeByUserId.get(row.referrerUserId) ?? "—",
+          referralCount: row._count._all,
+          totalEarned: row._sum.rewardPoints ?? 0,
+          lastReferralAt: row._max.createdAt,
+        };
+      }),
+      total,
+    };
+  }
+
+  async lookupReferralCode(
+    code: string,
+  ): Promise<AdminReferralCodeLookupRecord | null> {
+    const normalized = normalizeReferralCode(code);
+    const row = await this.database.referralCode.findUnique({
+      where: { code: normalized },
+      select: {
+        code: true,
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            profilePhotoMediaId: true,
+            status: true,
+          },
+        },
+      },
+    });
+    if (!row) return null;
+
+    const aggregate = await this.database.referral.aggregate({
+      where: { referrerUserId: row.user.id },
+      _count: { _all: true },
+      _sum: { rewardPoints: true },
+    });
+
+    return {
+      code: row.code,
+      userId: row.user.id,
+      username: row.user.username,
+      displayName: row.user.displayName,
+      profilePhotoMediaId: row.user.profilePhotoMediaId,
+      userStatus: row.user.status,
+      referralCount: aggregate._count._all,
+      totalEarned: aggregate._sum.rewardPoints ?? 0,
+      codeCreatedAt: row.createdAt,
     };
   }
 
