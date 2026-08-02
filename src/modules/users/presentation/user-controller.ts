@@ -5,6 +5,7 @@ import type { UserService } from "../application/services/user-service.js";
 import {
   changePasswordSchema,
   privacySettingsSchema,
+  profileViewsQuerySchema,
   searchUsersQuerySchema,
   updateProfileSchema,
   usernameParamSchema,
@@ -95,6 +96,37 @@ export class UserController {
   ): Promise<void> => {
     await this.users.deleteAccount(requireUserId(request));
     response.status(204).send();
+  };
+
+  getProfileViewsSummary = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const summary = await this.users.getProfileViewsSummary(
+      requireUserId(request),
+    );
+    response.status(200).json(successEnvelope(request, summary));
+  };
+
+  getProfileViews = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = profileViewsQuerySchema.parse(request.query);
+    const page = await this.users.getProfileViews(requireUserId(request), {
+      limit: query.limit,
+      ...(query.cursor ? { cursor: query.cursor } : {}),
+    });
+    response.status(200).json({
+      ...successEnvelope(request, { items: page.items }),
+      meta: {
+        requestId: request.requestId,
+        pagination: {
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+        },
+      },
+    });
   };
 }
 

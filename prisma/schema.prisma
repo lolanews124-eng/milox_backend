@@ -297,6 +297,8 @@ model User {
   blocksReceived      Block[]                  @relation("Blocked")
   profilesPassed      ProfilePass[]            @relation("ProfilePassViewer")
   passedByProfiles    ProfilePass[]            @relation("ProfilePassTarget")
+  profileViewsReceived ProfileView[]           @relation("ProfileViewsReceived")
+  profileViewsMade     ProfileView[]           @relation("ProfileViewsMade")
   reportsFiled        Report[]                 @relation("ReportReporter")
   reportsAgainst      Report[]                 @relation("ReportReportedUser")
   auditLogs           AuditLog[]
@@ -873,6 +875,22 @@ model ProfilePass {
   @@id([viewerId, targetId])
   @@index([targetId])
   @@map("profile_passes")
+}
+
+/// Who viewed a user's public profile (deduped per viewer).
+model ProfileView {
+  profileUserId String   @db.Uuid
+  viewerId      String   @db.Uuid
+  viewedAt      DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profileUser User @relation("ProfileViewsReceived", fields: [profileUserId], references: [id], onDelete: Cascade)
+  viewer      User @relation("ProfileViewsMade", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@id([profileUserId, viewerId])
+  @@index([profileUserId, updatedAt(sort: Desc)])
+  @@index([viewerId])
+  @@map("profile_views")
 }
 
 model Report {

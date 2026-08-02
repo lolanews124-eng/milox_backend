@@ -38,6 +38,17 @@ export function createUserRouter(
     asyncHandler(controller.changePassword),
   );
 
+  router.get(
+    "/me/profile-views/summary",
+    security.authenticate,
+    asyncHandler(controller.getProfileViewsSummary),
+  );
+  router.get(
+    "/me/profile-views",
+    security.authenticate,
+    asyncHandler(controller.getProfileViews),
+  );
+
   // Static search must stay above /:username.
   router.get(
     "/search",

@@ -74,7 +74,7 @@ describe("UserService privacy projections", () => {
         "relationshipGoal",
         "interests",
       ]),
-      canChangeUsername: false,
+      isPremium: false,
     });
   });
 
@@ -115,6 +115,62 @@ describe("UserService privacy projections", () => {
 
     expect(profileUpdatePosts.createProfilePhotoUpdatePost).toHaveBeenCalled();
   });
+
+  it("records profile views for authenticated non-self visitors", async () => {
+    const repository = createRepository();
+    const profileViews = {
+      upsertView: vi.fn().mockResolvedValue(undefined),
+      countViews: vi.fn(),
+      listViews: vi.fn(),
+    };
+    vi.mocked(repository.findByUsername).mockResolvedValue(profileFixture());
+    vi.mocked(repository.getViewerRelation).mockResolvedValue(
+      relationFixture(),
+    );
+
+    await createService(repository, undefined, profileViews).getPublicProfile(
+      "moon_user",
+      "viewer-id",
+    );
+
+    expect(profileViews.upsertView).toHaveBeenCalledWith(
+      profileFixture().id,
+      "viewer-id",
+    );
+  });
+
+  it("does not record profile views for self visits", async () => {
+    const repository = createRepository();
+    const profileViews = {
+      upsertView: vi.fn().mockResolvedValue(undefined),
+      countViews: vi.fn(),
+      listViews: vi.fn(),
+    };
+    vi.mocked(repository.findByUsername).mockResolvedValue(profileFixture());
+    vi.mocked(repository.getViewerRelation).mockResolvedValue(
+      relationFixture({ isSelf: true }),
+    );
+
+    await createService(repository, undefined, profileViews).getPublicProfile(
+      "moon_user",
+      "user-id",
+    );
+
+    expect(profileViews.upsertView).not.toHaveBeenCalled();
+  });
+
+  it("requires premium for the full profile views list", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findById).mockResolvedValue(profileFixture());
+    vi.mocked(repository.getPremiumStatus).mockResolvedValue({
+      isPremium: false,
+      premiumExpiresAt: null,
+    });
+
+    await expect(
+      createService(repository).getProfileViews("user-id", { limit: 20 }),
+    ).rejects.toMatchObject({ code: "PREMIUM_REQUIRED", statusCode: 403 });
+  });
 });
 
 function createService(
@@ -123,12 +179,18 @@ function createService(
     createProfilePhotoUpdatePost: ReturnType<typeof vi.fn>;
     createCoverPhotoUpdatePost: ReturnType<typeof vi.fn>;
   },
+  profileViews?: {
+    upsertView: ReturnType<typeof vi.fn>;
+    countViews: ReturnType<typeof vi.fn>;
+    listViews: ReturnType<typeof vi.fn>;
+  },
 ): UserService {
   return new UserService(
     repository,
     {} as never,
     config,
     profileUpdatePosts,
+    profileViews,
   );
 }
 
@@ -138,6 +200,10 @@ function createRepository(): UserRepository {
     findByUsername: vi.fn(),
     searchUsers: vi.fn(),
     getViewerRelation: vi.fn(),
+    getPremiumStatus: vi.fn().mockResolvedValue({
+      isPremium: false,
+      premiumExpiresAt: null,
+    }),
     updateProfile: vi.fn(),
     updatePrivacy: vi.fn(),
     softDelete: vi.fn(),

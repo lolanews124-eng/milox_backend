@@ -92,6 +92,9 @@ export interface UserRepository {
     profileUserId: string,
     viewerUserId?: string,
   ): Promise<ViewerRelation>;
+  getPremiumStatus(
+    userId: string,
+  ): Promise<{ isPremium: boolean; premiumExpiresAt: Date | null }>;
   updateProfile(
     userId: string,
     data: UpdateProfileData,

@@ -5,6 +5,7 @@ import type { AppConfig } from "../../config/env.js";
 import type { AuthService } from "../auth/application/services/auth-service.js";
 import type { ProfileUpdatePostWriter } from "../posts/application/profile-update-post-writer.js";
 import { UserService } from "./application/services/user-service.js";
+import { PrismaProfileViewRepository } from "./infrastructure/prisma-profile-view-repository.js";
 import { PrismaUserRepository } from "./infrastructure/prisma-user-repository.js";
 import { UserController } from "./presentation/user-controller.js";
 import { createUserRouter } from "./presentation/user-router.js";
@@ -28,11 +29,13 @@ export function createUserModule(
   profileUpdatePosts?: ProfileUpdatePostWriter,
 ): UserModule {
   const repository = new PrismaUserRepository(database);
+  const profileViews = new PrismaProfileViewRepository(database);
   const service = new UserService(
     repository,
     authService,
     config,
     profileUpdatePosts,
+    profileViews,
   );
   const controller = new UserController(service);
 

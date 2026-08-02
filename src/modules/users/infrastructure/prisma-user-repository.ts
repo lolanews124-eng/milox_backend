@@ -25,6 +25,7 @@ import {
   publicAuthorSelect,
   visibleUserCardWhere,
 } from "../../posts/infrastructure/post-query-policy.js";
+import { readPremiumStatus } from "./prisma-profile-view-repository.js";
 
 const profileSelect = {
   id: true,
@@ -224,6 +225,12 @@ export class PrismaUserRepository implements UserRepository {
       hasIncomingPendingInterest: Boolean(incomingPendingInterest),
       isMatched: Boolean(match),
     };
+  }
+
+  async getPremiumStatus(
+    userId: string,
+  ): Promise<{ isPremium: boolean; premiumExpiresAt: Date | null }> {
+    return readPremiumStatus(this.database, userId);
   }
 
   async updateProfile(

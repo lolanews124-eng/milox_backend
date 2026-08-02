@@ -23,6 +23,7 @@ import type {
 } from "../ports/user-repository.js";
 import { presentPublicAuthor, viewerFollowStateFromStatus } from "../../../posts/application/post-view.js";
 import type { ProfileUpdatePostWriter } from "../../../posts/application/profile-update-post-writer.js";
+import type { ProfileViewRepository } from "../ports/profile-view-repository.js";
 
 const RESERVED_USERNAMES = new Set([
   "admin",
@@ -57,11 +58,13 @@ export class UserService {
     private readonly authService: AuthService,
     private readonly config: AppConfig,
     private readonly profileUpdatePosts?: ProfileUpdatePostWriter,
+    private readonly profileViews?: ProfileViewRepository,
   ) {}
 
   async getMe(userId: string): Promise<object> {
     const user = await this.requireActiveUser(userId);
-    return mapPrivateProfile(user, this.config);
+    const premium = await this.repository.getPremiumStatus(userId);
+    return mapPrivateProfile(user, this.config, premium);
   }
 
   async getPublicProfile(
@@ -81,7 +84,93 @@ export class UserService {
     if (relation.isBlocked && !relation.isSelf) {
       throw new AppError("NOT_FOUND", "User not found", 404);
     }
+    if (
+      this.profileViews &&
+      viewerUserId &&
+      !relation.isSelf &&
+      !relation.isBlocked
+    ) {
+      void this.profileViews
+        .upsertView(user.id, viewerUserId)
+        .catch(() => undefined);
+    }
     return mapPublicProfile(user, relation, this.config);
+  }
+
+  async getProfileViewsSummary(userId: string): Promise<object> {
+    await this.requireActiveUser(userId);
+    const premium = await this.repository.getPremiumStatus(userId);
+    const totalCount = this.profileViews
+      ? await this.profileViews.countViews(userId)
+      : 0;
+    const previewSlotCount = Math.min(totalCount, 3);
+    const recentPreview =
+      premium.isPremium && this.profileViews
+        ? (
+            await this.profileViews.listViews(userId, { limit: 3 })
+          ).map((row) => ({
+            viewer: presentPublicAuthor(row.viewer, this.config),
+            viewedAt: row.viewedAt.toISOString(),
+            lastViewedAt: row.updatedAt.toISOString(),
+          }))
+        : [];
+
+    return {
+      totalCount,
+      previewSlotCount,
+      isPremium: premium.isPremium,
+      premiumExpiresAt: premium.premiumExpiresAt?.toISOString() ?? null,
+      recentPreview,
+    };
+  }
+
+  async getProfileViews(
+    userId: string,
+    options: { limit: number; cursor?: string },
+  ): Promise<{
+    items: object[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    await this.requireActiveUser(userId);
+    const premium = await this.repository.getPremiumStatus(userId);
+    if (!premium.isPremium) {
+      throw new AppError(
+        "PREMIUM_REQUIRED",
+        "Premium subscription required to view profile visitors",
+        403,
+      );
+    }
+    if (!this.profileViews) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
+
+    const before = options.cursor
+      ? decodeProfileViewCursor(options.cursor)
+      : undefined;
+    const rows = await this.profileViews.listViews(userId, {
+      limit: options.limit + 1,
+      ...(before ? { before } : {}),
+    });
+    const hasMore = rows.length > options.limit;
+    const page = rows.slice(0, options.limit);
+    const last = page.at(-1);
+
+    return {
+      items: page.map((row) => ({
+        viewer: presentPublicAuthor(row.viewer, this.config),
+        viewedAt: row.viewedAt.toISOString(),
+        lastViewedAt: row.updatedAt.toISOString(),
+      })),
+      nextCursor:
+        hasMore && last
+          ? encodeProfileViewCursor({
+              updatedAt: last.updatedAt.toISOString(),
+              viewerId: last.viewerId,
+            })
+          : null,
+      hasMore,
+    };
   }
 
   async search(
@@ -166,7 +255,7 @@ export class UserService {
     try {
       const updated = await this.repository.updateProfile(userId, data);
       await this.publishProfilePhotoUpdatePosts(current, input);
-      return mapPrivateProfile(updated, this.config);
+      return mapPrivateProfile(updated, this.config, await this.repository.getPremiumStatus(userId));
     } catch (error: unknown) {
       if (error instanceof DuplicateUsernameError) {
         throw new AppError("USERNAME_TAKEN", "Username is already in use", 409);
@@ -192,7 +281,11 @@ export class UserService {
   ): Promise<object> {
     await this.requireActiveUser(userId);
     const updated = await this.repository.updatePrivacy(userId, settings);
-    return mapPrivateProfile(updated, this.config);
+    return mapPrivateProfile(
+      updated,
+      this.config,
+      await this.repository.getPremiumStatus(userId),
+    );
   }
 
   async changePassword(
@@ -307,7 +400,11 @@ function mapPublicProfile(
   };
 }
 
-function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
+function mapPrivateProfile(
+  user: UserProfileRecord,
+  config: AppConfig,
+  premium: { isPremium: boolean; premiumExpiresAt: Date | null },
+): object {
   const relation: ViewerRelation = {
     isSelf: true,
     isFollowing: false,
@@ -358,7 +455,49 @@ function mapPrivateProfile(user: UserProfileRecord, config: AppConfig): object {
     canChangeUsernameAt: usernameChangeAllowed
       ? null
       : nextUsernameChangeAt.toISOString(),
+    isPremium: premium.isPremium,
+    premiumExpiresAt: premium.premiumExpiresAt?.toISOString() ?? null,
   };
+}
+
+function encodeProfileViewCursor(cursor: {
+  updatedAt: string;
+  viewerId: string;
+}): string {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
+function decodeProfileViewCursor(value: string): {
+  updatedAt: Date;
+  viewerId: string;
+} {
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    );
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof (parsed as { updatedAt?: unknown }).updatedAt !== "string" ||
+      typeof (parsed as { viewerId?: unknown }).viewerId !== "string"
+    ) {
+      throw new Error("bad cursor");
+    }
+    const updatedAt = new Date((parsed as { updatedAt: string }).updatedAt);
+    if (Number.isNaN(updatedAt.getTime())) {
+      throw new Error("bad cursor");
+    }
+    return {
+      updatedAt,
+      viewerId: (parsed as { viewerId: string }).viewerId,
+    };
+  } catch {
+    throw new AppError(
+      "INVALID_CURSOR",
+      "The pagination cursor is invalid or expired",
+      400,
+    );
+  }
 }
 
 function mediaUrl(

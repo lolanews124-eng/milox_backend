@@ -10,6 +10,11 @@ export const searchUsersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(30).default(15),
 });
 
+export const profileViewsQuerySchema = z.object({
+  cursor: z.string().min(1).max(512).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 export const usernameParamSchema = z.object({
   username: z
     .string()
