@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import type { AppConfig } from "../../config/env.js";
+import { FEED_TRENDING_WINDOW_DAYS } from "../../modules/feed/application/services/feed-scoring.js";
 
 export class FeedScoreWorker {
   private timer: NodeJS.Timeout | undefined;
@@ -29,32 +30,42 @@ export class FeedScoreWorker {
     if (this.running) return;
     this.running = true;
     try {
-      await this.database.$executeRaw`
+      await this.database.$executeRawUnsafe(
+        `
         UPDATE posts
-        SET "trendingScore" =
+        SET "trendingScore" = GREATEST(
           (
             "likeCount"
             + ("commentCount" * 2.0)
             + ("shareCount" * 3.0)
-          )
-          / POWER(
+            + ("saveCount" * 2.5)
+          ) / POWER(
               (EXTRACT(EPOCH FROM (NOW() - "createdAt")) / 3600.0) + 2.0,
-              1.5
-            )
+              1.35
+            ),
+          CASE
+            WHEN "createdAt" >= NOW() - INTERVAL '12 hours' THEN 0.35
+            WHEN "createdAt" >= NOW() - INTERVAL '48 hours' THEN 0.15
+            ELSE 0
+          END
+        )
         WHERE "deletedAt" IS NULL
           AND "isHidden" = FALSE
-          AND "createdAt" >= NOW() - INTERVAL '30 days'
-      `;
-      await this.database.$executeRaw`
+          AND "createdAt" >= NOW() - INTERVAL '${FEED_TRENDING_WINDOW_DAYS} days'
+        `,
+      );
+      await this.database.$executeRawUnsafe(
+        `
         UPDATE posts
         SET "trendingScore" = 0
         WHERE "trendingScore" <> 0
           AND (
             "deletedAt" IS NOT NULL
             OR "isHidden" = TRUE
-            OR "createdAt" < NOW() - INTERVAL '30 days'
+            OR "createdAt" < NOW() - INTERVAL '${FEED_TRENDING_WINDOW_DAYS} days'
           )
-      `;
+        `,
+      );
     } finally {
       this.running = false;
     }

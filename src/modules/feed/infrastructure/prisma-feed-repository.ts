@@ -20,6 +20,11 @@ import type {
   FeedRepository,
 } from "../application/ports/feed-repository.js";
 import type { FeedCursor } from "../application/services/feed-cursor.js";
+import {
+  latestFeedCutoff,
+  suggestedNewAuthorCutoff,
+  trendingFreshCutoff,
+} from "../application/services/feed-scoring.js";
 
 export class PrismaFeedRepository implements FeedRepository {
   constructor(private readonly database: PrismaClient) {}
@@ -27,6 +32,9 @@ export class PrismaFeedRepository implements FeedRepository {
   getLatest(query: FeedQuery): Promise<FeedPostRecord[]> {
     const cursorWhere = chronologicalCursorWhere(query.cursor);
     return this.findPosts(query, {
+      additionalPostWhere: {
+        createdAt: { gte: latestFeedCutoff() },
+      },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       ...(cursorWhere ? { cursorWhere } : {}),
     });
@@ -52,7 +60,14 @@ export class PrismaFeedRepository implements FeedRepository {
 
   getTrending(query: FeedQuery): Promise<FeedPostRecord[]> {
     const cursorWhere = rankedCursorWhere(query.cursor);
+    const freshCutoff = trendingFreshCutoff();
     return this.findPosts(query, {
+      additionalPostWhere: {
+        OR: [
+          { trendingScore: { gt: 0 } },
+          { createdAt: { gte: freshCutoff } },
+        ],
+      },
       orderBy: [
         { trendingScore: "desc" },
         { createdAt: "desc" },
@@ -66,6 +81,32 @@ export class PrismaFeedRepository implements FeedRepository {
     query: FeedQuery & { viewerId: string },
   ): Promise<FeedPostRecord[]> {
     const cursorWhere = rankedCursorWhere(query.cursor);
+    const viewerTagRows = await this.database.userInterest.findMany({
+      where: {
+        userId: query.viewerId,
+        tag: { isActive: true },
+      },
+      select: { tagId: true },
+    });
+    const viewerTagIds = viewerTagRows.map(({ tagId }) => tagId);
+    const newAuthorCutoff = suggestedNewAuthorCutoff();
+
+    const relevanceFilter =
+      viewerTagIds.length > 0
+        ? {
+            OR: [
+              {
+                interests: {
+                  some: {
+                    tagId: { in: viewerTagIds },
+                    tag: { isActive: true },
+                  },
+                },
+              },
+              { createdAt: { gte: newAuthorCutoff } },
+            ],
+          }
+        : { createdAt: { gte: newAuthorCutoff } };
 
     return this.findPosts(query, {
       additionalAuthorWhere: {
@@ -80,6 +121,7 @@ export class PrismaFeedRepository implements FeedRepository {
             status: FollowStatus.ACTIVE,
           },
         },
+        AND: [relevanceFilter],
       },
       orderBy: [
         { trendingScore: "desc" },
@@ -196,6 +238,7 @@ export class PrismaFeedRepository implements FeedRepository {
     query: FeedQuery,
     options: {
       additionalAuthorWhere?: Prisma.UserWhereInput;
+      additionalPostWhere?: Prisma.PostWhereInput;
       orderBy: Prisma.PostOrderByWithRelationInput[];
       cursorWhere?: Prisma.PostWhereInput;
     },
@@ -205,13 +248,22 @@ export class PrismaFeedRepository implements FeedRepository {
       ? { AND: [authorVisibility, options.additionalAuthorWhere] }
       : authorVisibility;
 
-    return this.database.post.findMany({
-      where: {
+    const postFilters: Prisma.PostWhereInput[] = [
+      {
         deletedAt: null,
         isHidden: false,
         author: { is: authorWhere },
-        ...(options.cursorWhere ? { AND: [options.cursorWhere] } : {}),
       },
+    ];
+    if (options.additionalPostWhere) {
+      postFilters.push(options.additionalPostWhere);
+    }
+    if (options.cursorWhere) {
+      postFilters.push(options.cursorWhere);
+    }
+
+    return this.database.post.findMany({
+      where: { AND: postFilters },
       orderBy: options.orderBy,
       take: query.limit + 1,
       select: postViewSelect(query.viewerId),
