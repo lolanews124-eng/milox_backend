@@ -408,7 +408,7 @@ export function createAdminRouter(
   router.get(
     "/media/:mediaId/content",
     readLimit,
-    adminOnly,
+    moderationStaff,
     asyncHandler(controller.getMediaContent),
   );
   router.patch(
