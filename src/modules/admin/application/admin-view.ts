@@ -290,9 +290,12 @@ export interface AdminSubscriptionRecord {
   id: string;
   userId: string;
   username: string;
+  displayName: string | null;
+  profilePhotoMediaId: string | null;
   planId: string;
   planName: string;
   planCode: string;
+  planTier: string;
   billingCycle: string;
   status: string;
   startsAt: Date;
@@ -718,9 +721,12 @@ export function presentAdminSubscription(sub: AdminSubscriptionRecord): object {
     id: sub.id,
     userId: sub.userId,
     username: sub.username,
+    displayName: sub.displayName,
+    profilePhotoMediaId: sub.profilePhotoMediaId,
     planId: sub.planId,
     planName: sub.planName,
     planCode: sub.planCode,
+    planTier: sub.planTier,
     billingCycle: sub.billingCycle,
     status: sub.status,
     startsAt: sub.startsAt.toISOString(),

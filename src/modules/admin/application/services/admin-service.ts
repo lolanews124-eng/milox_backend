@@ -768,6 +768,7 @@ export class AdminService {
   async listSubscriptions(options: {
     status?: string | undefined;
     userId?: string | undefined;
+    q?: string | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -776,6 +777,7 @@ export class AdminService {
       pageSize: options.pageSize,
       ...(options.status ? { status: options.status } : {}),
       ...(options.userId ? { userId: options.userId } : {}),
+      ...(options.q ? { q: options.q } : {}),
     });
     return paginate(result, options, presentAdminSubscription);
   }

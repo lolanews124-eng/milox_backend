@@ -240,6 +240,7 @@ export interface UpdatePremiumPlanData {
 export interface AdminSubscriptionQuery extends OffsetPage {
   status?: string;
   userId?: string;
+  q?: string;
 }
 
 export interface GrantSubscriptionData {

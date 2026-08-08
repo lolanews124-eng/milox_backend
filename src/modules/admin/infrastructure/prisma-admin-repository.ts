@@ -1723,6 +1723,18 @@ export class PrismaAdminRepository implements AdminRepository {
     const where: Prisma.UserSubscriptionWhereInput = {
       ...(query.status ? { status: query.status as SubscriptionStatus } : {}),
       ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              ...(isUuid(query.q) ? [{ userId: query.q }, { id: query.q }] : []),
+              { user: { username: { contains: query.q, mode: "insensitive" } } },
+              { user: { email: { contains: query.q, mode: "insensitive" } } },
+              { user: { displayName: { contains: query.q, mode: "insensitive" } } },
+              { plan: { name: { contains: query.q, mode: "insensitive" } } },
+              { plan: { code: { contains: query.q, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
     };
     const [rows, total] = await this.database.$transaction([
       this.database.userSubscription.findMany({
@@ -1730,37 +1742,12 @@ export class PrismaAdminRepository implements AdminRepository {
         orderBy: [{ createdAt: "desc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        select: {
-          id: true,
-          userId: true,
-          planId: true,
-          billingCycle: true,
-          status: true,
-          startsAt: true,
-          endsAt: true,
-          cancelledAt: true,
-          createdAt: true,
-          user: { select: { username: true } },
-          plan: { select: { name: true, code: true } },
-        },
+        select: subscriptionAdminSelect,
       }),
       this.database.userSubscription.count({ where }),
     ]);
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        userId: row.userId,
-        username: row.user.username,
-        planId: row.planId,
-        planName: row.plan.name,
-        planCode: row.plan.code,
-        billingCycle: row.billingCycle,
-        status: row.status,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
-        cancelledAt: row.cancelledAt,
-        createdAt: row.createdAt,
-      })),
+      items: rows.map(mapAdminSubscriptionRecord),
       total,
     };
   }
@@ -1808,39 +1795,14 @@ export class PrismaAdminRepository implements AdminRepository {
           startsAt: now,
           endsAt,
         },
-        select: {
-          id: true,
-          userId: true,
-          planId: true,
-          billingCycle: true,
-          status: true,
-          startsAt: true,
-          endsAt: true,
-          cancelledAt: true,
-          createdAt: true,
-          user: { select: { username: true } },
-          plan: { select: { name: true, code: true } },
-        },
+        select: subscriptionAdminSelect,
       });
       await this.writeAudit(transaction, actor.id, "admin.subscription.granted", "subscription", created.id, {
         userId: user.id,
         planId: plan.id,
       });
       await syncUserPremiumState(this.database, user.id);
-      return {
-        id: created.id,
-        userId: created.userId,
-        username: created.user.username,
-        planId: created.planId,
-        planName: created.plan.name,
-        planCode: created.plan.code,
-        billingCycle: created.billingCycle,
-        status: created.status,
-        startsAt: created.startsAt,
-        endsAt: created.endsAt,
-        cancelledAt: created.cancelledAt,
-        createdAt: created.createdAt,
-      };
+      return mapAdminSubscriptionRecord(created);
     });
   }
 
@@ -1863,36 +1825,11 @@ export class PrismaAdminRepository implements AdminRepository {
           status: SubscriptionStatus.CANCELLED,
           cancelledAt: new Date(),
         },
-        select: {
-          id: true,
-          userId: true,
-          planId: true,
-          billingCycle: true,
-          status: true,
-          startsAt: true,
-          endsAt: true,
-          cancelledAt: true,
-          createdAt: true,
-          user: { select: { username: true } },
-          plan: { select: { name: true, code: true } },
-        },
+        select: subscriptionAdminSelect,
       });
       await this.writeAudit(transaction, actor.id, "admin.subscription.cancelled", "subscription", updated.id, {});
       await syncUserPremiumState(this.database, updated.userId);
-      return {
-        id: updated.id,
-        userId: updated.userId,
-        username: updated.user.username,
-        planId: updated.planId,
-        planName: updated.plan.name,
-        planCode: updated.plan.code,
-        billingCycle: updated.billingCycle,
-        status: updated.status,
-        startsAt: updated.startsAt,
-        endsAt: updated.endsAt,
-        cancelledAt: updated.cancelledAt,
-        createdAt: updated.createdAt,
-      };
+      return mapAdminSubscriptionRecord(updated);
     });
   }
 
@@ -3657,6 +3594,50 @@ function truncatePreview(body: string | null): string | null {
   const trimmed = body.trim();
   if (trimmed.length <= 160) return trimmed;
   return `${trimmed.slice(0, 157)}…`;
+}
+
+const subscriptionAdminSelect = {
+  id: true,
+  userId: true,
+  planId: true,
+  billingCycle: true,
+  status: true,
+  startsAt: true,
+  endsAt: true,
+  cancelledAt: true,
+  createdAt: true,
+  user: {
+    select: {
+      username: true,
+      displayName: true,
+      profilePhotoMediaId: true,
+    },
+  },
+  plan: { select: { name: true, code: true, tier: true } },
+} satisfies Prisma.UserSubscriptionSelect;
+
+type SubscriptionAdminRow = Prisma.UserSubscriptionGetPayload<{
+  select: typeof subscriptionAdminSelect;
+}>;
+
+function mapAdminSubscriptionRecord(row: SubscriptionAdminRow): AdminSubscriptionRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    username: row.user.username,
+    displayName: row.user.displayName,
+    profilePhotoMediaId: row.user.profilePhotoMediaId,
+    planId: row.planId,
+    planName: row.plan.name,
+    planCode: row.plan.code,
+    planTier: row.plan.tier,
+    billingCycle: row.billingCycle,
+    status: row.status,
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
+    cancelledAt: row.cancelledAt,
+    createdAt: row.createdAt,
+  };
 }
 
 function isUuid(value: string): boolean {

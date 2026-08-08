@@ -249,6 +249,7 @@ export const adminPlanIdParamSchema = z.object({
 export const adminSubscriptionQuerySchema = z.object({
   status: z.enum(SubscriptionStatus).optional(),
   userId: z.uuid().optional(),
+  q: z.string().trim().min(1).max(120).optional(),
   ...offsetPageSchema,
 });
 
