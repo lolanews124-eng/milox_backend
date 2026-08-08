@@ -109,6 +109,7 @@ enum ConversationStatus {
 
 enum ConversationKind {
   MATCH
+  DIRECT
   OFFICIAL
 }
 
@@ -204,11 +205,28 @@ enum SubscriptionStatus {
   PAST_DUE
 }
 
+enum PremiumTier {
+  FREE
+  PLUS
+  GOLD
+  ELITE
+}
+
+enum PremiumBillingCycle {
+  MONTHLY
+  YEARLY
+  ONE_TIME
+}
+
 enum AdPlacement {
   FEED
   DISCOVER
   SIDEBAR
   SPLASH
+  NOTIFICATIONS
+  MATCHES
+  INTERESTS
+  PROFILE
 }
 
 enum CmsPageStatus {
@@ -241,6 +259,10 @@ model User {
   websiteUrl          String?           @db.VarChar(255)
   instagramHandle     String?           @db.VarChar(64)
   isVerifiedBadge     Boolean           @default(false)
+  premiumTier         PremiumTier       @default(FREE)
+  premiumExpiresAt    DateTime?
+  /// Denormalized from active plan for discover ranking (0 = none, 1-3 = boost).
+  discoverBoost       Int               @default(0)
   /// System-owned accounts (e.g. Milox Official) cannot sign in via the app.
   isSystemAccount     Boolean           @default(false)
   isPrivateAccount    Boolean           @default(false)
@@ -318,6 +340,7 @@ model User {
   @@index([createdAt])
   @@index([country, gender, status])
   @@index([isVerifiedBadge, status])
+  @@index([premiumTier, discoverBoost])
   @@index([deletedAt])
   @@map("users")
 }
@@ -721,6 +744,10 @@ model Conversation {
   id              String             @id @default(uuid()) @db.Uuid
   kind            ConversationKind   @default(MATCH)
   matchId         String?            @unique @db.Uuid
+  /// Canonical pair key for premium direct-message threads (min user id).
+  directUserLowId  String?           @db.Uuid
+  /// Canonical pair key for premium direct-message threads (max user id).
+  directUserHighId String?           @db.Uuid
   /// App user who owns this official inbox (one per user).
   recipientUserId String?            @unique @db.Uuid
   status          ConversationStatus @default(ACTIVE)
@@ -732,8 +759,10 @@ model Conversation {
   members       ConversationMember[]
   messages      Message[]
 
+  @@unique([directUserLowId, directUserHighId])
   @@index([status, updatedAt])
   @@index([kind, recipientUserId])
+  @@index([kind, directUserLowId, directUserHighId])
   @@map("conversations")
 }
 
@@ -1032,35 +1061,73 @@ model AuditLog {
 // -----------------------------------------------------------------------------
 
 model PremiumPlan {
-  id           String   @id @default(uuid()) @db.Uuid
-  code         String   @unique @db.VarChar(64)
-  name         String   @db.VarChar(120)
-  description  String?  @db.VarChar(1000)
+  id           String      @id @default(uuid()) @db.Uuid
+  code         String      @unique @db.VarChar(64)
+  name         String      @db.VarChar(120)
+  description  String?     @db.VarChar(1000)
+  tier         PremiumTier @default(PLUS)
+  sortOrder    Int         @default(0)
+  badgeLabel   String      @default("Premium") @db.VarChar(40)
   priceCents   Int
-  currency     String   @default("USD") @db.Char(3)
+  currency     String      @default("USD") @db.Char(3)
   durationDays Int
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  adsFree              Boolean @default(true)
+  houseAdsFree         Boolean @default(false)
+  profileViews         Boolean @default(true)
+  discoverBoost        Int     @default(1)
+  grantVerifiedBadge   Boolean @default(false)
+  /// Daily interest send cap. Use 9999 for unlimited.
+  dailyInterestLimit   Int     @default(10)
+  interstitialAdsFree  Boolean @default(true)
+  /// Send chat messages without sending interest first.
+  directMessageEnabled Boolean @default(false)
+  incognitoBrowse      Boolean @default(false)
+  rewindPass           Boolean @default(false)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
+  prices        PremiumPlanPrice[]
   subscriptions UserSubscription[]
 
+  @@index([tier, isActive])
   @@map("premium_plans")
 }
 
-model UserSubscription {
-  id          String             @id @default(uuid()) @db.Uuid
-  userId      String             @db.Uuid
-  planId      String             @db.Uuid
-  status      SubscriptionStatus @default(ACTIVE)
-  startsAt    DateTime
-  endsAt      DateTime
-  cancelledAt DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+model PremiumPlanPrice {
+  id           String              @id @default(uuid()) @db.Uuid
+  planId       String              @db.Uuid
+  billingCycle PremiumBillingCycle
+  priceCents   Int
+  durationDays Int
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
-  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan PremiumPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  plan          PremiumPlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  subscriptions UserSubscription[]
+
+  @@unique([planId, billingCycle])
+  @@index([planId, isActive])
+  @@map("premium_plan_prices")
+}
+
+model UserSubscription {
+  id           String               @id @default(uuid()) @db.Uuid
+  userId       String               @db.Uuid
+  planId       String               @db.Uuid
+  planPriceId  String?              @db.Uuid
+  billingCycle PremiumBillingCycle  @default(MONTHLY)
+  status       SubscriptionStatus   @default(ACTIVE)
+  startsAt     DateTime
+  endsAt       DateTime
+  cancelledAt  DateTime?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      PremiumPlan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  planPrice PremiumPlanPrice? @relation(fields: [planPriceId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
   @@index([endsAt])
@@ -1068,20 +1135,38 @@ model UserSubscription {
 }
 
 model Advertisement {
-  id        String      @id @default(uuid()) @db.Uuid
-  title     String      @db.VarChar(120)
-  body      String?     @db.VarChar(500)
-  imageUrl  String?     @db.VarChar(512)
-  targetUrl String?     @db.VarChar(512)
-  placement AdPlacement
-  isActive  Boolean     @default(false)
-  startsAt  DateTime?
-  endsAt    DateTime?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id              String      @id @default(uuid()) @db.Uuid
+  title           String      @db.VarChar(120)
+  body            String?     @db.VarChar(500)
+  imageUrl        String?     @db.VarChar(512)
+  targetUrl       String?     @db.VarChar(512)
+  ctaLabel        String?     @db.VarChar(40)
+  placement       AdPlacement
+  priority        Int         @default(0)
+  /// Override placement default frequency; null uses [AdPlacementConfig.insertEvery].
+  insertEvery     Int?
+  isActive        Boolean     @default(false)
+  impressionCount Int         @default(0)
+  clickCount      Int         @default(0)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@index([placement, isActive, startsAt, endsAt])
+  @@index([placement, priority(sort: Desc)])
   @@map("advertisements")
+}
+
+model AdPlacementConfig {
+  placement   AdPlacement @id
+  label       String      @db.VarChar(80)
+  description String?     @db.VarChar(255)
+  isEnabled   Boolean     @default(true)
+  insertEvery Int         @default(5)
+  updatedAt   DateTime    @updatedAt
+
+  @@map("ad_placement_configs")
 }
 
 model CmsPage {
@@ -1176,4 +1261,22 @@ model Referral {
 
   @@index([referrerUserId, createdAt(sort: Desc)])
   @@map("referrals")
+}
+
+/// Admin-configured money → points packages for future in-app purchases.
+model PointPurchaseRate {
+  id          String   @id @default(uuid()) @db.Uuid
+  currency    String   @default("USD") @db.VarChar(3)
+  /// Price in minor currency units (cents/paise).
+  amountMinor Int
+  points      Int
+  label       String?  @db.VarChar(120)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  updatedById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("point_purchase_rates")
 }

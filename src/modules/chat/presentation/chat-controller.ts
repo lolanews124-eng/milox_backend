@@ -14,6 +14,7 @@ import {
   messageIdParamSchema,
   messagePageQuerySchema,
   sendMessageSchema,
+  startDirectConversationSchema,
 } from "./chat-schemas.js";
 
 export class ChatController {
@@ -40,6 +41,20 @@ export class ChatController {
     const conversation = await this.chat.getConversation(
       conversationId,
       requireUser(request),
+    );
+    response.status(200).json(success(request, conversation));
+  };
+
+  startDirectConversation = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { recipientId } = startDirectConversationSchema.parse(
+      request.body as unknown,
+    );
+    const conversation = await this.chat.startDirectConversation(
+      requireUser(request),
+      recipientId,
     );
     response.status(200).json(success(request, conversation));
   };

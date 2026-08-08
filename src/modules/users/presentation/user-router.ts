@@ -16,6 +16,11 @@ export function createUserRouter(
   const router = Router();
 
   router.get("/me", security.authenticate, asyncHandler(controller.getMe));
+  router.get(
+    "/me/entitlements",
+    security.authenticate,
+    asyncHandler(controller.getEntitlements),
+  );
   router.patch(
     "/me",
     security.authenticate,

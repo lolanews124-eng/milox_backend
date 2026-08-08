@@ -141,6 +141,7 @@ export function publicAuthorSelect() {
     websiteUrl: true,
     instagramHandle: true,
     isVerifiedBadge: true,
+    premiumTier: true,
     isPrivateAccount: true,
     hideAge: true,
     hideCountry: true,

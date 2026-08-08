@@ -1,4 +1,5 @@
-import { AdPlacement, CmsPageStatus, EmailJobStatus, EmailJobType, MatchStatus, MediaKind, MediaVisibility, OutboxStatus, ReportStatus, SubscriptionStatus, UserRole, UserStatus } from "@prisma/client";
+import { AdPlacement, CmsPageStatus, EmailJobStatus, EmailJobType, MatchStatus, MediaKind, MediaVisibility, OutboxStatus, ReportStatus, SubscriptionStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
+import { PremiumTier } from "@prisma/client";
 import { z } from "zod";
 
 export const adminUserIdParamSchema = z.object({
@@ -116,6 +117,7 @@ export const deleteStorySchema = deletePostSchema;
 
 export const adminCommentQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
+  postId: z.uuid().optional(),
   hidden: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
@@ -180,14 +182,41 @@ export const setVerifiedBadgeSchema = z
   })
   .strict();
 
+export const premiumBillingCycleSchema = z.enum([
+  "MONTHLY",
+  "YEARLY",
+  "ONE_TIME",
+]);
+
+export const premiumPlanPriceSchema = z
+  .object({
+    billingCycle: premiumBillingCycleSchema,
+    priceCents: z.coerce.number().int().min(0),
+    durationDays: z.coerce.number().int().min(1).max(36500),
+    isActive: z.boolean().optional(),
+  })
+  .strict();
+
 export const createPremiumPlanSchema = z
   .object({
     code: z.string().trim().min(2).max(64).regex(/^[A-Za-z][A-Za-z0-9_]*$/),
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(1000).optional(),
+    tier: z.nativeEnum(PremiumTier).default("PLUS"),
+    sortOrder: z.coerce.number().int().min(0).max(100).default(0),
+    badgeLabel: z.string().trim().min(1).max(40).default("Premium"),
     priceCents: z.coerce.number().int().min(0),
     currency: z.string().trim().length(3).default("USD"),
     durationDays: z.coerce.number().int().min(1).max(3650),
+    adsFree: z.boolean().default(true),
+    houseAdsFree: z.boolean().default(false),
+    profileViews: z.boolean().default(true),
+    discoverBoost: z.coerce.number().int().min(0).max(10).default(1),
+    grantVerifiedBadge: z.boolean().default(false),
+    dailyInterestLimit: z.coerce.number().int().min(1).max(9999).default(10),
+    interstitialAdsFree: z.boolean().default(true),
+    directMessageEnabled: z.boolean().default(false),
+    prices: z.array(premiumPlanPriceSchema).length(3).optional(),
   })
   .strict();
 
@@ -195,9 +224,21 @@ export const updatePremiumPlanSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(1000).nullable().optional(),
+    tier: z.nativeEnum(PremiumTier).optional(),
+    sortOrder: z.coerce.number().int().min(0).max(100).optional(),
+    badgeLabel: z.string().trim().min(1).max(40).optional(),
     priceCents: z.coerce.number().int().min(0).optional(),
     durationDays: z.coerce.number().int().min(1).max(3650).optional(),
     isActive: z.boolean().optional(),
+    adsFree: z.boolean().optional(),
+    houseAdsFree: z.boolean().optional(),
+    profileViews: z.boolean().optional(),
+    discoverBoost: z.coerce.number().int().min(0).max(10).optional(),
+    grantVerifiedBadge: z.boolean().optional(),
+    dailyInterestLimit: z.coerce.number().int().min(1).max(9999).optional(),
+    interstitialAdsFree: z.boolean().optional(),
+    directMessageEnabled: z.boolean().optional(),
+    prices: z.array(premiumPlanPriceSchema).min(1).max(3).optional(),
   })
   .strict();
 
@@ -215,11 +256,21 @@ export const grantSubscriptionSchema = z
   .object({
     userId: z.uuid(),
     planId: z.uuid(),
+    billingCycle: premiumBillingCycleSchema.default("MONTHLY"),
   })
   .strict();
 
 export const adminSubscriptionIdParamSchema = z.object({
   subscriptionId: z.uuid(),
+});
+
+export const adminAdQuerySchema = z.object({
+  placement: z.enum(AdPlacement).optional(),
+  isActive: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  ...offsetPageSchema,
 });
 
 export const createAdSchema = z
@@ -228,7 +279,10 @@ export const createAdSchema = z
     body: z.string().trim().max(500).optional(),
     imageUrl: z.string().trim().url().max(512).optional(),
     targetUrl: z.string().trim().url().max(512).optional(),
+    ctaLabel: z.string().trim().min(1).max(40).optional(),
     placement: z.enum(AdPlacement),
+    priority: z.coerce.number().int().min(0).max(10_000).optional(),
+    insertEvery: z.coerce.number().int().min(1).max(100).nullable().optional(),
     isActive: z.boolean().optional(),
     startsAt: z.coerce.date().optional(),
     endsAt: z.coerce.date().optional(),
@@ -241,10 +295,26 @@ export const updateAdSchema = z
     body: z.string().trim().max(500).nullable().optional(),
     imageUrl: z.string().trim().url().max(512).nullable().optional(),
     targetUrl: z.string().trim().url().max(512).nullable().optional(),
+    ctaLabel: z.string().trim().min(1).max(40).nullable().optional(),
     placement: z.enum(AdPlacement).optional(),
+    priority: z.coerce.number().int().min(0).max(10_000).optional(),
+    insertEvery: z.coerce.number().int().min(1).max(100).nullable().optional(),
     isActive: z.boolean().optional(),
     startsAt: z.coerce.date().nullable().optional(),
     endsAt: z.coerce.date().nullable().optional(),
+  })
+  .strict();
+
+export const adminAdPlacementParamSchema = z.object({
+  placement: z.enum(AdPlacement),
+});
+
+export const updateAdPlacementConfigSchema = z
+  .object({
+    label: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(255).nullable().optional(),
+    isEnabled: z.boolean().optional(),
+    insertEvery: z.coerce.number().int().min(1).max(100).optional(),
   })
   .strict();
 
@@ -435,3 +505,53 @@ export const broadcastOfficialMessageSchema = z.object({
 export const officialBroadcastJobIdParamSchema = z.object({
   jobId: z.uuid(),
 });
+
+export const adminWalletLookupQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100),
+});
+
+export const adminWalletTransactionQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  userId: z.uuid().optional(),
+  type: z.enum(WalletTransactionType).optional(),
+  ...offsetPageSchema,
+});
+
+export const adminAdjustWalletSchema = z
+  .object({
+    userId: z.uuid().optional(),
+    username: z.string().trim().min(1).max(32).optional(),
+    points: z.coerce.number().int().min(1).max(1_000_000),
+    direction: z.enum(["credit", "debit"]),
+    note: z.string().trim().min(1).max(255).optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.userId || value.username), {
+    message: "userId or username is required",
+  });
+
+export const adminPointPurchaseRateIdParamSchema = z.object({
+  rateId: z.uuid(),
+});
+
+export const createPointPurchaseRateSchema = z
+  .object({
+    currency: z.string().trim().length(3),
+    amountMinor: z.coerce.number().int().min(1).max(100_000_000),
+    points: z.coerce.number().int().min(1).max(10_000_000),
+    label: z.string().trim().min(1).max(120).optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.coerce.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+
+export const updatePointPurchaseRateSchema = z
+  .object({
+    currency: z.string().trim().length(3).optional(),
+    amountMinor: z.coerce.number().int().min(1).max(100_000_000).optional(),
+    points: z.coerce.number().int().min(1).max(10_000_000).optional(),
+    label: z.string().trim().min(1).max(120).nullable().optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.coerce.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();

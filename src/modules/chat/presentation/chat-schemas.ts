@@ -58,3 +58,9 @@ export const editMessageSchema = z
     body: z.string().trim().min(1).max(4_000),
   })
   .strict();
+
+export const startDirectConversationSchema = z
+  .object({
+    recipientId: z.uuid(),
+  })
+  .strict();

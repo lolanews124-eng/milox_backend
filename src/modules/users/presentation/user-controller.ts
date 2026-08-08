@@ -24,6 +24,16 @@ export class UserController {
     );
   };
 
+  getEntitlements = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const userId = requireUserId(request);
+    response.status(200).json(
+      successEnvelope(request, await this.users.getEntitlements(userId)),
+    );
+  };
+
   getPublicProfile = async (
     request: Request,
     response: Response,

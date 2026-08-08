@@ -273,6 +273,54 @@ export function createAdminRouter(
     asyncHandler(controller.cancelSubscription),
   );
   router.get(
+    "/wallet/stats",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.walletStats),
+  );
+  router.get(
+    "/wallet/lookup",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.lookupWalletUser),
+  );
+  router.get(
+    "/wallet/users/:userId",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.getWalletUser),
+  );
+  router.post(
+    "/wallet/adjust",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.adjustWallet),
+  );
+  router.get(
+    "/wallet/transactions",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listWalletTransactions),
+  );
+  router.get(
+    "/point-purchase-rates",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listPointPurchaseRates),
+  );
+  router.post(
+    "/point-purchase-rates",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.createPointPurchaseRate),
+  );
+  router.patch(
+    "/point-purchase-rates/:rateId",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.updatePointPurchaseRate),
+  );
+  router.get(
     "/ads",
     readLimit,
     adminOnly,
@@ -295,6 +343,18 @@ export function createAdminRouter(
     mutationLimit,
     adminOnly,
     asyncHandler(controller.deleteAd),
+  );
+  router.get(
+    "/ad-placements",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listAdPlacementConfigs),
+  );
+  router.patch(
+    "/ad-placements/:placement",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.updateAdPlacementConfig),
   );
   router.get(
     "/cms-pages",

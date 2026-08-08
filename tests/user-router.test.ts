@@ -78,6 +78,11 @@ function createTestApp(repository: UserRepository) {
     repository,
     {} as AuthService,
     config,
+    {
+      userSubscription: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    } as never,
   );
   const controller = new UserController(service);
   const app = express();

@@ -25,6 +25,8 @@ import { createPostModule } from "./modules/posts/index.js";
 import { createRewardsModule } from "./modules/rewards/index.js";
 import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
 import { createStoryModule } from "./modules/stories/index.js";
+import { createAdsModule } from "./modules/ads/index.js";
+import { createPremiumModule } from "./modules/premium/index.js";
 import { createUserModule } from "./modules/users/index.js";
 import { asyncHandler } from "./shared/http/async-handler.js";
 import {
@@ -86,6 +88,8 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     auth.authenticate,
     auth.optionalAuthenticate,
   );
+  const ads = createAdsModule(database, auth.optionalAuthenticate);
+  const premium = createPremiumModule(database, auth.optionalAuthenticate);
   const stories = createStoryModule(config, database, {
     authenticate: auth.authenticate,
     requireVerified: auth.requireVerified,
@@ -173,6 +177,8 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/users", users.router);
   app.use("/api/v1/media", media.router);
   app.use("/api/v1/feed", feed.router);
+  app.use("/api/v1/ads", ads.router);
+  app.use("/api/v1/premium", premium.router);
   app.use("/api/v1/posts", comments.postCommentsRouter);
   app.use("/api/v1/posts", posts.router);
   app.use("/api/v1/hashtags", posts.hashtags);

@@ -18,6 +18,7 @@ import { getConfig } from "../config/env.js";
 import {
   MILOX_OFFICIAL_AVATAR_MEDIA_ID,
   MILOX_OFFICIAL_AVATAR_STORAGE_KEY,
+  MILOX_OFFICIAL_BIO,
   MILOX_OFFICIAL_DISPLAY_NAME,
   MILOX_OFFICIAL_USERNAME,
 } from "../modules/official-chat/official-chat-config.js";
@@ -46,21 +47,24 @@ export async function ensureMiloxOfficialUser(
       displayName: true,
       isSystemAccount: true,
       isVerifiedBadge: true,
+      bio: true,
     },
   });
 
   if (existing) {
-    if (
+    const needsUpdate =
       !existing.isSystemAccount ||
       !existing.isVerifiedBadge ||
-      existing.displayName !== MILOX_OFFICIAL_DISPLAY_NAME
-    ) {
+      existing.displayName !== MILOX_OFFICIAL_DISPLAY_NAME ||
+      existing.bio !== MILOX_OFFICIAL_BIO;
+    if (needsUpdate) {
       await database.user.update({
         where: { id: existing.id },
         data: {
           isSystemAccount: true,
           isVerifiedBadge: true,
           displayName: MILOX_OFFICIAL_DISPLAY_NAME,
+          bio: MILOX_OFFICIAL_BIO,
           hideOnline: true,
           hideLastSeen: true,
         },
@@ -90,6 +94,7 @@ export async function ensureMiloxOfficialUser(
       role: UserRole.ADMIN,
       status: UserStatus.ACTIVE,
       displayName: MILOX_OFFICIAL_DISPLAY_NAME,
+      bio: MILOX_OFFICIAL_BIO,
       isVerifiedBadge: true,
       isSystemAccount: true,
       hideOnline: true,

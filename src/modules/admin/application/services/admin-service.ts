@@ -6,6 +6,8 @@ import {
   AdminSelfActionError,
   AdminStateConflictError,
   type AdminRepository,
+  type CreatePremiumPlanData,
+  type UpdatePremiumPlanData,
 } from "../ports/admin-repository.js";
 import {
   presentAdminAuditLog,
@@ -19,6 +21,7 @@ import {
   presentAdminStoriesStats,
   presentAdminPremiumPlan,
   presentAdminAd,
+  presentAdminAdPlacementConfig,
   presentAdminAnalytics,
   presentAdminCmsPage,
   presentAdminBlogPost,
@@ -41,7 +44,13 @@ import {
   presentAdminUserDetail,
   presentAdminUsersStats,
   presentAdminVerificationStats,
+  presentAdminWalletAdjustResult,
+  presentAdminWalletStats,
+  presentAdminWalletTransaction,
+  presentAdminWalletUser,
+  presentAdminPointPurchaseRate,
 } from "../admin-view.js";
+import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 
 export class AdminService {
@@ -407,6 +416,7 @@ export class AdminService {
 
   async listComments(options: {
     q?: string | undefined;
+    postId?: string | undefined;
     hidden?: boolean | undefined;
     includeDeleted?: boolean | undefined;
     bucket?: "all" | "reported" | "hidden" | "removed" | "replies" | undefined;
@@ -419,6 +429,7 @@ export class AdminService {
       page: options.page,
       pageSize: options.pageSize,
       ...(options.q ? { q: options.q.trim().toLowerCase() } : {}),
+      ...(options.postId ? { postId: options.postId } : {}),
       ...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
       ...(options.includeDeleted ? { includeDeleted: true } : {}),
       ...(options.bucket ? { bucket: options.bucket } : {}),
@@ -673,26 +684,43 @@ export class AdminService {
     return paginate(result, options, presentAdminPremiumPlan);
   }
 
-  async createPremiumPlan(
+  async createPremiumPlan(actorId: string, input: Record<string, unknown>): Promise<object> {
+    return this.createPremiumPlanFromInput(actorId, input as Omit<CreatePremiumPlanData, "actorId">);
+  }
+
+  private async createPremiumPlanFromInput(
     actorId: string,
-    input: {
-      code: string;
-      name: string;
-      description?: string | undefined;
-      priceCents: number;
-      currency: string;
-      durationDays: number;
-    },
+    input: Omit<CreatePremiumPlanData, "actorId">,
   ): Promise<object> {
     try {
       const plan = await this.repository.createPremiumPlan({
         actorId,
         code: input.code.trim().toUpperCase(),
         name: input.name.trim(),
-        description: input.description?.trim() || null,
+        description: input.description?.trim() ?? null,
         priceCents: input.priceCents,
         currency: input.currency.toUpperCase(),
         durationDays: input.durationDays,
+        ...(input.tier !== undefined ? { tier: input.tier } : {}),
+        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        ...(input.badgeLabel !== undefined ? { badgeLabel: input.badgeLabel } : {}),
+        ...(input.adsFree !== undefined ? { adsFree: input.adsFree } : {}),
+        ...(input.houseAdsFree !== undefined ? { houseAdsFree: input.houseAdsFree } : {}),
+        ...(input.profileViews !== undefined ? { profileViews: input.profileViews } : {}),
+        ...(input.discoverBoost !== undefined ? { discoverBoost: input.discoverBoost } : {}),
+        ...(input.grantVerifiedBadge !== undefined
+          ? { grantVerifiedBadge: input.grantVerifiedBadge }
+          : {}),
+        ...(input.dailyInterestLimit !== undefined
+          ? { dailyInterestLimit: input.dailyInterestLimit }
+          : {}),
+        ...(input.interstitialAdsFree !== undefined
+          ? { interstitialAdsFree: input.interstitialAdsFree }
+          : {}),
+        ...(input.directMessageEnabled !== undefined
+          ? { directMessageEnabled: input.directMessageEnabled }
+          : {}),
+        ...(input.prices !== undefined ? { prices: input.prices } : {}),
       });
       return presentAdminPremiumPlan(plan);
     } catch (error) {
@@ -706,23 +734,26 @@ export class AdminService {
   async updatePremiumPlan(
     actorId: string,
     planId: string,
-    input: {
-      name?: string | undefined;
-      description?: string | null | undefined;
-      priceCents?: number | undefined;
-      durationDays?: number | undefined;
-      isActive?: boolean | undefined;
-    },
+    input: Record<string, unknown>,
+  ): Promise<object> {
+    return this.updatePremiumPlanFromInput(
+      actorId,
+      planId,
+      input as Omit<UpdatePremiumPlanData, "actorId" | "planId">,
+    );
+  }
+
+  private async updatePremiumPlanFromInput(
+    actorId: string,
+    planId: string,
+    input: Omit<UpdatePremiumPlanData, "actorId" | "planId">,
   ): Promise<object> {
     try {
       const plan = await this.repository.updatePremiumPlan({
         actorId,
         planId,
+        ...input,
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.priceCents !== undefined ? { priceCents: input.priceCents } : {}),
-        ...(input.durationDays !== undefined ? { durationDays: input.durationDays } : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       });
       if (!plan) throw new AppError("ADMIN_PLAN_NOT_FOUND", "Plan not found", 404);
       return presentAdminPremiumPlan(plan);
@@ -751,13 +782,21 @@ export class AdminService {
 
   async grantSubscription(
     actorId: string,
-    input: { userId: string; planId: string },
+    input: { userId: string; planId: string; billingCycle?: string },
   ): Promise<object> {
     try {
       const sub = await this.repository.grantSubscription({
         actorId,
         userId: input.userId,
         planId: input.planId,
+        ...(input.billingCycle
+          ? {
+              billingCycle: input.billingCycle as
+                | "MONTHLY"
+                | "YEARLY"
+                | "ONE_TIME",
+            }
+          : {}),
       });
       return presentAdminSubscription(sub);
     } catch (error) {
@@ -787,8 +826,18 @@ export class AdminService {
     }
   }
 
-  async listAds(options: { page: number; pageSize: number }): Promise<object> {
-    const result = await this.repository.listAds(options);
+  async listAds(options: {
+    page: number;
+    pageSize: number;
+    placement?: string | undefined;
+    isActive?: boolean | undefined;
+  }): Promise<object> {
+    const result = await this.repository.listAds({
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(options.placement ? { placement: options.placement } : {}),
+      ...(options.isActive !== undefined ? { isActive: options.isActive } : {}),
+    });
     return paginate(result, options, presentAdminAd);
   }
 
@@ -822,6 +871,42 @@ export class AdminService {
       const ad = await this.repository.deleteAd(actorId, adId);
       if (!ad) throw new AppError("ADMIN_AD_NOT_FOUND", "Ad not found", 404);
       return presentAdminAd(ad);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async listAdPlacementConfigs(): Promise<object> {
+    const configs = await this.repository.listAdPlacementConfigs();
+    return { items: configs.map(presentAdminAdPlacementConfig) };
+  }
+
+  async updateAdPlacementConfig(
+    actorId: string,
+    placement: string,
+    input: {
+      label?: string | undefined;
+      description?: string | null | undefined;
+      isEnabled?: boolean | undefined;
+      insertEvery?: number | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const config = await this.repository.updateAdPlacementConfig({
+        actorId,
+        placement,
+        ...(input.label !== undefined ? { label: input.label } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
+        ...(input.insertEvery !== undefined ? { insertEvery: input.insertEvery } : {}),
+      });
+      if (!config) {
+        throw new AppError("NOT_FOUND", "Ad placement not found", 404);
+      }
+      return presentAdminAdPlacementConfig(config);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);
@@ -1266,6 +1351,207 @@ export class AdminService {
       throw error;
     }
   }
+
+  async walletStats(): Promise<object> {
+    return presentAdminWalletStats(await this.repository.walletStats());
+  }
+
+  async getWalletUser(userId: string): Promise<object> {
+    const user = await this.repository.getWalletUser(userId);
+    if (!user) {
+      throw new AppError("NOT_FOUND", "User wallet not found", 404);
+    }
+    return presentAdminWalletUser(user);
+  }
+
+  async lookupWalletUser(query: string): Promise<object> {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      throw new AppError("VALIDATION_ERROR", "Search query is required", 400);
+    }
+    if (isUuid(trimmed)) {
+      return this.getWalletUser(trimmed);
+    }
+    const needle = trimmed.toLowerCase();
+    const result = await this.repository.listUsers({
+      q: needle,
+      page: 1,
+      pageSize: 10,
+    });
+    const match =
+      result.items.find(
+        (user) =>
+          user.username.toLowerCase() === needle ||
+          user.email.toLowerCase() === needle,
+      ) ?? result.items[0];
+    if (!match) {
+      throw new AppError("NOT_FOUND", "User not found", 404);
+    }
+    return this.getWalletUser(match.id);
+  }
+
+  async adjustWallet(
+    actorId: string,
+    input: {
+      userId?: string | undefined;
+      username?: string | undefined;
+      points: number;
+      direction: "credit" | "debit";
+      note?: string | undefined;
+    },
+  ): Promise<object> {
+    const userId = await this.resolveWalletUserId(input);
+    try {
+      const result = await this.repository.adjustWallet({
+        actorId,
+        userId,
+        points: input.points,
+        direction: input.direction,
+        ...(input.note ? { note: input.note.trim() } : {}),
+      });
+      return presentAdminWalletAdjustResult(result);
+    } catch (error) {
+      if (error instanceof InsufficientWalletBalanceError) {
+        throw new AppError(
+          "INSUFFICIENT_WALLET_BALANCE",
+          "User does not have enough points to deduct",
+          409,
+        );
+      }
+      if (error instanceof AdminStateConflictError) {
+        throw new AppError("NOT_FOUND", "User not found", 404);
+      }
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async listWalletTransactions(options: {
+    q?: string | undefined;
+    userId?: string | undefined;
+    type?: string | undefined;
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listWalletTransactions({
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(options.q ? { q: options.q.trim() } : {}),
+      ...(options.userId ? { userId: options.userId } : {}),
+      ...(options.type ? { type: options.type as import("@prisma/client").WalletTransactionType } : {}),
+    });
+    return paginate(result, options, presentAdminWalletTransaction);
+  }
+
+  async listPointPurchaseRates(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listPointPurchaseRates(options);
+    return paginate(result, options, presentAdminPointPurchaseRate);
+  }
+
+  async createPointPurchaseRate(
+    actorId: string,
+    input: {
+      currency: string;
+      amountMinor: number;
+      points: number;
+      label?: string | null | undefined;
+      isActive?: boolean | undefined;
+      sortOrder?: number | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const rate = await this.repository.createPointPurchaseRate({
+        actorId,
+        currency: input.currency.trim().toUpperCase(),
+        amountMinor: input.amountMinor,
+        points: input.points,
+        ...(input.label !== undefined ? { label: input.label } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      });
+      return presentAdminPointPurchaseRate(rate);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async updatePointPurchaseRate(
+    actorId: string,
+    rateId: string,
+    input: {
+      currency?: string | undefined;
+      amountMinor?: number | undefined;
+      points?: number | undefined;
+      label?: string | null | undefined;
+      isActive?: boolean | undefined;
+      sortOrder?: number | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const rate = await this.repository.updatePointPurchaseRate({
+        actorId,
+        rateId,
+        ...(input.currency !== undefined
+          ? { currency: input.currency.trim().toUpperCase() }
+          : {}),
+        ...(input.amountMinor !== undefined ? { amountMinor: input.amountMinor } : {}),
+        ...(input.points !== undefined ? { points: input.points } : {}),
+        ...(input.label !== undefined ? { label: input.label } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      });
+      if (!rate) {
+        throw new AppError("NOT_FOUND", "Point purchase rate not found", 404);
+      }
+      return presentAdminPointPurchaseRate(rate);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  private async resolveWalletUserId(input: {
+    userId?: string | undefined;
+    username?: string | undefined;
+  }): Promise<string> {
+    if (input.userId) {
+      const user = await this.repository.getWalletUser(input.userId);
+      if (!user) {
+        throw new AppError("NOT_FOUND", "User not found", 404);
+      }
+      return input.userId;
+    }
+    if (input.username) {
+      const normalized = input.username.trim().toLowerCase();
+      const result = await this.repository.listUsers({
+        q: normalized,
+        page: 1,
+        pageSize: 10,
+      });
+      const match =
+        result.items.find((user) => user.username.toLowerCase() === normalized) ??
+        result.items[0];
+      if (!match) {
+        throw new AppError("NOT_FOUND", "User not found", 404);
+      }
+      return match.id;
+    }
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "userId or username is required",
+      400,
+    );
+  }
 }
 
 type CreateAdInput = {
@@ -1273,7 +1559,10 @@ type CreateAdInput = {
   body?: string | null;
   imageUrl?: string | null;
   targetUrl?: string | null;
+  ctaLabel?: string | null;
   placement: string;
+  priority?: number;
+  insertEvery?: number | null;
   isActive?: boolean;
   startsAt?: Date | null;
   endsAt?: Date | null;
@@ -1293,4 +1582,10 @@ function paginate<T>(
     pageSize: options.pageSize,
     totalPages: Math.ceil(result.total / options.pageSize),
   };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }

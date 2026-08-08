@@ -28,7 +28,7 @@ export function createInterestModule(
   const cursors = new FeedCursorCodec(
     config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
   );
-  const service = new InterestService(repository, cursors, config);
+  const service = new InterestService(repository, cursors, config, database);
   const controller = new InterestController(service);
   const routers = createInterestRouters(
     controller,

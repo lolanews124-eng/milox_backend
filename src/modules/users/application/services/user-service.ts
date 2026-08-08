@@ -7,8 +7,15 @@ import {
 } from "../../../../shared/contracts/profile-completion.js";
 import type { AgeRange, RelationshipGoal } from "@prisma/client";
 
+import type { PrismaClient } from "@prisma/client";
+
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import {
+  resolveUserEntitlements,
+  type UserEntitlements,
+} from "../../../premium/application/entitlements.js";
+import { MILOX_OFFICIAL_USERNAME } from "../../../official-chat/official-chat-config.js";
 import type { AuthService } from "../../../auth/application/services/auth-service.js";
 import {
   DuplicateUsernameError,
@@ -57,14 +64,28 @@ export class UserService {
     private readonly repository: UserRepository,
     private readonly authService: AuthService,
     private readonly config: AppConfig,
+    private readonly database: PrismaClient,
     private readonly profileUpdatePosts?: ProfileUpdatePostWriter,
     private readonly profileViews?: ProfileViewRepository,
   ) {}
 
+  async getEntitlements(userId: string): Promise<UserEntitlements> {
+    await this.requireActiveUser(userId);
+    return resolveUserEntitlements(
+      this.database,
+      userId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+  }
+
   async getMe(userId: string): Promise<object> {
     const user = await this.requireActiveUser(userId);
-    const premium = await this.repository.getPremiumStatus(userId);
-    return mapPrivateProfile(user, this.config, premium);
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      userId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+    return mapPrivateProfile(user, this.config, entitlements);
   }
 
   async getPublicProfile(
@@ -74,7 +95,11 @@ export class UserService {
     const user = await this.repository.findByUsername(
       normalizeUsername(username),
     );
-    if (!user || user.role !== "USER") {
+    if (
+      !user ||
+      (user.role !== "USER" &&
+        !(user.isSystemAccount && user.usernameNormalized === MILOX_OFFICIAL_USERNAME))
+    ) {
       throw new AppError("NOT_FOUND", "User not found", 404);
     }
     const relation = await this.repository.getViewerRelation(
@@ -88,7 +113,8 @@ export class UserService {
       this.profileViews &&
       viewerUserId &&
       !relation.isSelf &&
-      !relation.isBlocked
+      !relation.isBlocked &&
+      !user.isSystemAccount
     ) {
       void this.profileViews
         .upsertView(user.id, viewerUserId)
@@ -99,13 +125,17 @@ export class UserService {
 
   async getProfileViewsSummary(userId: string): Promise<object> {
     await this.requireActiveUser(userId);
-    const premium = await this.repository.getPremiumStatus(userId);
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      userId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
     const totalCount = this.profileViews
       ? await this.profileViews.countViews(userId)
       : 0;
     const previewSlotCount = Math.min(totalCount, 3);
     const recentPreview =
-      premium.isPremium && this.profileViews
+      entitlements.features.profileViews && this.profileViews
         ? (
             await this.profileViews.listViews(userId, { limit: 3 })
           ).map((row) => ({
@@ -118,8 +148,10 @@ export class UserService {
     return {
       totalCount,
       previewSlotCount,
-      isPremium: premium.isPremium,
-      premiumExpiresAt: premium.premiumExpiresAt?.toISOString() ?? null,
+      isPremium: entitlements.isPremium,
+      premiumTier: entitlements.tier,
+      premiumExpiresAt: entitlements.expiresAt,
+      entitlements: entitlements.features,
       recentPreview,
     };
   }
@@ -133,8 +165,12 @@ export class UserService {
     hasMore: boolean;
   }> {
     await this.requireActiveUser(userId);
-    const premium = await this.repository.getPremiumStatus(userId);
-    if (!premium.isPremium) {
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      userId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+    if (!entitlements.features.profileViews) {
       throw new AppError(
         "PREMIUM_REQUIRED",
         "Premium subscription required to view profile visitors",
@@ -255,7 +291,15 @@ export class UserService {
     try {
       const updated = await this.repository.updateProfile(userId, data);
       await this.publishProfilePhotoUpdatePosts(current, input);
-      return mapPrivateProfile(updated, this.config, await this.repository.getPremiumStatus(userId));
+      return mapPrivateProfile(
+        updated,
+        this.config,
+        await resolveUserEntitlements(
+          this.database,
+          userId,
+          this.config.INTEREST_DAILY_LIMIT,
+        ),
+      );
     } catch (error: unknown) {
       if (error instanceof DuplicateUsernameError) {
         throw new AppError("USERNAME_TAKEN", "Username is already in use", 409);
@@ -284,7 +328,11 @@ export class UserService {
     return mapPrivateProfile(
       updated,
       this.config,
-      await this.repository.getPremiumStatus(userId),
+      await resolveUserEntitlements(
+        this.database,
+        userId,
+        this.config.INTEREST_DAILY_LIMIT,
+      ),
     );
   }
 
@@ -366,6 +414,9 @@ function mapPublicProfile(
   relation: ViewerRelation,
   config: AppConfig,
 ): object {
+  const isOfficialAccount =
+    user.isSystemAccount && user.usernameNormalized === MILOX_OFFICIAL_USERNAME;
+
   return {
     id: user.id,
     username: user.username,
@@ -373,14 +424,20 @@ function mapPublicProfile(
     bio: user.bio,
     profilePhotoUrl: mediaUrl(user.profilePhoto?.id, config),
     coverPhotoUrl: mediaUrl(user.coverPhoto?.id, config),
-    gender: user.gender,
-    ...(!user.hideAge ? { ageRange: ageRangeLabel(user.ageRange) } : {}),
-    ...(!user.hideCountry ? { country: user.country } : {}),
-    relationshipGoal: user.relationshipGoal,
-    websiteUrl: user.websiteUrl,
-    instagramHandle: user.instagramHandle,
-    interests: user.interests.map(({ tag }) => tag.slug),
+    ...(isOfficialAccount
+      ? {}
+      : {
+          gender: user.gender,
+          ...(!user.hideAge ? { ageRange: ageRangeLabel(user.ageRange) } : {}),
+          ...(!user.hideCountry ? { country: user.country } : {}),
+          relationshipGoal: user.relationshipGoal,
+          websiteUrl: user.websiteUrl,
+          instagramHandle: user.instagramHandle,
+          interests: user.interests.map(({ tag }) => tag.slug),
+        }),
     isVerifiedBadge: user.isVerifiedBadge,
+    premiumTier: user.premiumTier,
+    isOfficialAccount,
     isPrivateAccount: user.isPrivateAccount,
     followerCount: user.followerCount,
     followingCount: user.followingCount,
@@ -403,7 +460,7 @@ function mapPublicProfile(
 function mapPrivateProfile(
   user: UserProfileRecord,
   config: AppConfig,
-  premium: { isPremium: boolean; premiumExpiresAt: Date | null },
+  entitlements: UserEntitlements,
 ): object {
   const relation: ViewerRelation = {
     isSelf: true,
@@ -455,8 +512,12 @@ function mapPrivateProfile(
     canChangeUsernameAt: usernameChangeAllowed
       ? null
       : nextUsernameChangeAt.toISOString(),
-    isPremium: premium.isPremium,
-    premiumExpiresAt: premium.premiumExpiresAt?.toISOString() ?? null,
+    isPremium: entitlements.isPremium,
+    premiumTier: entitlements.tier,
+    premiumExpiresAt: entitlements.expiresAt,
+    premiumPlanCode: entitlements.planCode,
+    premiumPlanName: entitlements.planName,
+    entitlements: entitlements.features,
   };
 }
 

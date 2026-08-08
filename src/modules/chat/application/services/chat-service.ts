@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-import type { MessageType } from "@prisma/client";
+import type { MessageType, PrismaClient } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
+import { resolveUserEntitlements } from "../../../premium/application/entitlements.js";
 import type {
   ChatRepository,
   DeletedMessage,
@@ -35,6 +36,7 @@ export class ChatService {
     private readonly repository: ChatRepository,
     private readonly cursors: FeedCursorCodec,
     private readonly config: AppConfig,
+    private readonly database: PrismaClient,
     private readonly hooks?: { wakeOutbox?: () => void },
   ) {}
 
@@ -78,6 +80,47 @@ export class ChatService {
     );
     if (!conversation) throw conversationNotFound();
     return presentConversation(conversation, this.config);
+  }
+
+  async startDirectConversation(
+    senderId: string,
+    recipientId: string,
+  ): Promise<object> {
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      senderId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+    if (!entitlements.features.directMessageEnabled) {
+      throw new AppError(
+        "PREMIUM_REQUIRED",
+        "Direct messaging requires Milox Connect or an eligible premium plan",
+        403,
+      );
+    }
+
+    try {
+      const conversation = await this.repository.findOrCreateDirectConversation(
+        senderId,
+        recipientId,
+      );
+      if (!conversation) {
+        throw new AppError("NOT_FOUND", "User not found", 404);
+      }
+      return presentConversation(conversation, this.config);
+    } catch (error) {
+      if (
+        error instanceof ChatActionConflictError &&
+        error.message === "blocked"
+      ) {
+        throw new AppError(
+          "USER_BLOCKED",
+          "You cannot message this user",
+          403,
+        );
+      }
+      throw error;
+    }
   }
 
   async updateSettings(

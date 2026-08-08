@@ -5,6 +5,7 @@ import {
   Prisma,
   ReportStatus,
   ReportTargetType,
+  UserStatus,
   type PrismaClient,
 } from "@prisma/client";
 
@@ -202,14 +203,25 @@ export class PrismaPostRepository implements PostRepository {
   async listByUsername(
     query: PostPageQuery,
   ): Promise<PostViewRecord[] | null> {
+    const usernameNormalized = query.username.toLowerCase();
+    const baseUser = await this.database.user.findFirst({
+      where: {
+        usernameNormalized,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!baseUser) return null;
+
     const author = await this.database.user.findFirst({
       where: {
-        usernameNormalized: query.username.toLowerCase(),
+        id: baseUser.id,
         ...visibleAuthorWhere(query.viewerId),
       },
       select: { id: true },
     });
-    if (!author) return null;
+    if (!author) return [];
 
     return this.database.post.findMany({
       where: {

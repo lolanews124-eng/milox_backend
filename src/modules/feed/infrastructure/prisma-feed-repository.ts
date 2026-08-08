@@ -194,7 +194,7 @@ export class PrismaFeedRepository implements FeedRepository {
           ...(cursorWhere ? [cursorWhere] : []),
         ],
       },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy: [{ discoverBoost: "desc" }, { createdAt: "desc" }, { id: "desc" }],
       take: query.limit + 1,
       select: {
         ...publicAuthorSelect(),

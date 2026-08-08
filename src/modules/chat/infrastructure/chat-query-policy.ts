@@ -97,6 +97,21 @@ export function activeConversationWhere(
           },
         },
       },
+      {
+        kind: ConversationKind.DIRECT,
+        AND: [
+          { members: { some: { userId, leftAt: null } } },
+          {
+            members: {
+              some: {
+                userId: { not: userId },
+                leftAt: null,
+                user: { is: visibleUserCardWhere(userId) },
+              },
+            },
+          },
+        ],
+      },
     ],
   };
 }

@@ -1,6 +1,7 @@
 import express, { type RequestHandler } from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
+import type { PrismaClient } from "@prisma/client";
 
 import type { AppConfig } from "../src/config/env.js";
 import { FeedCursorCodec } from "../src/modules/feed/application/services/feed-cursor.js";
@@ -90,6 +91,7 @@ function createTestApp(repository: ChatRepository) {
     repository,
     new FeedCursorCodec(config.JWT_ACCESS_SECRET),
     config,
+    {} as PrismaClient,
   );
   const controller = new ChatController(service);
   const authenticate: RequestHandler = (req, _res, next) => {
@@ -126,6 +128,7 @@ function createRepository(): ChatRepository {
     updatePresence: vi.fn(),
     resolveChatMedia: vi.fn(),
     findMessageForRealtime: vi.fn(),
+    findOrCreateDirectConversation: vi.fn(),
   };
 }
 

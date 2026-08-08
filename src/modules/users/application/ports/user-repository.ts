@@ -1,6 +1,7 @@
 import type {
   AgeRange,
   Gender,
+  PremiumTier,
   RelationshipGoal,
   UserRole,
   UserStatus,
@@ -26,6 +27,9 @@ export interface UserProfileRecord {
   websiteUrl: string | null;
   instagramHandle: string | null;
   isVerifiedBadge: boolean;
+  premiumTier: PremiumTier;
+  premiumExpiresAt: Date | null;
+  isSystemAccount: boolean;
   isPrivateAccount: boolean;
   hideAge: boolean;
   hideCountry: boolean;

@@ -1,4 +1,4 @@
-import type { ReportStatus, UserRole, UserStatus } from "@prisma/client";
+import type { ReportStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
 
 import type {
   AdminAuditLogRecord,
@@ -13,6 +13,7 @@ import type {
   AdminStoriesStatsRecord,
   AdminPremiumPlanRecord,
   AdminAdRecord,
+  AdminAdPlacementConfigRecord,
   AdminAnalyticsRecord,
   AdminCmsPageRecord,
   AdminBlogPostRecord,
@@ -36,6 +37,11 @@ import type {
   AdminUserRecord,
   AdminUsersStatsRecord,
   AdminVerificationStatsRecord,
+  AdminWalletAdjustResultRecord,
+  AdminWalletStatsRecord,
+  AdminWalletTransactionRecord,
+  AdminWalletUserRecord,
+  AdminPointPurchaseRateRecord,
 } from "../admin-view.js";
 
 export interface OffsetPage {
@@ -94,6 +100,7 @@ export interface DeletePostData {
 
 export interface AdminCommentQuery extends OffsetPage {
   q?: string;
+  postId?: string;
   hidden?: boolean;
   includeDeleted?: boolean;
   bucket?: "all" | "reported" | "hidden" | "removed" | "replies";
@@ -112,6 +119,41 @@ export interface DeleteCommentData {
   actorId: string;
   commentId: string;
   note?: string | null;
+}
+
+export interface AdminWalletTransactionQuery extends OffsetPage {
+  q?: string;
+  userId?: string;
+  type?: WalletTransactionType;
+}
+
+export interface AdminAdjustWalletData {
+  actorId: string;
+  userId: string;
+  points: number;
+  direction: "credit" | "debit";
+  note?: string | null;
+}
+
+export interface CreatePointPurchaseRateData {
+  actorId: string;
+  currency: string;
+  amountMinor: number;
+  points: number;
+  label?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface UpdatePointPurchaseRateData {
+  actorId: string;
+  rateId: string;
+  currency?: string;
+  amountMinor?: number;
+  points?: number;
+  label?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
 }
 
 export interface AdminAuditLogQuery extends OffsetPage {
@@ -144,14 +186,33 @@ export interface SetVerifiedBadgeData {
   isVerifiedBadge: boolean;
 }
 
+export interface PremiumPlanPriceInput {
+  billingCycle: "MONTHLY" | "YEARLY" | "ONE_TIME";
+  priceCents: number;
+  durationDays: number;
+  isActive?: boolean;
+}
+
 export interface CreatePremiumPlanData {
   actorId: string;
   code: string;
   name: string;
   description?: string | null;
+  tier?: string;
+  sortOrder?: number;
+  badgeLabel?: string;
   priceCents: number;
   currency: string;
   durationDays: number;
+  adsFree?: boolean;
+  houseAdsFree?: boolean;
+  profileViews?: boolean;
+  discoverBoost?: number;
+  grantVerifiedBadge?: boolean;
+  dailyInterestLimit?: number;
+  interstitialAdsFree?: boolean;
+  directMessageEnabled?: boolean;
+  prices?: PremiumPlanPriceInput[];
 }
 
 export interface UpdatePremiumPlanData {
@@ -159,9 +220,21 @@ export interface UpdatePremiumPlanData {
   planId: string;
   name?: string;
   description?: string | null;
+  tier?: string;
+  sortOrder?: number;
+  badgeLabel?: string;
   priceCents?: number;
   durationDays?: number;
   isActive?: boolean;
+  adsFree?: boolean;
+  houseAdsFree?: boolean;
+  profileViews?: boolean;
+  discoverBoost?: number;
+  grantVerifiedBadge?: boolean;
+  dailyInterestLimit?: number;
+  interstitialAdsFree?: boolean;
+  directMessageEnabled?: boolean;
+  prices?: PremiumPlanPriceInput[];
 }
 
 export interface AdminSubscriptionQuery extends OffsetPage {
@@ -173,6 +246,7 @@ export interface GrantSubscriptionData {
   actorId: string;
   userId: string;
   planId: string;
+  billingCycle?: "MONTHLY" | "YEARLY" | "ONE_TIME";
 }
 
 export interface CancelSubscriptionData {
@@ -186,7 +260,10 @@ export interface CreateAdData {
   body?: string | null;
   imageUrl?: string | null;
   targetUrl?: string | null;
+  ctaLabel?: string | null;
   placement: string;
+  priority?: number;
+  insertEvery?: number | null;
   isActive?: boolean;
   startsAt?: Date | null;
   endsAt?: Date | null;
@@ -199,10 +276,27 @@ export interface UpdateAdData {
   body?: string | null;
   imageUrl?: string | null;
   targetUrl?: string | null;
+  ctaLabel?: string | null;
   placement?: string;
+  priority?: number;
+  insertEvery?: number | null;
   isActive?: boolean;
   startsAt?: Date | null;
   endsAt?: Date | null;
+}
+
+export interface UpdateAdPlacementConfigData {
+  actorId: string;
+  placement: string;
+  label?: string;
+  description?: string | null;
+  isEnabled?: boolean;
+  insertEvery?: number;
+}
+
+export interface AdminAdQuery extends OffsetPage {
+  placement?: string;
+  isActive?: boolean;
 }
 
 export interface CreateCmsPageData {
@@ -386,10 +480,14 @@ export interface AdminRepository {
   cancelSubscription(
     data: CancelSubscriptionData,
   ): Promise<AdminSubscriptionRecord | null>;
-  listAds(query: OffsetPage): Promise<AdminPage<AdminAdRecord>>;
+  listAds(query: AdminAdQuery): Promise<AdminPage<AdminAdRecord>>;
   createAd(data: CreateAdData): Promise<AdminAdRecord>;
   updateAd(data: UpdateAdData): Promise<AdminAdRecord | null>;
   deleteAd(actorId: string, adId: string): Promise<AdminAdRecord | null>;
+  listAdPlacementConfigs(): Promise<AdminAdPlacementConfigRecord[]>;
+  updateAdPlacementConfig(
+    data: UpdateAdPlacementConfigData,
+  ): Promise<AdminAdPlacementConfigRecord | null>;
   listCmsPages(query: OffsetPage): Promise<AdminPage<AdminCmsPageRecord>>;
   createCmsPage(data: CreateCmsPageData): Promise<AdminCmsPageRecord>;
   updateCmsPage(data: UpdateCmsPageData): Promise<AdminCmsPageRecord | null>;
@@ -438,4 +536,17 @@ export interface AdminRepository {
     actorId: string,
     hashtagId: string,
   ): Promise<AdminHashtagRecord | null>;
+  walletStats(): Promise<AdminWalletStatsRecord>;
+  getWalletUser(userId: string): Promise<AdminWalletUserRecord | null>;
+  adjustWallet(data: AdminAdjustWalletData): Promise<AdminWalletAdjustResultRecord>;
+  listWalletTransactions(
+    query: AdminWalletTransactionQuery,
+  ): Promise<AdminPage<AdminWalletTransactionRecord>>;
+  listPointPurchaseRates(query: OffsetPage): Promise<AdminPage<AdminPointPurchaseRateRecord>>;
+  createPointPurchaseRate(
+    data: CreatePointPurchaseRateData,
+  ): Promise<AdminPointPurchaseRateRecord>;
+  updatePointPurchaseRate(
+    data: UpdatePointPurchaseRateData,
+  ): Promise<AdminPointPurchaseRateRecord | null>;
 }

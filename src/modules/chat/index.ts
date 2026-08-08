@@ -27,7 +27,7 @@ export function createChatService(
   const cursors = new FeedCursorCodec(
     config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
   );
-  return new ChatService(repository, cursors, config, hooks);
+  return new ChatService(repository, cursors, config, database, hooks);
 }
 
 export function createChatModule(

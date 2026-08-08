@@ -118,6 +118,10 @@ export interface ChatRepository {
     userId: string,
   ): Promise<ResolvedChatMedia | null>;
   findMessageForRealtime(messageId: string): Promise<MessageViewRecord | null>;
+  findOrCreateDirectConversation(
+    senderId: string,
+    recipientId: string,
+  ): Promise<ConversationViewRecord | null>;
 }
 
 export class ChatMediaOwnershipError extends Error {}

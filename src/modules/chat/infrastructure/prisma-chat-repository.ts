@@ -508,6 +508,7 @@ export class PrismaChatRepository implements ChatRepository {
         status: ConversationStatus.ACTIVE,
         OR: [
           { kind: ConversationKind.OFFICIAL },
+          { kind: ConversationKind.DIRECT },
           { match: { is: { status: MatchStatus.ACTIVE } } },
         ],
       },
@@ -624,6 +625,79 @@ export class PrismaChatRepository implements ChatRepository {
     });
   }
 
+  async findOrCreateDirectConversation(
+    senderId: string,
+    recipientId: string,
+  ): Promise<ConversationViewRecord | null> {
+    if (senderId === recipientId) return null;
+
+    const [directUserLowId, directUserHighId] =
+      senderId < recipientId
+        ? [senderId, recipientId]
+        : [recipientId, senderId];
+
+    const block = await this.database.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: senderId, blockedId: recipientId },
+          { blockerId: recipientId, blockedId: senderId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block) throw new ChatActionConflictError("blocked");
+
+    const recipient = await this.database.user.findFirst({
+      where: {
+        id: recipientId,
+        ...visibleUserCardWhere(senderId),
+      },
+      select: { id: true },
+    });
+    if (!recipient) return null;
+
+    const activeMatch = await this.database.match.findFirst({
+      where: {
+        status: MatchStatus.ACTIVE,
+        OR: [
+          { userAId: senderId, userBId: recipientId },
+          { userAId: recipientId, userBId: senderId },
+        ],
+        conversation: { is: { status: ConversationStatus.ACTIVE } },
+      },
+      select: { conversation: { select: { id: true } } },
+    });
+    if (activeMatch?.conversation) {
+      return this.findConversation(activeMatch.conversation.id, senderId);
+    }
+
+    const existing = await this.database.conversation.findFirst({
+      where: {
+        kind: ConversationKind.DIRECT,
+        directUserLowId,
+        directUserHighId,
+        status: ConversationStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return this.findConversation(existing.id, senderId);
+    }
+
+    const created = await this.database.conversation.create({
+      data: {
+        kind: ConversationKind.DIRECT,
+        directUserLowId,
+        directUserHighId,
+        members: {
+          create: [{ userId: senderId }, { userId: recipientId }],
+        },
+      },
+      select: { id: true },
+    });
+    return this.findConversation(created.id, senderId);
+  }
+
   private async findReplay(
     data: SendMessageData,
   ): Promise<CreatedMessage | null> {
@@ -686,14 +760,17 @@ function mapConversation(
   const member = row.members.find((entry) => entry.userId === userId);
   if (!member) throw new Error("Conversation member projection is missing");
   const isOfficial = row.kind === ConversationKind.OFFICIAL;
+  const isDirect = row.kind === ConversationKind.DIRECT;
   const peer = isOfficial
     ? (row.members.find((entry) => entry.userId !== userId)?.user ??
       officialPeerFallback(row.members.find((entry) => entry.userId !== userId)?.userId))
-    : row.match
-      ? row.match.userAId === userId
-        ? row.match.userB
-        : row.match.userA
-      : null;
+    : isDirect
+      ? (row.members.find((entry) => entry.userId !== userId)?.user ?? null)
+      : row.match
+        ? row.match.userAId === userId
+          ? row.match.userB
+          : row.match.userA
+        : null;
   if (!peer) throw new Error("Conversation peer projection is missing");
   return {
     id: row.id,
@@ -724,6 +801,7 @@ function officialPeerFallback(userId?: string): PostAuthorViewRecord {
     websiteUrl: null,
     instagramHandle: null,
     isVerifiedBadge: true,
+    premiumTier: "FREE",
     isPrivateAccount: false,
     hideAge: true,
     hideCountry: true,

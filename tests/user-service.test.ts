@@ -159,6 +159,44 @@ describe("UserService privacy projections", () => {
     expect(profileViews.upsertView).not.toHaveBeenCalled();
   });
 
+  it("returns the Milox Official public profile", async () => {
+    const repository = createRepository();
+    const profileViews = {
+      upsertView: vi.fn().mockResolvedValue(undefined),
+      countViews: vi.fn(),
+      listViews: vi.fn(),
+    };
+    vi.mocked(repository.findByUsername).mockResolvedValue(
+      profileFixture({
+        username: "milox",
+        usernameNormalized: "milox",
+        displayName: "Milox Official",
+        role: "ADMIN",
+        isSystemAccount: true,
+        isVerifiedBadge: true,
+        bio: "Official updates, welcome messages, and news from the Milox team.",
+      }),
+    );
+    vi.mocked(repository.getViewerRelation).mockResolvedValue(
+      relationFixture(),
+    );
+
+    const output = await createService(
+      repository,
+      undefined,
+      profileViews,
+    ).getPublicProfile("milox", "viewer-id");
+
+    expect(output).toMatchObject({
+      username: "milox",
+      displayName: "Milox Official",
+      isOfficialAccount: true,
+      isVerifiedBadge: true,
+    });
+    expect(output).not.toHaveProperty("country");
+    expect(profileViews.upsertView).not.toHaveBeenCalled();
+  });
+
   it("requires premium for the full profile views list", async () => {
     const repository = createRepository();
     vi.mocked(repository.findById).mockResolvedValue(profileFixture());
@@ -172,6 +210,14 @@ describe("UserService privacy projections", () => {
     ).rejects.toMatchObject({ code: "PREMIUM_REQUIRED", statusCode: 403 });
   });
 });
+
+function createDatabaseMock() {
+  return {
+    userSubscription: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+  } as never;
+}
 
 function createService(
   repository: UserRepository,
@@ -189,6 +235,7 @@ function createService(
     repository,
     {} as never,
     config,
+    createDatabaseMock(),
     profileUpdatePosts,
     profileViews,
   );
@@ -231,6 +278,7 @@ function profileFixture(
     websiteUrl: null,
     instagramHandle: null,
     isVerifiedBadge: false,
+    isSystemAccount: false,
     isPrivateAccount: false,
     hideAge: false,
     hideCountry: false,

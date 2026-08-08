@@ -144,6 +144,15 @@ function createRepository(): AdminRepository {
     retryEmailJob: vi.fn(),
     listHashtags: vi.fn(),
     deleteHashtag: vi.fn(),
+    walletStats: vi.fn(),
+    getWalletUser: vi.fn(),
+    adjustWallet: vi.fn(),
+    listWalletTransactions: vi.fn(),
+    listPointPurchaseRates: vi.fn(),
+    createPointPurchaseRate: vi.fn(),
+    updatePointPurchaseRate: vi.fn(),
+    listAdPlacementConfigs: vi.fn(),
+    updateAdPlacementConfig: vi.fn(),
   };
 }
 

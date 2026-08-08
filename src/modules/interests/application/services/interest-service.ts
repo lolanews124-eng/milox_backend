@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 
 import type { InterestStatus } from "@prisma/client";
 
+import type { PrismaClient } from "@prisma/client";
+
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { resolveUserEntitlements } from "../../../premium/application/entitlements.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
 import type {
   InterestPageQuery,
@@ -32,6 +35,7 @@ export class InterestService {
     private readonly repository: InterestRepository,
     private readonly cursors: FeedCursorCodec,
     private readonly config: AppConfig,
+    private readonly database: PrismaClient,
   ) {}
 
   async create(
@@ -40,6 +44,15 @@ export class InterestService {
     idempotencyKey: string,
   ): Promise<{ item: object; replayed: boolean }> {
     const message = normalizeMessage(input.message);
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      senderId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+    const dailyLimit =
+      entitlements.features.dailyInterestLimit >= 9999
+        ? 9999
+        : entitlements.features.dailyInterestLimit;
     try {
       const created = await this.repository.create({
         senderId,
@@ -50,7 +63,7 @@ export class InterestService {
           recipientId: input.recipientId,
           message,
         }),
-        dailyLimit: this.config.INTEREST_DAILY_LIMIT,
+        dailyLimit,
         interestSendCost: this.config.INTEREST_SEND_COST,
       });
       if (!created) throw new AppError("NOT_FOUND", "User not found", 404);

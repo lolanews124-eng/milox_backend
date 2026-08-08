@@ -16,6 +16,7 @@ export interface PostAuthorViewRecord {
   websiteUrl: string | null;
   instagramHandle: string | null;
   isVerifiedBadge: boolean;
+  premiumTier: import("@prisma/client").PremiumTier;
   isPrivateAccount: boolean;
   hideAge: boolean;
   hideCountry: boolean;
@@ -107,6 +108,7 @@ export function presentPublicAuthor(
     instagramHandle: author.instagramHandle,
     interests: author.interests.map(({ tag }) => tag.slug),
     isVerifiedBadge: author.isVerifiedBadge,
+    premiumTier: author.premiumTier,
     isPrivateAccount: author.isPrivateAccount,
     ...(!author.hideOnline ? { online: isUserOnline(author.id) } : {}),
     ...(author.followers

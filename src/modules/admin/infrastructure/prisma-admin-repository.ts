@@ -1,3 +1,4 @@
+import { syncUserPremiumState } from "../../premium/application/entitlements.js";
 import {
   AdPlacement,
   AuditActorType,
@@ -11,14 +12,22 @@ import {
   MessageType,
   OutboxStatus,
   Prisma,
+  PremiumBillingCycle,
   ReportStatus,
   SubscriptionStatus,
   UserRole,
   UserStatus,
+  WalletTransactionType,
   type PrismaClient,
 } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
+import {
+  creditWallet,
+  debitWallet,
+} from "../../rewards/infrastructure/prisma-rewards-repository.js";
+import { InsufficientWalletBalanceError } from "../../rewards/application/ports/rewards-repository.js";
 import { normalizeReferralCode } from "../../rewards/infrastructure/referral-code.js";
 
 import type {
@@ -36,11 +45,17 @@ import type {
   ChangeUserStatusData,
   CreateInterestTagData,
   CreateAdData,
+  AdminAdQuery,
+  UpdateAdPlacementConfigData,
   CreateCmsPageData,
   CreateBlogPostData,
   CreatePremiumPlanData,
   CancelSubscriptionData,
   AdminSubscriptionQuery,
+  AdminAdjustWalletData,
+  AdminWalletTransactionQuery,
+  CreatePointPurchaseRateData,
+  UpdatePointPurchaseRateData,
   DeleteCommentData,
   DeletePostData,
   DeleteStoryData,
@@ -54,6 +69,7 @@ import type {
   UpdateCommentVisibilityData,
   UpdateInterestTagData,
   UpdatePremiumPlanData,
+  PremiumPlanPriceInput,
   UpdatePostVisibilityData,
   AdminEmailJobQuery,
   AdminHashtagQuery,
@@ -81,7 +97,9 @@ import type {
   AdminStoryRecord,
   AdminStoriesStatsRecord,
   AdminPremiumPlanRecord,
+  AdminPlanPriceRecord,
   AdminAdRecord,
+  AdminAdPlacementConfigRecord,
   AdminAnalyticsRecord,
   AdminCmsPageRecord,
   AdminBlogPostRecord,
@@ -105,6 +123,11 @@ import type {
   AdminUserRecord,
   AdminUsersStatsRecord,
   AdminVerificationStatsRecord,
+  AdminWalletAdjustResultRecord,
+  AdminWalletStatsRecord,
+  AdminWalletTransactionRecord,
+  AdminWalletUserRecord,
+  AdminPointPurchaseRateRecord,
 } from "../application/admin-view.js";
 
 const adminUserSelect = {
@@ -1120,6 +1143,7 @@ export class PrismaAdminRepository implements AdminRepository {
   ): Promise<AdminPage<AdminCommentRecord>> {
     const bucket = query.bucket ?? "all";
     const where: Prisma.CommentWhereInput = {
+      ...(query.postId ? { postId: query.postId } : {}),
       ...(query.q
         ? {
             OR: [
@@ -1580,45 +1604,15 @@ export class PrismaAdminRepository implements AdminRepository {
   ): Promise<AdminPage<AdminPremiumPlanRecord>> {
     const [rows, total] = await this.database.$transaction([
       this.database.premiumPlan.findMany({
-        orderBy: [{ isActive: "desc" }, { priceCents: "asc" }],
+        orderBy: [{ sortOrder: "asc" }, { isActive: "desc" }, { priceCents: "asc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          description: true,
-          priceCents: true,
-          currency: true,
-          durationDays: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: {
-            select: {
-              subscriptions: {
-                where: { status: SubscriptionStatus.ACTIVE },
-              },
-            },
-          },
-        },
+        select: premiumPlanSelect(),
       }),
       this.database.premiumPlan.count(),
     ]);
     return {
-      items: rows.map((plan) => ({
-        id: plan.id,
-        code: plan.code,
-        name: plan.name,
-        description: plan.description,
-        priceCents: plan.priceCents,
-        currency: plan.currency,
-        durationDays: plan.durationDays,
-        isActive: plan.isActive,
-        subscriberCount: plan._count.subscriptions,
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-      })),
+      items: rows.map((plan) => mapPremiumPlan(plan)),
       total,
     };
   }
@@ -1626,33 +1620,41 @@ export class PrismaAdminRepository implements AdminRepository {
   createPremiumPlan(data: CreatePremiumPlanData): Promise<AdminPremiumPlanRecord> {
     return this.database.$transaction(async (transaction) => {
       const actor = await this.requireAdminActor(transaction, data.actorId);
+      const prices =
+        data.prices ??
+        defaultPlanPricesFromMonthly(data.priceCents, data.durationDays);
+      const monthly = prices.find((price) => price.billingCycle === "MONTHLY");
       const created = await transaction.premiumPlan.create({
         data: {
           code: data.code,
           name: data.name,
           description: data.description ?? null,
-          priceCents: data.priceCents,
+          tier: (data.tier as "PLUS" | "GOLD" | "ELITE" | undefined) ?? "PLUS",
+          sortOrder: data.sortOrder ?? 0,
+          badgeLabel: data.badgeLabel ?? "Premium",
+          priceCents: monthly?.priceCents ?? data.priceCents,
           currency: data.currency,
-          durationDays: data.durationDays,
+          durationDays: monthly?.durationDays ?? data.durationDays,
+          adsFree: data.adsFree ?? true,
+          houseAdsFree: data.houseAdsFree ?? false,
+          profileViews: data.profileViews ?? true,
+          discoverBoost: data.discoverBoost ?? 1,
+          grantVerifiedBadge: data.grantVerifiedBadge ?? false,
+          dailyInterestLimit: data.dailyInterestLimit ?? 10,
+          interstitialAdsFree: data.interstitialAdsFree ?? true,
+          directMessageEnabled: data.directMessageEnabled ?? false,
         },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          description: true,
-          priceCents: true,
-          currency: true,
-          durationDays: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: { select: { subscriptions: true } },
-        },
+        select: { id: true },
       });
-      await this.writeAudit(transaction, actor.id, "admin.plan.created", "premium_plan", created.id, {
-        code: created.code,
+      await upsertPlanPrices(transaction, created.id, prices);
+      const loaded = await transaction.premiumPlan.findUniqueOrThrow({
+        where: { id: created.id },
+        select: premiumPlanSelect(),
       });
-      return mapPremiumPlan(created);
+      await this.writeAudit(transaction, actor.id, "admin.plan.created", "premium_plan", loaded.id, {
+        code: loaded.code,
+      });
+      return mapPremiumPlan(loaded);
     });
   }
 
@@ -1666,35 +1668,52 @@ export class PrismaAdminRepository implements AdminRepository {
         select: { id: true },
       });
       if (!existing) return null;
-      const updated = await transaction.premiumPlan.update({
+      await transaction.premiumPlan.update({
         where: { id: existing.id },
         data: {
           ...(data.name !== undefined ? { name: data.name } : {}),
           ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.tier !== undefined ? { tier: data.tier as "PLUS" | "GOLD" | "ELITE" } : {}),
+          ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+          ...(data.badgeLabel !== undefined ? { badgeLabel: data.badgeLabel } : {}),
           ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
           ...(data.durationDays !== undefined ? { durationDays: data.durationDays } : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
-        },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          description: true,
-          priceCents: true,
-          currency: true,
-          durationDays: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: {
-            select: {
-              subscriptions: { where: { status: SubscriptionStatus.ACTIVE } },
-            },
-          },
+          ...(data.adsFree !== undefined ? { adsFree: data.adsFree } : {}),
+          ...(data.houseAdsFree !== undefined ? { houseAdsFree: data.houseAdsFree } : {}),
+          ...(data.profileViews !== undefined ? { profileViews: data.profileViews } : {}),
+          ...(data.discoverBoost !== undefined ? { discoverBoost: data.discoverBoost } : {}),
+          ...(data.grantVerifiedBadge !== undefined ? { grantVerifiedBadge: data.grantVerifiedBadge } : {}),
+          ...(data.dailyInterestLimit !== undefined ? { dailyInterestLimit: data.dailyInterestLimit } : {}),
+          ...(data.interstitialAdsFree !== undefined ? { interstitialAdsFree: data.interstitialAdsFree } : {}),
+          ...(data.directMessageEnabled !== undefined ? { directMessageEnabled: data.directMessageEnabled } : {}),
         },
       });
-      await this.writeAudit(transaction, actor.id, "admin.plan.updated", "premium_plan", updated.id, {});
-      return mapPremiumPlan(updated);
+      if (data.prices?.length) {
+        await upsertPlanPrices(transaction, existing.id, data.prices);
+      } else if (
+        data.priceCents !== undefined ||
+        data.durationDays !== undefined
+      ) {
+        const current = await transaction.premiumPlan.findUniqueOrThrow({
+          where: { id: existing.id },
+          select: { priceCents: true, durationDays: true },
+        });
+        await upsertPlanPrices(
+          transaction,
+          existing.id,
+          defaultPlanPricesFromMonthly(
+            data.priceCents ?? current.priceCents,
+            data.durationDays ?? current.durationDays,
+          ),
+        );
+      }
+      const loaded = await transaction.premiumPlan.findUniqueOrThrow({
+        where: { id: existing.id },
+        select: premiumPlanSelect(),
+      });
+      await this.writeAudit(transaction, actor.id, "admin.plan.updated", "premium_plan", loaded.id, {});
+      return mapPremiumPlan(loaded);
     });
   }
 
@@ -1715,6 +1734,7 @@ export class PrismaAdminRepository implements AdminRepository {
           id: true,
           userId: true,
           planId: true,
+          billingCycle: true,
           status: true,
           startsAt: true,
           endsAt: true,
@@ -1734,6 +1754,7 @@ export class PrismaAdminRepository implements AdminRepository {
         planId: row.planId,
         planName: row.plan.name,
         planCode: row.plan.code,
+        billingCycle: row.billingCycle,
         status: row.status,
         startsAt: row.startsAt,
         endsAt: row.endsAt,
@@ -1747,6 +1768,7 @@ export class PrismaAdminRepository implements AdminRepository {
   grantSubscription(data: GrantSubscriptionData): Promise<AdminSubscriptionRecord> {
     return this.database.$transaction(async (transaction) => {
       const actor = await this.requireAdminActor(transaction, data.actorId);
+      const billingCycle = (data.billingCycle ?? "MONTHLY") as PremiumBillingCycle;
       const [user, plan] = await Promise.all([
         transaction.user.findUnique({
           where: { id: data.userId },
@@ -1754,13 +1776,24 @@ export class PrismaAdminRepository implements AdminRepository {
         }),
         transaction.premiumPlan.findFirst({
           where: { id: data.planId, isActive: true },
-          select: { id: true, name: true, code: true, durationDays: true },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            prices: {
+              where: { billingCycle, isActive: true },
+              select: { id: true, durationDays: true },
+              take: 1,
+            },
+          },
         }),
       ]);
       if (!user || !plan) throw new AdminStateConflictError();
+      const planPrice = plan.prices[0];
+      if (!planPrice) throw new AdminStateConflictError();
       const now = new Date();
       const endsAt = new Date(now);
-      endsAt.setUTCDate(endsAt.getUTCDate() + plan.durationDays);
+      endsAt.setUTCDate(endsAt.getUTCDate() + planPrice.durationDays);
       await transaction.userSubscription.updateMany({
         where: { userId: user.id, status: SubscriptionStatus.ACTIVE },
         data: { status: SubscriptionStatus.CANCELLED, cancelledAt: now },
@@ -1769,6 +1802,8 @@ export class PrismaAdminRepository implements AdminRepository {
         data: {
           userId: user.id,
           planId: plan.id,
+          planPriceId: planPrice.id,
+          billingCycle,
           status: SubscriptionStatus.ACTIVE,
           startsAt: now,
           endsAt,
@@ -1777,6 +1812,7 @@ export class PrismaAdminRepository implements AdminRepository {
           id: true,
           userId: true,
           planId: true,
+          billingCycle: true,
           status: true,
           startsAt: true,
           endsAt: true,
@@ -1790,6 +1826,7 @@ export class PrismaAdminRepository implements AdminRepository {
         userId: user.id,
         planId: plan.id,
       });
+      await syncUserPremiumState(this.database, user.id);
       return {
         id: created.id,
         userId: created.userId,
@@ -1797,6 +1834,7 @@ export class PrismaAdminRepository implements AdminRepository {
         planId: created.planId,
         planName: created.plan.name,
         planCode: created.plan.code,
+        billingCycle: created.billingCycle,
         status: created.status,
         startsAt: created.startsAt,
         endsAt: created.endsAt,
@@ -1829,6 +1867,7 @@ export class PrismaAdminRepository implements AdminRepository {
           id: true,
           userId: true,
           planId: true,
+          billingCycle: true,
           status: true,
           startsAt: true,
           endsAt: true,
@@ -1839,6 +1878,7 @@ export class PrismaAdminRepository implements AdminRepository {
         },
       });
       await this.writeAudit(transaction, actor.id, "admin.subscription.cancelled", "subscription", updated.id, {});
+      await syncUserPremiumState(this.database, updated.userId);
       return {
         id: updated.id,
         userId: updated.userId,
@@ -1846,6 +1886,7 @@ export class PrismaAdminRepository implements AdminRepository {
         planId: updated.planId,
         planName: updated.plan.name,
         planCode: updated.plan.code,
+        billingCycle: updated.billingCycle,
         status: updated.status,
         startsAt: updated.startsAt,
         endsAt: updated.endsAt,
@@ -1855,14 +1896,21 @@ export class PrismaAdminRepository implements AdminRepository {
     });
   }
 
-  async listAds(query: { page: number; pageSize: number }): Promise<AdminPage<AdminAdRecord>> {
+  async listAds(query: AdminAdQuery): Promise<AdminPage<AdminAdRecord>> {
+    const where: Prisma.AdvertisementWhereInput = {
+      ...(query.placement
+        ? { placement: query.placement as AdPlacement }
+        : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+    };
     const [rows, total] = await this.database.$transaction([
       this.database.advertisement.findMany({
-        orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+        where,
+        orderBy: [{ isActive: "desc" }, { priority: "desc" }, { createdAt: "desc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
-      this.database.advertisement.count(),
+      this.database.advertisement.count({ where }),
     ]);
     return { items: rows.map(mapAd), total };
   }
@@ -1876,7 +1924,10 @@ export class PrismaAdminRepository implements AdminRepository {
           body: data.body ?? null,
           imageUrl: data.imageUrl ?? null,
           targetUrl: data.targetUrl ?? null,
+          ctaLabel: data.ctaLabel ?? null,
           placement: data.placement as Prisma.AdvertisementCreateInput["placement"],
+          priority: data.priority ?? 0,
+          insertEvery: data.insertEvery ?? null,
           isActive: data.isActive ?? false,
           startsAt: data.startsAt ?? null,
           endsAt: data.endsAt ?? null,
@@ -1900,7 +1951,10 @@ export class PrismaAdminRepository implements AdminRepository {
       if (data.body !== undefined) patch.body = data.body;
       if (data.imageUrl !== undefined) patch.imageUrl = data.imageUrl;
       if (data.targetUrl !== undefined) patch.targetUrl = data.targetUrl;
+      if (data.ctaLabel !== undefined) patch.ctaLabel = data.ctaLabel;
       if (data.placement !== undefined) patch.placement = data.placement as AdPlacement;
+      if (data.priority !== undefined) patch.priority = data.priority;
+      if (data.insertEvery !== undefined) patch.insertEvery = data.insertEvery;
       if (data.isActive !== undefined) patch.isActive = data.isActive;
       if (data.startsAt !== undefined) patch.startsAt = data.startsAt;
       if (data.endsAt !== undefined) patch.endsAt = data.endsAt;
@@ -1921,6 +1975,43 @@ export class PrismaAdminRepository implements AdminRepository {
       await transaction.advertisement.delete({ where: { id: adId } });
       await this.writeAudit(transaction, actor.id, "admin.ad.deleted", "advertisement", adId, {});
       return mapAd(existing);
+    });
+  }
+
+  async listAdPlacementConfigs(): Promise<AdminAdPlacementConfigRecord[]> {
+    const rows = await this.database.adPlacementConfig.findMany({
+      orderBy: { placement: "asc" },
+    });
+    return rows.map(mapAdPlacementConfig);
+  }
+
+  updateAdPlacementConfig(
+    data: UpdateAdPlacementConfigData,
+  ): Promise<AdminAdPlacementConfigRecord | null> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const existing = await transaction.adPlacementConfig.findUnique({
+        where: { placement: data.placement as AdPlacement },
+      });
+      if (!existing) return null;
+      const updated = await transaction.adPlacementConfig.update({
+        where: { placement: existing.placement },
+        data: {
+          ...(data.label !== undefined ? { label: data.label } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.isEnabled !== undefined ? { isEnabled: data.isEnabled } : {}),
+          ...(data.insertEvery !== undefined ? { insertEvery: data.insertEvery } : {}),
+        },
+      });
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.ad_placement.updated",
+        "ad_placement_config",
+        updated.placement,
+        {},
+      );
+      return mapAdPlacementConfig(updated);
     });
   }
 
@@ -3235,6 +3326,311 @@ export class PrismaAdminRepository implements AdminRepository {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
+
+  async walletStats(): Promise<AdminWalletStatsRecord> {
+    const [aggregate, adminAdjustmentsCount] = await Promise.all([
+      this.database.wallet.aggregate({
+        _count: { userId: true },
+        _sum: { balance: true, lifetimeEarned: true },
+      }),
+      this.database.walletTransaction.count({
+        where: { type: WalletTransactionType.ADMIN_ADJUST },
+      }),
+    ]);
+    return {
+      totalWallets: aggregate._count.userId,
+      totalBalance: aggregate._sum.balance ?? 0,
+      totalLifetimeEarned: aggregate._sum.lifetimeEarned ?? 0,
+      adminAdjustmentsCount,
+    };
+  }
+
+  async getWalletUser(userId: string): Promise<AdminWalletUserRecord | null> {
+    const user = await this.database.user.findFirst({
+      where: { id: userId, ...consumerPlatformUserWhere },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        wallet: {
+          select: {
+            balance: true,
+            lifetimeEarned: true,
+            lifetimeSpent: true,
+          },
+        },
+      },
+    });
+    if (!user) return null;
+    return {
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      balance: user.wallet?.balance ?? 0,
+      lifetimeEarned: user.wallet?.lifetimeEarned ?? 0,
+      lifetimeSpent: user.wallet?.lifetimeSpent ?? 0,
+    };
+  }
+
+  adjustWallet(data: AdminAdjustWalletData): Promise<AdminWalletAdjustResultRecord> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const user = await transaction.user.findFirst({
+        where: { id: data.userId, ...consumerPlatformUserWhere },
+        select: { id: true, username: true },
+      });
+      if (!user) throw new AdminStateConflictError();
+
+      const existing = await transaction.wallet.findUnique({
+        where: { userId: data.userId },
+      });
+      if (!existing) {
+        await transaction.wallet.create({
+          data: {
+            userId: data.userId,
+            balance: 0,
+            lifetimeEarned: 0,
+            lifetimeSpent: 0,
+          },
+        });
+      }
+
+      const adjustmentId = randomUUID();
+      const idempotencyKey = `admin-adjust:${adjustmentId}`;
+      const description =
+        data.note?.trim() ||
+        (data.direction === "credit" ? "Admin credit" : "Admin debit");
+
+      if (data.direction === "credit") {
+        await creditWallet(transaction, {
+          userId: data.userId,
+          amount: data.points,
+          type: WalletTransactionType.ADMIN_ADJUST,
+          idempotencyKey,
+          referenceType: "admin_adjust",
+          referenceId: adjustmentId,
+          description,
+        });
+      } else {
+        try {
+          await debitWallet(transaction, {
+            userId: data.userId,
+            amount: data.points,
+            type: WalletTransactionType.ADMIN_ADJUST,
+            idempotencyKey,
+            referenceType: "admin_adjust",
+            referenceId: adjustmentId,
+            description,
+          });
+        } catch (error) {
+          if (error instanceof InsufficientWalletBalanceError) {
+            throw error;
+          }
+          throw error;
+        }
+      }
+
+      const updated = await transaction.wallet.findUniqueOrThrow({
+        where: { userId: data.userId },
+        select: { balance: true, lifetimeEarned: true, lifetimeSpent: true },
+      });
+
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.wallet.adjusted",
+        "wallet",
+        data.userId,
+        {
+          direction: data.direction,
+          points: data.points,
+          note: data.note ?? null,
+        },
+      );
+
+      return {
+        userId: user.id,
+        username: user.username,
+        balance: updated.balance,
+        lifetimeEarned: updated.lifetimeEarned,
+        lifetimeSpent: updated.lifetimeSpent,
+        direction: data.direction,
+        points: data.points,
+      };
+    });
+  }
+
+  async listWalletTransactions(
+    query: AdminWalletTransactionQuery,
+  ): Promise<AdminPage<AdminWalletTransactionRecord>> {
+    const where: Prisma.WalletTransactionWhereInput = {
+      ...(query.userId ? { walletUserId: query.userId } : {}),
+      ...(query.type ? { type: query.type } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              ...(isUuid(query.q) ? [{ id: query.q }, { walletUserId: query.q }] : []),
+              {
+                wallet: {
+                  user: {
+                    username: { contains: query.q, mode: "insensitive" },
+                  },
+                },
+              },
+              {
+                wallet: {
+                  user: {
+                    displayName: { contains: query.q, mode: "insensitive" },
+                  },
+                },
+              },
+              { description: { contains: query.q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total] = await this.database.$transaction([
+      this.database.walletTransaction.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: {
+          id: true,
+          walletUserId: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          description: true,
+          createdAt: true,
+          wallet: {
+            select: {
+              user: { select: { username: true } },
+            },
+          },
+        },
+      }),
+      this.database.walletTransaction.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        userId: row.walletUserId,
+        username: row.wallet.user.username,
+        type: row.type,
+        amount: row.amount,
+        balanceAfter: row.balanceAfter,
+        description: row.description,
+        createdAt: row.createdAt,
+      })),
+      total,
+    };
+  }
+
+  async listPointPurchaseRates(
+    query: OffsetPage,
+  ): Promise<AdminPage<AdminPointPurchaseRateRecord>> {
+    const [rows, total] = await this.database.$transaction([
+      this.database.pointPurchaseRate.findMany({
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.database.pointPurchaseRate.count(),
+    ]);
+    return { items: rows.map(mapPointPurchaseRate), total };
+  }
+
+  createPointPurchaseRate(
+    data: CreatePointPurchaseRateData,
+  ): Promise<AdminPointPurchaseRateRecord> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const created = await transaction.pointPurchaseRate.create({
+        data: {
+          currency: data.currency.toUpperCase(),
+          amountMinor: data.amountMinor,
+          points: data.points,
+          label: data.label ?? null,
+          isActive: data.isActive ?? true,
+          sortOrder: data.sortOrder ?? 0,
+          updatedById: actor.id,
+        },
+      });
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.point_rate.created",
+        "point_purchase_rate",
+        created.id,
+        { currency: created.currency, amountMinor: created.amountMinor, points: created.points },
+      );
+      return mapPointPurchaseRate(created);
+    });
+  }
+
+  updatePointPurchaseRate(
+    data: UpdatePointPurchaseRateData,
+  ): Promise<AdminPointPurchaseRateRecord | null> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const existing = await transaction.pointPurchaseRate.findUnique({
+        where: { id: data.rateId },
+      });
+      if (!existing) return null;
+      const updated = await transaction.pointPurchaseRate.update({
+        where: { id: data.rateId },
+        data: {
+          ...(data.currency !== undefined
+            ? { currency: data.currency.toUpperCase() }
+            : {}),
+          ...(data.amountMinor !== undefined ? { amountMinor: data.amountMinor } : {}),
+          ...(data.points !== undefined ? { points: data.points } : {}),
+          ...(data.label !== undefined ? { label: data.label } : {}),
+          ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+          ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+          updatedById: actor.id,
+        },
+      });
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.point_rate.updated",
+        "point_purchase_rate",
+        updated.id,
+        {},
+      );
+      return mapPointPurchaseRate(updated);
+    });
+  }
+}
+
+function mapPointPurchaseRate(row: {
+  id: string;
+  currency: string;
+  amountMinor: number;
+  points: number;
+  label: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  updatedById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): AdminPointPurchaseRateRecord {
+  return {
+    id: row.id,
+    currency: row.currency,
+    amountMinor: row.amountMinor,
+    points: row.points,
+    label: row.label,
+    isActive: row.isActive,
+    sortOrder: row.sortOrder,
+    updatedById: row.updatedById,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }
 
 function roleRank(role: UserRole): number {
@@ -3417,18 +3813,71 @@ function mapAdminComment(
   };
 }
 
+function premiumPlanSelect() {
+  return {
+    id: true,
+    code: true,
+    name: true,
+    description: true,
+    tier: true,
+    sortOrder: true,
+    badgeLabel: true,
+    priceCents: true,
+    currency: true,
+    durationDays: true,
+    adsFree: true,
+    houseAdsFree: true,
+    profileViews: true,
+    discoverBoost: true,
+    grantVerifiedBadge: true,
+    dailyInterestLimit: true,
+    interstitialAdsFree: true,
+    directMessageEnabled: true,
+    isActive: true,
+    createdAt: true,
+    updatedAt: true,
+    prices: {
+      orderBy: { billingCycle: "asc" },
+      select: {
+        id: true,
+        billingCycle: true,
+        priceCents: true,
+        durationDays: true,
+        isActive: true,
+      },
+    },
+    _count: {
+      select: {
+        subscriptions: { where: { status: SubscriptionStatus.ACTIVE } },
+      },
+    },
+  } as const;
+}
+
 function mapPremiumPlan(
   plan: {
     id: string;
     code: string;
     name: string;
     description: string | null;
+    tier: string;
+    sortOrder: number;
+    badgeLabel: string;
     priceCents: number;
     currency: string;
     durationDays: number;
+    adsFree: boolean;
+    houseAdsFree: boolean;
+    profileViews: boolean;
+    discoverBoost: number;
+    grantVerifiedBadge: boolean;
+    dailyInterestLimit: number;
+    interstitialAdsFree: boolean;
+    directMessageEnabled: boolean;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
+    prices: AdminPlanPriceRecord[];
     _count: { subscriptions: number };
   },
 ): AdminPremiumPlanRecord {
@@ -3437,14 +3886,94 @@ function mapPremiumPlan(
     code: plan.code,
     name: plan.name,
     description: plan.description,
+    tier: plan.tier,
+    sortOrder: plan.sortOrder,
+    badgeLabel: plan.badgeLabel,
     priceCents: plan.priceCents,
     currency: plan.currency,
     durationDays: plan.durationDays,
+    adsFree: plan.adsFree,
+    houseAdsFree: plan.houseAdsFree,
+    profileViews: plan.profileViews,
+    discoverBoost: plan.discoverBoost,
+    grantVerifiedBadge: plan.grantVerifiedBadge,
+    dailyInterestLimit: plan.dailyInterestLimit,
+    interstitialAdsFree: plan.interstitialAdsFree,
+    directMessageEnabled: plan.directMessageEnabled,
     isActive: plan.isActive,
+    prices: plan.prices.map((price) => ({
+      id: price.id,
+      billingCycle: price.billingCycle,
+      priceCents: price.priceCents,
+      durationDays: price.durationDays,
+      isActive: price.isActive,
+    })),
     subscriberCount: plan._count.subscriptions,
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
   };
+}
+
+function defaultPlanPricesFromMonthly(
+  monthlyCents: number,
+  monthlyDays: number,
+): PremiumPlanPriceInput[] {
+  return [
+    {
+      billingCycle: "MONTHLY",
+      priceCents: monthlyCents,
+      durationDays: monthlyDays,
+    },
+    {
+      billingCycle: "YEARLY",
+      priceCents: monthlyCents * 10,
+      durationDays: 365,
+    },
+    {
+      billingCycle: "ONE_TIME",
+      priceCents: monthlyCents * 20,
+      durationDays: 3650,
+    },
+  ];
+}
+
+async function upsertPlanPrices(
+  transaction: Prisma.TransactionClient,
+  planId: string,
+  prices: PremiumPlanPriceInput[],
+): Promise<void> {
+  for (const price of prices) {
+    await transaction.premiumPlanPrice.upsert({
+      where: {
+        planId_billingCycle: {
+          planId,
+          billingCycle: price.billingCycle as PremiumBillingCycle,
+        },
+      },
+      create: {
+        planId,
+        billingCycle: price.billingCycle as PremiumBillingCycle,
+        priceCents: price.priceCents,
+        durationDays: price.durationDays,
+        isActive: price.isActive ?? true,
+      },
+      update: {
+        priceCents: price.priceCents,
+        durationDays: price.durationDays,
+        ...(price.isActive !== undefined ? { isActive: price.isActive } : {}),
+      },
+    });
+  }
+  const monthly = prices.find((price) => price.billingCycle === "MONTHLY");
+  if (monthly) {
+    await transaction.premiumPlan.update({
+      where: { id: planId },
+      data: {
+        priceCents: monthly.priceCents,
+        durationDays: monthly.durationDays,
+      },
+    });
+  }
 }
 
 function mapAd(ad: {
@@ -3453,8 +3982,13 @@ function mapAd(ad: {
   body: string | null;
   imageUrl: string | null;
   targetUrl: string | null;
+  ctaLabel: string | null;
   placement: string;
+  priority: number;
+  insertEvery: number | null;
   isActive: boolean;
+  impressionCount: number;
+  clickCount: number;
   startsAt: Date | null;
   endsAt: Date | null;
   createdAt: Date;
@@ -3466,12 +4000,35 @@ function mapAd(ad: {
     body: ad.body,
     imageUrl: ad.imageUrl,
     targetUrl: ad.targetUrl,
+    ctaLabel: ad.ctaLabel,
     placement: ad.placement,
+    priority: ad.priority,
+    insertEvery: ad.insertEvery,
     isActive: ad.isActive,
+    impressionCount: ad.impressionCount,
+    clickCount: ad.clickCount,
     startsAt: ad.startsAt,
     endsAt: ad.endsAt,
     createdAt: ad.createdAt,
     updatedAt: ad.updatedAt,
+  };
+}
+
+function mapAdPlacementConfig(row: {
+  placement: string;
+  label: string;
+  description: string | null;
+  isEnabled: boolean;
+  insertEvery: number;
+  updatedAt: Date;
+}): AdminAdPlacementConfigRecord {
+  return {
+    placement: row.placement,
+    label: row.label,
+    description: row.description,
+    isEnabled: row.isEnabled,
+    insertEvery: row.insertEvery,
+    updatedAt: row.updatedAt,
   };
 }
 

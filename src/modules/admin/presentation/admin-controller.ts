@@ -49,6 +49,9 @@ import {
   changeStaffRoleSchema,
   changeUserStatusSchema,
   createAdSchema,
+  adminAdQuerySchema,
+  adminAdPlacementParamSchema,
+  updateAdPlacementConfigSchema,
   createCmsPageSchema,
   createInterestTagSchema,
   createPremiumPlanSchema,
@@ -56,6 +59,12 @@ import {
   deleteStorySchema,
   deleteAdminMessageSchema,
   grantSubscriptionSchema,
+  adminAdjustWalletSchema,
+  adminWalletLookupQuerySchema,
+  adminWalletTransactionQuerySchema,
+  adminPointPurchaseRateIdParamSchema,
+  createPointPurchaseRateSchema,
+  updatePointPurchaseRateSchema,
   resolveReportSchema,
   setVerifiedBadgeSchema,
   updateAdSchema,
@@ -374,8 +383,56 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  listAds = async (request: Request, response: Response): Promise<void> => {
+  walletStats = async (request: Request, response: Response): Promise<void> => {
+    const data = await this.admin.walletStats();
+    response.status(200).json(success(request, data));
+  };
+
+  lookupWalletUser = async (request: Request, response: Response): Promise<void> => {
+    const { q } = adminWalletLookupQuerySchema.parse(request.query);
+    const data = await this.admin.lookupWalletUser(q);
+    response.status(200).json(success(request, data));
+  };
+
+  getWalletUser = async (request: Request, response: Response): Promise<void> => {
+    const { userId } = adminUserIdParamSchema.parse(request.params);
+    const data = await this.admin.getWalletUser(userId);
+    response.status(200).json(success(request, data));
+  };
+
+  adjustWallet = async (request: Request, response: Response): Promise<void> => {
+    const input = adminAdjustWalletSchema.parse(request.body as unknown);
+    const data = await this.admin.adjustWallet(requireUser(request), input);
+    response.status(200).json(success(request, data));
+  };
+
+  listWalletTransactions = async (request: Request, response: Response): Promise<void> => {
+    const query = adminWalletTransactionQuerySchema.parse(request.query);
+    const data = await this.admin.listWalletTransactions(query);
+    response.status(200).json(success(request, data));
+  };
+
+  listPointPurchaseRates = async (request: Request, response: Response): Promise<void> => {
     const query = adminUserQuerySchema.parse(request.query);
+    const data = await this.admin.listPointPurchaseRates(query);
+    response.status(200).json(success(request, data));
+  };
+
+  createPointPurchaseRate = async (request: Request, response: Response): Promise<void> => {
+    const input = createPointPurchaseRateSchema.parse(request.body as unknown);
+    const data = await this.admin.createPointPurchaseRate(requireUser(request), input);
+    response.status(201).json(success(request, data));
+  };
+
+  updatePointPurchaseRate = async (request: Request, response: Response): Promise<void> => {
+    const { rateId } = adminPointPurchaseRateIdParamSchema.parse(request.params);
+    const input = updatePointPurchaseRateSchema.parse(request.body as unknown);
+    const data = await this.admin.updatePointPurchaseRate(requireUser(request), rateId, input);
+    response.status(200).json(success(request, data));
+  };
+
+  listAds = async (request: Request, response: Response): Promise<void> => {
+    const query = adminAdQuerySchema.parse(request.query);
     const data = await this.admin.listAds(query);
     response.status(200).json(success(request, data));
   };
@@ -396,6 +453,28 @@ export class AdminController {
   deleteAd = async (request: Request, response: Response): Promise<void> => {
     const { adId } = adminAdIdParamSchema.parse(request.params);
     const data = await this.admin.deleteAd(requireUser(request), adId);
+    response.status(200).json(success(request, data));
+  };
+
+  listAdPlacementConfigs = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.listAdPlacementConfigs();
+    response.status(200).json(success(request, data));
+  };
+
+  updateAdPlacementConfig = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { placement } = adminAdPlacementParamSchema.parse(request.params);
+    const input = updateAdPlacementConfigSchema.parse(request.body as unknown);
+    const data = await this.admin.updateAdPlacementConfig(
+      requireUser(request),
+      placement,
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 

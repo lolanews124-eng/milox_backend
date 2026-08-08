@@ -252,15 +252,35 @@ export interface AdminInterestTagRecord {
   updatedAt: Date;
 }
 
+export interface AdminPlanPriceRecord {
+  id: string;
+  billingCycle: string;
+  priceCents: number;
+  durationDays: number;
+  isActive: boolean;
+}
+
 export interface AdminPremiumPlanRecord {
   id: string;
   code: string;
   name: string;
   description: string | null;
+  tier: string;
+  sortOrder: number;
+  badgeLabel: string;
   priceCents: number;
   currency: string;
   durationDays: number;
+  adsFree: boolean;
+  houseAdsFree: boolean;
+  profileViews: boolean;
+  discoverBoost: number;
+  grantVerifiedBadge: boolean;
+  dailyInterestLimit: number;
+  interstitialAdsFree: boolean;
+  directMessageEnabled: boolean;
   isActive: boolean;
+  prices: AdminPlanPriceRecord[];
   subscriberCount: number;
   createdAt: Date;
   updatedAt: Date;
@@ -273,6 +293,7 @@ export interface AdminSubscriptionRecord {
   planId: string;
   planName: string;
   planCode: string;
+  billingCycle: string;
   status: string;
   startsAt: Date;
   endsAt: Date;
@@ -286,11 +307,25 @@ export interface AdminAdRecord {
   body: string | null;
   imageUrl: string | null;
   targetUrl: string | null;
+  ctaLabel: string | null;
   placement: string;
+  priority: number;
+  insertEvery: number | null;
   isActive: boolean;
+  impressionCount: number;
+  clickCount: number;
   startsAt: Date | null;
   endsAt: Date | null;
   createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AdminAdPlacementConfigRecord {
+  placement: string;
+  label: string;
+  description: string | null;
+  isEnabled: boolean;
+  insertEvery: number;
   updatedAt: Date;
 }
 
@@ -649,10 +684,29 @@ export function presentAdminPremiumPlan(plan: AdminPremiumPlanRecord): object {
     code: plan.code,
     name: plan.name,
     description: plan.description,
+    tier: plan.tier,
+    sortOrder: plan.sortOrder,
+    badgeLabel: plan.badgeLabel,
     priceCents: plan.priceCents,
     currency: plan.currency,
     durationDays: plan.durationDays,
+    adsFree: plan.adsFree,
+    houseAdsFree: plan.houseAdsFree,
+    profileViews: plan.profileViews,
+    discoverBoost: plan.discoverBoost,
+    grantVerifiedBadge: plan.grantVerifiedBadge,
+    dailyInterestLimit:
+      plan.dailyInterestLimit >= 9999 ? "unlimited" : plan.dailyInterestLimit,
+    interstitialAdsFree: plan.interstitialAdsFree,
+    directMessageEnabled: plan.directMessageEnabled,
     isActive: plan.isActive,
+    prices: plan.prices.map((price) => ({
+      id: price.id,
+      billingCycle: price.billingCycle,
+      priceCents: price.priceCents,
+      durationDays: price.durationDays,
+      isActive: price.isActive,
+    })),
     subscriberCount: plan.subscriberCount,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
@@ -667,6 +721,7 @@ export function presentAdminSubscription(sub: AdminSubscriptionRecord): object {
     planId: sub.planId,
     planName: sub.planName,
     planCode: sub.planCode,
+    billingCycle: sub.billingCycle,
     status: sub.status,
     startsAt: sub.startsAt.toISOString(),
     endsAt: sub.endsAt.toISOString(),
@@ -682,12 +737,30 @@ export function presentAdminAd(ad: AdminAdRecord): object {
     body: ad.body,
     imageUrl: ad.imageUrl,
     targetUrl: ad.targetUrl,
+    ctaLabel: ad.ctaLabel,
     placement: ad.placement,
+    priority: ad.priority,
+    insertEvery: ad.insertEvery,
     isActive: ad.isActive,
+    impressionCount: ad.impressionCount,
+    clickCount: ad.clickCount,
     startsAt: ad.startsAt?.toISOString() ?? null,
     endsAt: ad.endsAt?.toISOString() ?? null,
     createdAt: ad.createdAt.toISOString(),
     updatedAt: ad.updatedAt.toISOString(),
+  };
+}
+
+export function presentAdminAdPlacementConfig(
+  config: AdminAdPlacementConfigRecord,
+): object {
+  return {
+    placement: config.placement,
+    label: config.label,
+    description: config.description,
+    isEnabled: config.isEnabled,
+    insertEvery: config.insertEvery,
+    updatedAt: config.updatedAt.toISOString(),
   };
 }
 
@@ -899,5 +972,101 @@ export function presentAdminHashtag(tag: AdminHashtagRecord): object {
     postCount: tag.postCount,
     lastUsedAt: tag.lastUsedAt.toISOString(),
     createdAt: tag.createdAt.toISOString(),
+  };
+}
+
+export interface AdminWalletStatsRecord {
+  totalWallets: number;
+  totalBalance: number;
+  totalLifetimeEarned: number;
+  adminAdjustmentsCount: number;
+}
+
+export interface AdminWalletUserRecord {
+  userId: string;
+  username: string;
+  displayName: string | null;
+  balance: number;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+}
+
+export interface AdminWalletAdjustResultRecord {
+  userId: string;
+  username: string;
+  balance: number;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  direction: "credit" | "debit";
+  points: number;
+}
+
+export interface AdminWalletTransactionRecord {
+  id: string;
+  userId: string;
+  username: string;
+  type: string;
+  amount: number;
+  balanceAfter: number;
+  description: string | null;
+  createdAt: Date;
+}
+
+export interface AdminPointPurchaseRateRecord {
+  id: string;
+  currency: string;
+  amountMinor: number;
+  points: number;
+  label: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  updatedById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function presentAdminWalletStats(stats: AdminWalletStatsRecord): object {
+  return stats;
+}
+
+export function presentAdminWalletUser(user: AdminWalletUserRecord): object {
+  return user;
+}
+
+export function presentAdminWalletAdjustResult(
+  result: AdminWalletAdjustResultRecord,
+): object {
+  return result;
+}
+
+export function presentAdminWalletTransaction(
+  tx: AdminWalletTransactionRecord,
+): object {
+  return {
+    id: tx.id,
+    userId: tx.userId,
+    username: tx.username,
+    type: tx.type,
+    amount: tx.amount,
+    balanceAfter: tx.balanceAfter,
+    description: tx.description,
+    createdAt: tx.createdAt.toISOString(),
+  };
+}
+
+export function presentAdminPointPurchaseRate(
+  rate: AdminPointPurchaseRateRecord,
+): object {
+  return {
+    id: rate.id,
+    currency: rate.currency,
+    amountMinor: rate.amountMinor,
+    points: rate.points,
+    label: rate.label,
+    isActive: rate.isActive,
+    sortOrder: rate.sortOrder,
+    updatedById: rate.updatedById,
+    createdAt: rate.createdAt.toISOString(),
+    updatedAt: rate.updatedAt.toISOString(),
   };
 }

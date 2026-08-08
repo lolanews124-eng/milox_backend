@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { MILOX_OFFICIAL_USERNAME } from "../../../official-chat/official-chat-config.js";
 import type {
   PostRepository,
   ReportRecord,
@@ -117,6 +118,11 @@ export class PostService implements ProfileUpdatePostWriter {
     username: string,
     options: { viewerId?: string; cursor?: string; limit: number },
   ): Promise<PostPage> {
+    const normalized = username.trim().replace(/^@/, "").toLowerCase();
+    if (normalized === MILOX_OFFICIAL_USERNAME) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
+
     const cursor = options.cursor
       ? this.cursors.decode(options.cursor)
       : undefined;

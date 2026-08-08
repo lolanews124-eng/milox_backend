@@ -21,6 +21,12 @@ export function createChatRouters(
 
   conversations.use(authenticate);
   conversations.get("/", asyncHandler(controller.listConversations));
+  conversations.post(
+    "/direct",
+    requireVerified,
+    actionLimit,
+    asyncHandler(controller.startDirectConversation),
+  );
   conversations.get(
     "/:conversationId/media/:mediaId",
     asyncHandler(controller.serveMedia),

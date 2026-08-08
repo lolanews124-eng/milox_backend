@@ -2,6 +2,8 @@ import type { OfficialMessageButton } from "./official-chat-types.js";
 
 export const MILOX_OFFICIAL_USERNAME = "milox";
 export const MILOX_OFFICIAL_DISPLAY_NAME = "Milox Official";
+export const MILOX_OFFICIAL_BIO =
+  "Official updates, welcome messages, and news from the Milox team.";
 
 /** Stable media id for the Milox Official avatar shown in chat. */
 export const MILOX_OFFICIAL_AVATAR_MEDIA_ID =

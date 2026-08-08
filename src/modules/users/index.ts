@@ -34,6 +34,7 @@ export function createUserModule(
     repository,
     authService,
     config,
+    database,
     profileUpdatePosts,
     profileViews,
   );
