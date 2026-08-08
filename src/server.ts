@@ -34,7 +34,12 @@ const emailWorker = new EmailWorker(prisma, config);
 const feedScoreWorker = new FeedScoreWorker(prisma, config);
 const port = config.PORT;
 const chatOutboxHooks = {
-  wake: () => {},
+  wakeChat: () => {},
+  wakeNotification: () => {},
+  wakeAll: () => {
+    chatOutboxHooks.wakeChat();
+    chatOutboxHooks.wakeNotification();
+  },
 };
 
 let io: Server<
@@ -49,10 +54,10 @@ let httpServer: ReturnType<typeof createServer>;
 
 async function bootstrap(): Promise<void> {
   const officialChat = await createOfficialChatModule(prisma, {
-    wakeOutbox: () => chatOutboxHooks.wake(),
+    wakeOutbox: () => chatOutboxHooks.wakeAll(),
   });
   const app = createApp({
-    chatOutboxWake: () => chatOutboxHooks.wake(),
+    chatOutboxWake: () => chatOutboxHooks.wakeChat(),
     signupOfficialChat: officialChat.signupWriter,
     officialChat: officialChat.service,
   });
@@ -66,7 +71,8 @@ async function bootstrap(): Promise<void> {
   });
   const chatService = createChatService(config, prisma);
   chatOutboxWorker = new ChatOutboxWorker(prisma, chatService, io, config);
-  chatOutboxHooks.wake = () => chatOutboxWorker.wake();
+  chatOutboxHooks.wakeChat = () => chatOutboxWorker.wake();
+  chatOutboxHooks.wakeNotification = () => notificationOutboxWorker.wake();
   const notificationService = createNotificationService(config, prisma);
   const pushSender = createPushSender(
     new PrismaPushDeviceRepository(prisma),

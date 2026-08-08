@@ -1,3 +1,5 @@
+import { MILOX_OFFICIAL_USERNAME } from "../../official-chat/official-chat-config.js";
+
 interface PushActor {
   username: string;
   displayName: string | null;
@@ -22,12 +24,23 @@ export function buildPushNotificationMessage(
   const actorLabel = actorName(notification.actor);
   const action = notificationAction(notification);
   const payload = asRecord(notification.payload);
+  const previewText = readPayloadString(payload, "previewText");
+  const isOfficialMessage =
+    notification.type === "NEW_MESSAGE" &&
+    notification.actor?.username === MILOX_OFFICIAL_USERNAME;
 
   const title =
     notification.type === "NEW_MESSAGE"
-      ? actorLabel ?? "New message"
+      ? isOfficialMessage
+        ? "Milox Official"
+        : actorLabel ?? "New message"
       : "Milox";
-  const body = actorLabel ? `${actorLabel} ${action}` : action;
+  const body =
+    isOfficialMessage && previewText
+      ? previewText
+      : actorLabel
+        ? `${actorLabel} ${action}`
+        : action;
 
   const data: Record<string, string> = {
     type: notification.type,
@@ -99,4 +112,12 @@ function asRecord(value: unknown): Record<string, unknown> {
     return {};
   }
   return value as Record<string, unknown>;
+}
+
+function readPayloadString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

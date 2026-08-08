@@ -30,6 +30,37 @@ describe("PrismaNotificationRepository", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("creates notifications from Milox Official system actors", async () => {
+    const notification = notificationFixture();
+    const findFirstUser = vi
+      .fn()
+      .mockResolvedValueOnce({ id: recipientId })
+      .mockResolvedValueOnce({ id: actorId });
+    const create = vi.fn().mockResolvedValue(notification);
+    const database = {
+      notification: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create,
+      },
+      user: { findFirst: findFirstUser },
+    } as unknown as PrismaClient;
+
+    const result = await new PrismaNotificationRepository(database).create({
+      sourceEventId: eventId,
+      recipientId,
+      actorId,
+      type: "NEW_MESSAGE",
+      payload: {
+        conversationId: "26bfa884-e6e4-47a6-a309-bf1ed3ebec5e",
+        messageId: "36bfa884-e6e4-47a6-a309-bf1ed3ebec5f",
+      },
+    });
+
+    expect(result).toEqual(notification);
+    expect(create).toHaveBeenCalledOnce();
+    expect(findFirstUser).toHaveBeenCalledTimes(2);
+  });
+
   it("scopes mark-read updates to the authenticated recipient", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const database = {

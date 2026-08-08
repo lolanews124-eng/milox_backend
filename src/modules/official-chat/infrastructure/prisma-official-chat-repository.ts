@@ -172,11 +172,12 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
           leftAt: null,
         },
       });
-      const eventPayload = {
+      const eventPayload = buildMessageEventPayload({
         messageId: message.id,
         conversationId: conversation.id,
         senderId: this.officialUser.id,
-      };
+        body,
+      });
       await transaction.outboxEvent.createMany({
         data: [
           {
@@ -331,21 +332,23 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
     const metadata: OfficialMessageMetadata = {
       buttons: OFFICIAL_WELCOME_BUTTONS,
     };
+    const welcomeBody = buildOfficialWelcomeBody(displayName);
     const message = await transaction.message.create({
       data: {
         conversationId,
         senderId: officialUserId,
         type: MessageType.SYSTEM,
-        body: buildOfficialWelcomeBody(displayName),
+        body: welcomeBody,
         metadata: metadata as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
-    const eventPayload = {
+    const eventPayload = buildMessageEventPayload({
       messageId: message.id,
       conversationId,
       senderId: officialUserId,
-    };
+      body: welcomeBody,
+    });
     await transaction.outboxEvent.createMany({
       data: [
         {
@@ -408,4 +411,29 @@ function buildMetadata(
 ): OfficialMessageMetadata | null {
   if (!buttons?.length) return null;
   return { buttons };
+}
+
+function buildMessageEventPayload(input: {
+  messageId: string;
+  conversationId: string;
+  senderId: string;
+  body: string;
+}): {
+  messageId: string;
+  conversationId: string;
+  senderId: string;
+  previewText: string;
+} {
+  return {
+    messageId: input.messageId,
+    conversationId: input.conversationId,
+    senderId: input.senderId,
+    previewText: truncateMessagePreview(input.body),
+  };
+}
+
+function truncateMessagePreview(body: string, maxLength = 140): string {
+  const normalized = body.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
 }

@@ -32,6 +32,7 @@ const messagePayloadSchema = z.object({
   messageId: z.uuid(),
   conversationId: z.uuid(),
   senderId: z.uuid(),
+  previewText: z.string().optional(),
 });
 const NOTIFICATION_EVENTS = [
   "post.liked",
@@ -58,6 +59,7 @@ interface NotificationJob {
 export class NotificationOutboxWorker {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
+  private pendingWake = false;
 
   constructor(
     private readonly database: PrismaClient,
@@ -82,8 +84,19 @@ export class NotificationOutboxWorker {
     this.timer = undefined;
   }
 
+  wake(): void {
+    if (this.running) {
+      this.pendingWake = true;
+      return;
+    }
+    void this.tick();
+  }
+
   async tick(): Promise<void> {
-    if (this.running) return;
+    if (this.running) {
+      this.pendingWake = true;
+      return;
+    }
     this.running = true;
     try {
       for (let processed = 0; processed < 100; processed += 1) {
@@ -129,6 +142,10 @@ export class NotificationOutboxWorker {
       }
     } finally {
       this.running = false;
+      if (this.pendingWake) {
+        this.pendingWake = false;
+        void this.tick();
+      }
     }
   }
 
@@ -167,6 +184,9 @@ export class NotificationOutboxWorker {
               payload: {
                 conversationId: payload.conversationId,
                 messageId: payload.messageId,
+                ...(payload.previewText
+                  ? { previewText: payload.previewText }
+                  : {}),
               },
             },
           ]

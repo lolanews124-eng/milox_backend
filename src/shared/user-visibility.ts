@@ -26,3 +26,43 @@ export function activeBroadcastRecipientWhere(): Prisma.UserWhereInput {
     deletedAt: null,
   };
 }
+
+/** System accounts (Milox Official) that can appear as notification actors. */
+export function systemAccountActorWhere(userId: string): Prisma.UserWhereInput {
+  return {
+    id: userId,
+    isSystemAccount: true,
+    status: UserStatus.ACTIVE,
+    deletedAt: null,
+  };
+}
+
+/**
+ * Users that may appear as notification actors — regular members plus
+ * Milox Official system broadcasts.
+ */
+export function visibleNotificationActorWhere(
+  viewerId?: string,
+): Prisma.UserWhereInput {
+  const consumer: Prisma.UserWhereInput = {
+    status: UserStatus.ACTIVE,
+    deletedAt: null,
+    ...consumerPlatformUserWhere(),
+    ...(viewerId
+      ? {
+          blocksInitiated: { none: { blockedId: viewerId } },
+          blocksReceived: { none: { blockerId: viewerId } },
+        }
+      : {}),
+  };
+  return {
+    OR: [
+      consumer,
+      {
+        isSystemAccount: true,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      },
+    ],
+  };
+}

@@ -15,6 +15,9 @@ import type {
   NotificationRepository,
 } from "../application/ports/notification-repository.js";
 import type { NotificationViewRecord } from "../application/notification-view.js";
+import {
+  visibleNotificationActorWhere,
+} from "../../../shared/user-visibility.js";
 import { visibleUserCardWhere } from "../../posts/infrastructure/post-query-policy.js";
 import { notificationViewSelect } from "./notification-query-policy.js";
 
@@ -31,7 +34,10 @@ export class PrismaNotificationRepository
         ...(query.excludeTypes?.length
           ? { type: { notIn: query.excludeTypes } }
           : {}),
-        OR: [{ actorId: null }, { actor: { is: visibleUserCardWhere(query.recipientId) } }],
+        OR: [
+          { actorId: null },
+          { actor: { is: visibleNotificationActorWhere(query.recipientId) } },
+        ],
         ...cursorWhere(query.before),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -95,7 +101,7 @@ export class PrismaNotificationRepository
       const actor = await this.database.user.findFirst({
         where: {
           id: data.actorId,
-          ...visibleUserCardWhere(data.recipientId),
+          ...visibleNotificationActorWhere(data.recipientId),
         },
         select: { id: true },
       });

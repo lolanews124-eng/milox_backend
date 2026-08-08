@@ -29,6 +29,31 @@ describe("buildPushNotificationMessage", () => {
     );
   });
 
+  it("builds an official broadcast push with message preview", () => {
+    const message = buildPushNotificationMessage({
+      id: "official-id",
+      type: "NEW_MESSAGE",
+      actor: {
+        username: "milox",
+        displayName: "Milox Official",
+      },
+      payload: {
+        conversationId: "conversation-id",
+        messageId: "message-id",
+        previewText: "New feature launch today on Milox.",
+      },
+    });
+
+    expect(message.title).toBe("Milox Official");
+    expect(message.body).toBe("New feature launch today on Milox.");
+    expect(message.data).toEqual(
+      expect.objectContaining({
+        type: "NEW_MESSAGE",
+        conversationId: "conversation-id",
+      }),
+    );
+  });
+
   it("builds a like push without conversation data", () => {
     const message = buildPushNotificationMessage({
       id: "like-id",
