@@ -1801,8 +1801,10 @@ export class PrismaAdminRepository implements AdminRepository {
         userId: user.id,
         planId: plan.id,
       });
-      await syncUserPremiumState(this.database, user.id);
       return mapAdminSubscriptionRecord(created);
+    }).then(async (record) => {
+      await syncUserPremiumState(this.database, record.userId);
+      return record;
     });
   }
 
@@ -1828,8 +1830,11 @@ export class PrismaAdminRepository implements AdminRepository {
         select: subscriptionAdminSelect,
       });
       await this.writeAudit(transaction, actor.id, "admin.subscription.cancelled", "subscription", updated.id, {});
-      await syncUserPremiumState(this.database, updated.userId);
       return mapAdminSubscriptionRecord(updated);
+    }).then(async (record) => {
+      if (!record) return null;
+      await syncUserPremiumState(this.database, record.userId);
+      return record;
     });
   }
 

@@ -5,7 +5,7 @@ import {
   canChangeUsername,
   usernameChangeAvailableAt,
 } from "../../../../shared/contracts/profile-completion.js";
-import type { AgeRange, RelationshipGoal } from "@prisma/client";
+import type { AgeRange, PremiumTier, RelationshipGoal } from "@prisma/client";
 
 import type { PrismaClient } from "@prisma/client";
 
@@ -13,6 +13,7 @@ import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import {
   resolveUserEntitlements,
+  syncUserPremiumState,
   type UserEntitlements,
 } from "../../../premium/application/entitlements.js";
 import { MILOX_OFFICIAL_USERNAME } from "../../../official-chat/official-chat-config.js";
@@ -120,7 +121,17 @@ export class UserService {
         .upsertView(user.id, viewerUserId)
         .catch(() => undefined);
     }
-    return mapPublicProfile(user, relation, this.config);
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      user.id,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+    void reconcilePremiumDenormalization(
+      this.database,
+      user,
+      entitlements,
+    ).catch(() => undefined);
+    return mapPublicProfile(user, relation, this.config, entitlements);
   }
 
   async getProfileViewsSummary(userId: string): Promise<object> {
@@ -409,13 +420,46 @@ export function normalizeUsername(username: string): string {
   return username.trim().replace(/^@/, "").toLowerCase();
 }
 
+function premiumProfileFields(
+  user: UserProfileRecord,
+  entitlements?: UserEntitlements,
+): {
+  isVerifiedBadge: boolean;
+  premiumTier: PremiumTier;
+  premiumBadgeLabel: string | null;
+  premiumPlanCode: string | null;
+} {
+  const grantVerified = entitlements?.features.grantVerifiedBadge ?? false;
+  return {
+    isVerifiedBadge: user.isVerifiedBadge || grantVerified,
+    premiumTier: entitlements?.tier ?? user.premiumTier,
+    premiumBadgeLabel: entitlements?.features.badgeLabel ?? null,
+    premiumPlanCode: entitlements?.planCode ?? null,
+  };
+}
+
+async function reconcilePremiumDenormalization(
+  database: PrismaClient,
+  user: UserProfileRecord,
+  entitlements: UserEntitlements,
+): Promise<void> {
+  const grantVerified = entitlements.features.grantVerifiedBadge;
+  const needsSync =
+    user.premiumTier !== entitlements.tier ||
+    (grantVerified && !user.isVerifiedBadge);
+  if (!needsSync) return;
+  await syncUserPremiumState(database, user.id);
+}
+
 function mapPublicProfile(
   user: UserProfileRecord,
   relation: ViewerRelation,
   config: AppConfig,
+  entitlements?: UserEntitlements,
 ): object {
   const isOfficialAccount =
     user.isSystemAccount && user.usernameNormalized === MILOX_OFFICIAL_USERNAME;
+  const premium = premiumProfileFields(user, entitlements);
 
   return {
     id: user.id,
@@ -435,8 +479,10 @@ function mapPublicProfile(
           instagramHandle: user.instagramHandle,
           interests: user.interests.map(({ tag }) => tag.slug),
         }),
-    isVerifiedBadge: user.isVerifiedBadge,
-    premiumTier: user.premiumTier,
+    isVerifiedBadge: premium.isVerifiedBadge,
+    premiumTier: premium.premiumTier,
+    premiumBadgeLabel: premium.premiumBadgeLabel,
+    premiumPlanCode: premium.premiumPlanCode,
     isOfficialAccount,
     isPrivateAccount: user.isPrivateAccount,
     followerCount: user.followerCount,
@@ -492,7 +538,7 @@ function mapPrivateProfile(
     user.createdAt,
   );
   return {
-    ...mapPublicProfile(user, relation, config),
+    ...mapPublicProfile(user, relation, config, entitlements),
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
     ageRange: user.ageRange,
@@ -517,6 +563,7 @@ function mapPrivateProfile(
     premiumExpiresAt: entitlements.expiresAt,
     premiumPlanCode: entitlements.planCode,
     premiumPlanName: entitlements.planName,
+    premiumBadgeLabel: entitlements.features.badgeLabel,
     entitlements: entitlements.features,
   };
 }
