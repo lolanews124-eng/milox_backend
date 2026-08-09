@@ -19,7 +19,7 @@ describe("AdminService", () => {
       total: 26,
     });
 
-    const result = (await new AdminService(repository).listUsers({
+    const result = (await new AdminService(repository, "/tmp/uploads").listUsers({
       q: "  Person@Example.COM ",
       status: UserStatus.ACTIVE,
       page: 2,
@@ -38,7 +38,7 @@ describe("AdminService", () => {
   it("requires a reason for suspension and ban", async () => {
     const repository = createRepository();
     await expect(
-      new AdminService(repository).changeUserStatus(actorId, targetId, {
+      new AdminService(repository, "/tmp/uploads").changeUserStatus(actorId, targetId, {
         status: UserStatus.BANNED,
       }),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", statusCode: 400 });
@@ -52,7 +52,7 @@ describe("AdminService", () => {
     );
 
     await expect(
-      new AdminService(repository).changeUserStatus(actorId, targetId, {
+      new AdminService(repository, "/tmp/uploads").changeUserStatus(actorId, targetId, {
         status: UserStatus.SUSPENDED,
         reason: "Safety review",
       }),
@@ -78,7 +78,7 @@ describe("AdminService", () => {
       updatedAt: new Date(),
     });
 
-    await new AdminService(repository).resolveReport(
+    await new AdminService(repository, "/tmp/uploads").resolveReport(
       actorId,
       "98ea1ca9-5f22-4207-8659-3db6e5d54861",
       {

@@ -440,6 +440,8 @@ export const adminMediaIdParamSchema = z.object({
 export const updateMediaSchema = z
   .object({
     deleted: z.boolean(),
+    /** Soft-delete and remove the binary from UPLOAD_ROOT (cannot restore file). */
+    purgeStorage: z.boolean().optional().default(false),
   })
   .strict();
 

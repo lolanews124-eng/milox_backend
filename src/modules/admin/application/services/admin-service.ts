@@ -1,4 +1,6 @@
 import type { ReportStatus, UserRole, UserStatus } from "@prisma/client";
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 
 import { AppError } from "../../../../shared/errors/app-error.js";
 import {
@@ -54,7 +56,10 @@ import { InsufficientWalletBalanceError } from "../../../rewards/application/por
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 
 export class AdminService {
-  constructor(private readonly repository: AdminRepository) {}
+  constructor(
+    private readonly repository: AdminRepository,
+    private readonly uploadRoot: string,
+  ) {}
 
   dashboard(): ReturnType<AdminRepository["dashboard"]> {
     return this.repository.dashboard(new Date());
@@ -1230,18 +1235,22 @@ export class AdminService {
   async updateMedia(
     actorId: string,
     mediaId: string,
-    input: { deleted: boolean },
+    input: { deleted: boolean; purgeStorage?: boolean },
   ): Promise<object> {
     try {
-      const media = await this.repository.updateMedia({
+      const result = await this.repository.updateMedia({
         actorId,
         mediaId,
         deleted: input.deleted,
+        purgeStorage: Boolean(input.deleted && input.purgeStorage),
       });
-      if (!media) {
+      if (!result) {
         throw new AppError("ADMIN_MEDIA_NOT_FOUND", "Media not found", 404);
       }
-      return presentAdminMedia(media);
+      if (result.purgedStorage && result.storageKey) {
+        await unlinkMediaFile(this.uploadRoot, result.storageKey);
+      }
+      return presentAdminMedia(result.media);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);
@@ -1590,4 +1599,13 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+async function unlinkMediaFile(uploadRoot: string, storageKey: string): Promise<void> {
+  const root = path.resolve(uploadRoot);
+  const absolutePath = path.resolve(root, storageKey);
+  if (!absolutePath.startsWith(`${root}${path.sep}`)) {
+    return;
+  }
+  await unlink(absolutePath).catch(() => undefined);
 }

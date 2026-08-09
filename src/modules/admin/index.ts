@@ -23,7 +23,7 @@ export function createAdminModule(
   officialChat?: OfficialChatService,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
-  const service = new AdminService(repository);
+  const service = new AdminService(repository, config.UPLOAD_ROOT);
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),
     config,

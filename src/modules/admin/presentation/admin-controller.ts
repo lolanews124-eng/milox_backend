@@ -662,7 +662,10 @@ export class AdminController {
   updateMedia = async (request: Request, response: Response): Promise<void> => {
     const { mediaId } = adminMediaIdParamSchema.parse(request.params);
     const input = updateMediaSchema.parse(request.body as unknown);
-    const data = await this.admin.updateMedia(requireUser(request), mediaId, input);
+    const data = await this.admin.updateMedia(requireUser(request), mediaId, {
+      deleted: input.deleted,
+      purgeStorage: input.purgeStorage,
+    });
     response.status(200).json(success(request, data));
   };
 

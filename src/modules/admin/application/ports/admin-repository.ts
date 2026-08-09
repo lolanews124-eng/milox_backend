@@ -377,6 +377,14 @@ export interface UpdateMediaData {
   actorId: string;
   mediaId: string;
   deleted: boolean;
+  /** When true with deleted, caller should unlink the file from UPLOAD_ROOT. */
+  purgeStorage?: boolean;
+}
+
+export interface AdminMediaUpdateResult {
+  media: AdminMediaRecord;
+  storageKey: string | null;
+  purgedStorage: boolean;
 }
 
 export interface AdminOutboxQuery extends OffsetPage {
@@ -517,7 +525,7 @@ export interface AdminRepository {
   ): Promise<AdminConversationMessageRecord | null>;
   listMedia(query: AdminMediaQuery): Promise<AdminPage<AdminMediaRecord>>;
   getMediaContent(mediaId: string): Promise<AdminMediaContentRecord | null>;
-  updateMedia(data: UpdateMediaData): Promise<AdminMediaRecord | null>;
+  updateMedia(data: UpdateMediaData): Promise<AdminMediaUpdateResult | null>;
   listOutboxEvents(
     query: AdminOutboxQuery,
   ): Promise<AdminPage<AdminOutboxEventRecord>>;

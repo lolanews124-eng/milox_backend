@@ -79,6 +79,7 @@ import type {
   AdminMediaQuery,
   AdminOutboxQuery,
   UpdateMediaData,
+  AdminMediaUpdateResult,
 } from "../application/ports/admin-repository.js";
 import {
   AdminHierarchyError,
@@ -2822,14 +2823,15 @@ export class PrismaAdminRepository implements AdminRepository {
     };
   }
 
-  updateMedia(data: UpdateMediaData): Promise<AdminMediaRecord | null> {
+  updateMedia(data: UpdateMediaData): Promise<AdminMediaUpdateResult | null> {
     return this.database.$transaction(async (transaction) => {
       const actor = await this.requireAdminActor(transaction, data.actorId);
       const existing = await transaction.mediaAsset.findUnique({
         where: { id: data.mediaId },
-        select: { id: true, deletedAt: true },
+        select: { id: true, deletedAt: true, storageKey: true },
       });
       if (!existing) return null;
+      const shouldPurge = Boolean(data.deleted && data.purgeStorage);
       const updated = await transaction.mediaAsset.update({
         where: { id: existing.id },
         data: { deletedAt: data.deleted ? new Date() : null },
@@ -2844,29 +2846,38 @@ export class PrismaAdminRepository implements AdminRepository {
           ownerUserId: true,
           deletedAt: true,
           createdAt: true,
+          storageKey: true,
           owner: { select: { username: true } },
         },
       });
       await this.writeAudit(
         transaction,
         actor.id,
-        data.deleted ? "admin.media.deleted" : "admin.media.restored",
+        shouldPurge
+          ? "admin.media.purged"
+          : data.deleted
+            ? "admin.media.deleted"
+            : "admin.media.restored",
         "media_asset",
         updated.id,
-        {},
+        shouldPurge ? { storageKey: existing.storageKey } : {},
       );
       return {
-        id: updated.id,
-        kind: updated.kind,
-        visibility: updated.visibility,
-        mimeType: updated.mimeType,
-        byteSize: updated.byteSize,
-        width: updated.width,
-        height: updated.height,
-        ownerUserId: updated.ownerUserId,
-        ownerUsername: updated.owner?.username ?? null,
-        deletedAt: updated.deletedAt,
-        createdAt: updated.createdAt,
+        media: {
+          id: updated.id,
+          kind: updated.kind,
+          visibility: updated.visibility,
+          mimeType: updated.mimeType,
+          byteSize: updated.byteSize,
+          width: updated.width,
+          height: updated.height,
+          ownerUserId: updated.ownerUserId,
+          ownerUsername: updated.owner?.username ?? null,
+          deletedAt: updated.deletedAt,
+          createdAt: updated.createdAt,
+        },
+        storageKey: shouldPurge ? existing.storageKey : null,
+        purgedStorage: shouldPurge,
       };
     });
   }
