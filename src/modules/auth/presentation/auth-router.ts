@@ -17,7 +17,7 @@ export function createAuthRouter(
     isProd ? 10 : 200,
     10 * 60 * 1000,
   );
-  const refreshLimit = createLimit(isProd ? 30 : 300, 10 * 60 * 1000);
+  const refreshLimit = createLimit(isProd ? 120 : 300, 10 * 60 * 1000);
 
   router.post("/signup", strictAuthLimit, asyncHandler(controller.signup));
   router.post("/login", strictAuthLimit, asyncHandler(controller.login));

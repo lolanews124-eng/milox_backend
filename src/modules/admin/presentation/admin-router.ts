@@ -13,7 +13,7 @@ import multer, { MulterError } from "multer";
 
 import { AppError } from "../../../shared/errors/app-error.js";
 import { asyncHandler } from "../../../shared/http/async-handler.js";
-import { createRateLimit } from "../../../shared/http/rate-limit.js";
+import { createRateLimit, authenticatedRateLimitKey } from "../../../shared/http/rate-limit.js";
 import { requireCurrentRole } from "./admin-authorization.js";
 import type { AdminController } from "./admin-controller.js";
 
@@ -63,9 +63,13 @@ export function createAdminRouter(
     UserRole.SUPER_ADMIN,
   ]);
   const superAdminOnly = requireCurrentRole(database, [UserRole.SUPER_ADMIN]);
-  const readLimit = createRateLimit(300, 10 * 60 * 1_000);
-  const mutationLimit = createRateLimit(60, 10 * 60 * 1_000);
-  const uploadLimit = createRateLimit(30, 10 * 60 * 1_000);
+  // Admin panels fire many parallel GETs (lists + stats + media thumbs).
+  // Key by staff user so shared egress IPs do not lock everyone out.
+  const adminKey = { keyGenerator: authenticatedRateLimitKey };
+  const readLimit = createRateLimit(2_400, 10 * 60 * 1_000, adminKey);
+  const mediaLimit = createRateLimit(6_000, 10 * 60 * 1_000, adminKey);
+  const mutationLimit = createRateLimit(300, 10 * 60 * 1_000, adminKey);
+  const uploadLimit = createRateLimit(60, 10 * 60 * 1_000, adminKey);
 
   router.use(authenticate);
   router.get(
@@ -467,7 +471,7 @@ export function createAdminRouter(
   );
   router.get(
     "/media/:mediaId/content",
-    readLimit,
+    mediaLimit,
     moderationStaff,
     asyncHandler(controller.getMediaContent),
   );
