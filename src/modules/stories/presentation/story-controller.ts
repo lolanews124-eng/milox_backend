@@ -27,6 +27,12 @@ export class StoryController {
     response.status(200).json(success(request, result));
   };
 
+  getById = async (request: Request, response: Response): Promise<void> => {
+    const { storyId } = storyIdParamSchema.parse(request.params);
+    const story = await this.stories.getById(storyId, requireUser(request));
+    response.status(200).json(success(request, story));
+  };
+
   markViewed = async (
     request: Request,
     response: Response,

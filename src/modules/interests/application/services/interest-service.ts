@@ -6,7 +6,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
-import { resolveUserEntitlements } from "../../../premium/application/entitlements.js";
+import { resolveUserEntitlements, interestSendCostForEntitlements } from "../../../premium/application/entitlements.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
 import type {
   InterestPageQuery,
@@ -53,6 +53,10 @@ export class InterestService {
       entitlements.features.dailyInterestLimit >= 9999
         ? 9999
         : entitlements.features.dailyInterestLimit;
+    const interestSendCost = interestSendCostForEntitlements(
+      entitlements,
+      this.config.INTEREST_SEND_COST,
+    );
     try {
       const created = await this.repository.create({
         senderId,
@@ -64,7 +68,7 @@ export class InterestService {
           message,
         }),
         dailyLimit,
-        interestSendCost: this.config.INTEREST_SEND_COST,
+        interestSendCost,
       });
       if (!created) throw new AppError("NOT_FOUND", "User not found", 404);
       return {

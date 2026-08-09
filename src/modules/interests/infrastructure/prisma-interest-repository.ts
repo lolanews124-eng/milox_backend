@@ -1,4 +1,5 @@
 import {
+  ConversationKind,
   ConversationStatus,
   InterestStatus,
   MatchStatus,
@@ -264,42 +265,30 @@ export class PrismaInterestRepository implements InterestRepository {
           },
         });
         matchId = existing.id;
-        if (existing.conversation) {
-          await transaction.conversation.update({
-            where: { id: existing.conversation.id },
-            data: { status: ConversationStatus.ACTIVE },
-          });
-          await transaction.conversationMember.updateMany({
-            where: { conversationId: existing.conversation.id },
-            data: { leftAt: null, isArchived: false },
-          });
-        } else {
-          await transaction.conversation.create({
-            data: {
-              matchId,
-              members: {
-                create: [{ userId: userAId }, { userId: userBId }],
-              },
-            },
-          });
-        }
+        await ensureMatchConversation(
+          transaction,
+          matchId,
+          userAId,
+          userBId,
+          existing.conversation,
+        );
       } else {
         const created = await transaction.match.create({
           data: {
             interestId: interest.id,
             userAId,
             userBId,
-            conversation: {
-              create: {
-                members: {
-                  create: [{ userId: userAId }, { userId: userBId }],
-                },
-              },
-            },
           },
           select: { id: true },
         });
         matchId = created.id;
+        await ensureMatchConversation(
+          transaction,
+          matchId,
+          userAId,
+          userBId,
+          null,
+        );
       }
 
       await transaction.outboxEvent.createMany({
@@ -568,6 +557,82 @@ export class PrismaInterestRepository implements InterestRepository {
 
 function canonicalPair(first: string, second: string): [string, string] {
   return first < second ? [first, second] : [second, first];
+}
+
+/** Reuse an existing premium direct thread when interest is accepted. */
+async function ensureMatchConversation(
+  transaction: Prisma.TransactionClient,
+  matchId: string,
+  userAId: string,
+  userBId: string,
+  existingConversation: { id: string } | null,
+): Promise<void> {
+  const linkedDirect = await linkDirectConversationToMatch(
+    transaction,
+    matchId,
+    userAId,
+    userBId,
+  );
+  if (linkedDirect) return;
+
+  if (existingConversation) {
+    await transaction.conversation.update({
+      where: { id: existingConversation.id },
+      data: { status: ConversationStatus.ACTIVE },
+    });
+    await transaction.conversationMember.updateMany({
+      where: { conversationId: existingConversation.id },
+      data: { leftAt: null, isArchived: false },
+    });
+    return;
+  }
+
+  await transaction.conversation.create({
+    data: {
+      matchId,
+      members: {
+        create: [{ userId: userAId }, { userId: userBId }],
+      },
+    },
+  });
+}
+
+async function linkDirectConversationToMatch(
+  transaction: Prisma.TransactionClient,
+  matchId: string,
+  userAId: string,
+  userBId: string,
+): Promise<boolean> {
+  const direct = await transaction.conversation.findFirst({
+    where: {
+      kind: ConversationKind.DIRECT,
+      directUserLowId: userAId,
+      directUserHighId: userBId,
+      status: ConversationStatus.ACTIVE,
+      matchId: null,
+    },
+    select: { id: true },
+  });
+  if (!direct) return false;
+
+  await transaction.conversation.updateMany({
+    where: { matchId, id: { not: direct.id } },
+    data: { matchId: null, status: ConversationStatus.CLOSED },
+  });
+
+  await transaction.conversation.update({
+    where: { id: direct.id },
+    data: {
+      kind: ConversationKind.MATCH,
+      matchId,
+      status: ConversationStatus.ACTIVE,
+    },
+  });
+  await transaction.conversationMember.updateMany({
+    where: { conversationId: direct.id },
+    data: { leftAt: null, isArchived: false },
+  });
+  return true;
 }
 
 function startOfUtcDay(): Date {

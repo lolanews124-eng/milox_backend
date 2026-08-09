@@ -63,7 +63,7 @@ export class PrismaStoryRepository implements StoryRepository {
   async findActiveById(
     storyId: string,
     viewerId: string,
-  ): Promise<{ id: string; authorId: string } | null> {
+  ): Promise<StoryRecord | null> {
     return this.database.story.findFirst({
       where: {
         id: storyId,
@@ -71,7 +71,7 @@ export class PrismaStoryRepository implements StoryRepository {
         expiresAt: { gt: new Date() },
         author: { is: visibleAuthorWhere(viewerId) },
       },
-      select: { id: true, authorId: true },
+      select: this.storySelect(viewerId),
     });
   }
 
@@ -105,6 +105,7 @@ export class PrismaStoryRepository implements StoryRepository {
         select: { viewerId: true },
         take: 1,
       },
+      _count: { select: { views: true } },
     } as const;
   }
 }

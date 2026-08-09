@@ -47,7 +47,19 @@ export class StoryService {
       caption: input.caption?.trim() || null,
       expiresAt: new Date(Date.now() + STORY_TTL_HOURS * 3600 * 1000),
     });
-    return this.present(story);
+    return this.present(story, authorId);
+  }
+
+  async getById(storyId: string, viewerId: string): Promise<object> {
+    const story = await this.repository.findActiveById(storyId, viewerId);
+    if (!story) {
+      throw new AppError("STORY_NOT_FOUND", "Story not found", 404);
+    }
+    return {
+      author: presentPublicAuthor(story.author, this.config),
+      isSelf: story.authorId === viewerId,
+      story: this.present(story, viewerId),
+    };
   }
 
   async feed(viewerId: string): Promise<{ items: object[] }> {
@@ -70,7 +82,7 @@ export class StoryService {
       }
       const viewed = story.views.length > 0 || story.authorId === viewerId;
       if (!viewed) group.allViewed = false;
-      group.stories.push(this.present(story));
+      group.stories.push(this.present(story, viewerId));
     }
 
     for (const group of groups.values()) {
@@ -110,14 +122,16 @@ export class StoryService {
     }
   }
 
-  private present(story: StoryRecord): object {
+  private present(story: StoryRecord, viewerId: string): object {
+    const isOwn = story.authorId === viewerId;
     return {
       id: story.id,
       caption: story.caption,
       mediaUrl: `${this.config.API_PUBLIC_URL.replace(/\/$/, "")}/api/v1/media/${story.mediaAssetId}`,
-      viewed: story.views.length > 0,
+      viewed: story.views.length > 0 || isOwn,
       expiresAt: story.expiresAt.toISOString(),
       createdAt: story.createdAt.toISOString(),
+      ...(isOwn ? { viewCount: story._count.views } : {}),
     };
   }
 }

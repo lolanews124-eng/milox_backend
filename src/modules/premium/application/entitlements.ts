@@ -25,6 +25,62 @@ export interface UserEntitlements {
 
 const UNLIMITED_INTERESTS = 9999;
 
+export function hasUnlimitedInterests(dailyInterestLimit: number): boolean {
+  return dailyInterestLimit >= UNLIMITED_INTERESTS;
+}
+
+export function interestSendCostForEntitlements(
+  entitlements: UserEntitlements,
+  baseCost: number,
+): number {
+  return hasUnlimitedInterests(entitlements.features.dailyInterestLimit)
+    ? 0
+    : baseCost;
+}
+
+function activeSubscriptionWhere(now: Date) {
+  return {
+    status: SubscriptionStatus.ACTIVE,
+    startsAt: { lte: now },
+    endsAt: { gt: now },
+  } as const;
+}
+
+async function maybeRevokePremiumVerifiedBadge(
+  database: PrismaClient,
+  userId: string,
+): Promise<void> {
+  const user = await database.user.findUnique({
+    where: { id: userId },
+    select: { isVerifiedBadge: true },
+  });
+  if (!user?.isVerifiedBadge) return;
+
+  const adminGrant = await database.auditLog.findFirst({
+    where: {
+      resourceType: "user",
+      resourceId: userId,
+      action: "admin.user.verified_badge_changed",
+    },
+    orderBy: { createdAt: "desc" },
+    select: { metadata: true },
+  });
+
+  const metadata = adminGrant?.metadata;
+  const adminSetVerified =
+    metadata !== null &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as { isVerifiedBadge?: boolean }).isVerifiedBadge === true;
+
+  if (!adminSetVerified) {
+    await database.user.update({
+      where: { id: userId },
+      data: { isVerifiedBadge: false },
+    });
+  }
+}
+
 export const FREE_ENTITLEMENTS: UserEntitlements = {
   tier: "FREE",
   planCode: null,
@@ -95,10 +151,7 @@ export async function resolveUserEntitlements(
   const subscription = await database.userSubscription.findFirst({
     where: {
       userId,
-      status: SubscriptionStatus.ACTIVE,
-      startsAt: { lte: now },
-      endsAt: { gt: now },
-      cancelledAt: null,
+      ...activeSubscriptionWhere(now),
     },
     orderBy: [{ endsAt: "desc" }],
     select: {
@@ -143,10 +196,7 @@ export async function syncUserPremiumState(
   const subscription = await database.userSubscription.findFirst({
     where: {
       userId,
-      status: SubscriptionStatus.ACTIVE,
-      startsAt: { lte: now },
-      endsAt: { gt: now },
-      cancelledAt: null,
+      ...activeSubscriptionWhere(now),
     },
     orderBy: [{ endsAt: "desc" }],
     select: {
@@ -170,6 +220,7 @@ export async function syncUserPremiumState(
         discoverBoost: 0,
       },
     });
+    await maybeRevokePremiumVerifiedBadge(database, userId);
     return;
   }
 
@@ -179,9 +230,6 @@ export async function syncUserPremiumState(
       premiumTier: subscription.plan.tier,
       premiumExpiresAt: subscription.endsAt,
       discoverBoost: subscription.plan.discoverBoost,
-      ...(subscription.plan.grantVerifiedBadge
-        ? { isVerifiedBadge: true }
-        : {}),
     },
   });
 }

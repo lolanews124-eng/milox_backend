@@ -213,7 +213,7 @@ export const createPremiumPlanSchema = z
     profileViews: z.boolean().default(true),
     discoverBoost: z.coerce.number().int().min(0).max(10).default(1),
     grantVerifiedBadge: z.boolean().default(false),
-    dailyInterestLimit: z.coerce.number().int().min(1).max(9999).default(10),
+    dailyInterestLimit: z.coerce.number().int().min(1).max(9999).default(30),
     interstitialAdsFree: z.boolean().default(true),
     directMessageEnabled: z.boolean().default(false),
     prices: z.array(premiumPlanPriceSchema).length(3).optional(),

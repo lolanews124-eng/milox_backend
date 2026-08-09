@@ -443,10 +443,7 @@ async function reconcilePremiumDenormalization(
   user: UserProfileRecord,
   entitlements: UserEntitlements,
 ): Promise<void> {
-  const grantVerified = entitlements.features.grantVerifiedBadge;
-  const needsSync =
-    user.premiumTier !== entitlements.tier ||
-    (grantVerified && !user.isVerifiedBadge);
+  const needsSync = user.premiumTier !== entitlements.tier;
   if (!needsSync) return;
   await syncUserPremiumState(database, user.id);
 }

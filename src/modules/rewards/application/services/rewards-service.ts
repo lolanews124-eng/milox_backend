@@ -1,5 +1,10 @@
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import type { PrismaClient } from "@prisma/client";
+import {
+  interestSendCostForEntitlements,
+  resolveUserEntitlements,
+} from "../../../premium/application/entitlements.js";
 import type { RewardsRepository } from "../ports/rewards-repository.js";
 import { RewardedAdDailyLimitError } from "../ports/rewards-repository.js";
 
@@ -7,14 +12,25 @@ export class RewardsService {
   constructor(
     private readonly repository: RewardsRepository,
     private readonly config: AppConfig,
+    private readonly database: PrismaClient,
   ) {}
 
-  getWallet(userId: string) {
-    return this.repository.getWalletSummary(userId).then((wallet) => {
-      if (!wallet) {
-        throw new AppError("WALLET_NOT_FOUND", "Milox Points not found", 404);
-      }
-      return presentWallet(wallet);
+  async getWallet(userId: string) {
+    const wallet = await this.repository.getWalletSummary(userId);
+    if (!wallet) {
+      throw new AppError("WALLET_NOT_FOUND", "Milox Points not found", 404);
+    }
+    const entitlements = await resolveUserEntitlements(
+      this.database,
+      userId,
+      this.config.INTEREST_DAILY_LIMIT,
+    );
+    return presentWallet({
+      ...wallet,
+      interestSendCost: interestSendCostForEntitlements(
+        entitlements,
+        wallet.interestSendCost,
+      ),
     });
   }
 

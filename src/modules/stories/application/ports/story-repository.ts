@@ -15,6 +15,7 @@ export interface StoryRecord {
   createdAt: Date;
   author: PostAuthorViewRecord;
   views: Array<{ viewerId: string }>;
+  _count: { views: number };
 }
 
 export interface StoryRepository {
@@ -33,7 +34,7 @@ export interface StoryRepository {
   findActiveById(
     storyId: string,
     viewerId: string,
-  ): Promise<{ id: string; authorId: string } | null>;
+  ): Promise<StoryRecord | null>;
   upsertView(storyId: string, viewerId: string): Promise<void>;
   softDelete(storyId: string, authorId: string): Promise<boolean>;
 }

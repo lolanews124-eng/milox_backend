@@ -20,7 +20,7 @@ export function createRewardsModule(
   authenticate: RequestHandler,
   repository: RewardsRepository = new PrismaRewardsRepository(database, config),
 ): RewardsModule {
-  const service = new RewardsService(repository, config);
+  const service = new RewardsService(repository, config, database);
   const controller = new RewardsController(service);
 
   return {

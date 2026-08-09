@@ -380,7 +380,11 @@ export class PrismaAdminRepository implements AdminRepository {
                 AND s."startsAt" <= ${now}
                 AND s."endsAt" > ${now}
             )::bigint AS "premiumUsers",
-            COALESCE(SUM(p."priceCents"), 0)::bigint AS "revenueCents"
+            COALESCE(SUM(p."priceCents") FILTER (
+              WHERE s.status = 'ACTIVE'
+                AND s."startsAt" <= ${now}
+                AND s."endsAt" > ${now}
+            ), 0)::bigint AS "revenueCents"
           FROM user_subscriptions s
           INNER JOIN premium_plans p ON p.id = s."planId"
         `,
@@ -1602,6 +1606,7 @@ export class PrismaAdminRepository implements AdminRepository {
   async listPremiumPlans(
     query: { page: number; pageSize: number },
   ): Promise<AdminPage<AdminPremiumPlanRecord>> {
+    const now = new Date();
     const [rows, total] = await this.database.$transaction([
       this.database.premiumPlan.findMany({
         orderBy: [{ sortOrder: "asc" }, { isActive: "desc" }, { priceCents: "asc" }],
@@ -1611,8 +1616,27 @@ export class PrismaAdminRepository implements AdminRepository {
       }),
       this.database.premiumPlan.count(),
     ]);
+    const planIds = rows.map((plan) => plan.id);
+    const subscriberCounts =
+      planIds.length > 0
+        ? await this.database.userSubscription.groupBy({
+            by: ["planId"],
+            where: {
+              planId: { in: planIds },
+              status: SubscriptionStatus.ACTIVE,
+              startsAt: { lte: now },
+              endsAt: { gt: now },
+            },
+            _count: { _all: true },
+          })
+        : [];
+    const subscriberCountByPlan = new Map(
+      subscriberCounts.map((row) => [row.planId, row._count._all]),
+    );
     return {
-      items: rows.map((plan) => mapPremiumPlan(plan)),
+      items: rows.map((plan) =>
+        mapPremiumPlan(plan, subscriberCountByPlan.get(plan.id) ?? 0),
+      ),
       total,
     };
   }
@@ -1640,7 +1664,7 @@ export class PrismaAdminRepository implements AdminRepository {
           profileViews: data.profileViews ?? true,
           discoverBoost: data.discoverBoost ?? 1,
           grantVerifiedBadge: data.grantVerifiedBadge ?? false,
-          dailyInterestLimit: data.dailyInterestLimit ?? 10,
+          dailyInterestLimit: data.dailyInterestLimit ?? 30,
           interstitialAdsFree: data.interstitialAdsFree ?? true,
           directMessageEnabled: data.directMessageEnabled ?? false,
         },
@@ -1815,16 +1839,22 @@ export class PrismaAdminRepository implements AdminRepository {
       const actor = await this.requireAdminActor(transaction, data.actorId);
       const existing = await transaction.userSubscription.findUnique({
         where: { id: data.subscriptionId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, cancelledAt: true, endsAt: true },
       });
       if (!existing) return null;
       if (existing.status !== SubscriptionStatus.ACTIVE) {
         throw new AdminStateConflictError();
       }
+      if (existing.cancelledAt) {
+        const row = await transaction.userSubscription.findUniqueOrThrow({
+          where: { id: existing.id },
+          select: subscriptionAdminSelect,
+        });
+        return mapAdminSubscriptionRecord(row);
+      }
       const updated = await transaction.userSubscription.update({
         where: { id: existing.id },
         data: {
-          status: SubscriptionStatus.CANCELLED,
           cancelledAt: new Date(),
         },
         select: subscriptionAdminSelect,
@@ -3866,6 +3896,7 @@ function mapPremiumPlan(
     prices: AdminPlanPriceRecord[];
     _count: { subscriptions: number };
   },
+  subscriberCountOverride?: number,
 ): AdminPremiumPlanRecord {
   return {
     id: plan.id,
@@ -3894,7 +3925,7 @@ function mapPremiumPlan(
       durationDays: price.durationDays,
       isActive: price.isActive,
     })),
-    subscriberCount: plan._count.subscriptions,
+    subscriberCount: subscriberCountOverride ?? plan._count.subscriptions,
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
   };

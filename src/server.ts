@@ -15,6 +15,7 @@ import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
 import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
 import { NotificationOutboxWorker } from "./jobs/notifications/notification-outbox-worker.js";
+import { SubscriptionExpiryWorker } from "./jobs/premium/subscription-expiry-worker.js";
 import { CryptoService } from "./modules/auth/application/services/crypto-service.js";
 import { createChatService } from "./modules/chat/index.js";
 import { createOfficialChatModule } from "./modules/official-chat/index.js";
@@ -32,6 +33,7 @@ const config = getConfig();
 const crypto = new CryptoService(config);
 const emailWorker = new EmailWorker(prisma, config);
 const feedScoreWorker = new FeedScoreWorker(prisma, config);
+const subscriptionExpiryWorker = new SubscriptionExpiryWorker(prisma, config);
 const port = config.PORT;
 const chatOutboxHooks = {
   wakeChat: () => {},
@@ -130,6 +132,7 @@ async function bootstrap(): Promise<void> {
     console.info(`Milox API listening on port ${port}`);
     void emailWorker.start();
     feedScoreWorker.start();
+    subscriptionExpiryWorker.start();
     void chatOutboxWorker.start();
     void notificationOutboxWorker.start();
   });
@@ -144,6 +147,7 @@ async function shutdown(signal: string): Promise<void> {
   console.info(`Received ${signal}; shutting down`);
   emailWorker.stop();
   feedScoreWorker.stop();
+  subscriptionExpiryWorker.stop();
   chatOutboxWorker.stop();
   notificationOutboxWorker.stop();
   await io.close();

@@ -21,6 +21,11 @@ export function createStoryRouter(
     asyncHandler(controller.create),
   );
   router.get("/feed", authenticate, asyncHandler(controller.feed));
+  router.get(
+    "/:storyId",
+    authenticate,
+    asyncHandler(controller.getById),
+  );
   router.post(
     "/:storyId/view",
     authenticate,

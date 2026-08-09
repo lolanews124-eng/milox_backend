@@ -54,6 +54,11 @@ const envSchema = z
   EMAIL_FROM: z.string().default("no-reply@localhost"),
   EMAIL_WORKER_POLL_MS: z.coerce.number().int().positive().default(5_000),
     FEED_SCORE_POLL_MS: z.coerce.number().int().positive().default(300_000),
+    SUBSCRIPTION_EXPIRY_POLL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(300_000),
     INTEREST_DAILY_LIMIT: z.coerce.number().int().positive().max(500).default(20),
     WALLET_WELCOME_BONUS: z.coerce.number().int().nonnegative().default(500),
     REFERRAL_REWARD_POINTS: z.coerce.number().int().nonnegative().default(100),
