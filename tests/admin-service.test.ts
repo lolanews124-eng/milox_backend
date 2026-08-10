@@ -76,6 +76,18 @@ describe("AdminService", () => {
       resolverNote: "Reviewed",
       createdAt: new Date(),
       updatedAt: new Date(),
+      reporter: {
+        id: targetId,
+        username: "reporter",
+        displayName: null,
+        profilePhotoMediaId: null,
+      },
+      reportedUser: {
+        id: targetId,
+        username: "target",
+        displayName: null,
+        profilePhotoMediaId: null,
+      },
     });
 
     await new AdminService(repository, "/tmp/uploads").resolveReport(

@@ -154,6 +154,13 @@ const adminUserSelect = {
   updatedAt: true,
 } satisfies Prisma.UserSelect;
 
+const adminReportUserSelect = {
+  id: true,
+  username: true,
+  displayName: true,
+  profilePhotoMediaId: true,
+} satisfies Prisma.UserSelect;
+
 const adminReportSelect = {
   id: true,
   reporterId: true,
@@ -169,6 +176,8 @@ const adminReportSelect = {
   resolverNote: true,
   createdAt: true,
   updatedAt: true,
+  reporter: { select: adminReportUserSelect },
+  reportedUser: { select: adminReportUserSelect },
 } satisfies Prisma.ReportSelect;
 
 const postAdminSelect = {

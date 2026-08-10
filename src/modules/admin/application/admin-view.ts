@@ -60,6 +60,13 @@ export interface AdminUserRecord {
   updatedAt: Date;
 }
 
+export interface AdminReportPartyRecord {
+  id: string;
+  username: string;
+  displayName: string | null;
+  profilePhotoMediaId: string | null;
+}
+
 export interface AdminReportRecord {
   id: string;
   reporterId: string;
@@ -75,6 +82,8 @@ export interface AdminReportRecord {
   resolverNote: string | null;
   createdAt: Date;
   updatedAt: Date;
+  reporter: AdminReportPartyRecord;
+  reportedUser: AdminReportPartyRecord | null;
 }
 
 export function presentAdminUser(user: AdminUserRecord): object {
@@ -114,8 +123,14 @@ export function presentAdminReport(report: AdminReportRecord): object {
   return {
     id: report.id,
     reporterId: report.reporterId,
+    reporterUsername: report.reporter.username,
+    reporterDisplayName: report.reporter.displayName,
+    reporterProfilePhotoMediaId: report.reporter.profilePhotoMediaId,
     targetType: report.targetType,
     reportedUserId: report.reportedUserId,
+    reportedUsername: report.reportedUser?.username ?? null,
+    reportedDisplayName: report.reportedUser?.displayName ?? null,
+    reportedProfilePhotoMediaId: report.reportedUser?.profilePhotoMediaId ?? null,
     postId: report.postId,
     commentId: report.commentId,
     messageId: report.messageId,
