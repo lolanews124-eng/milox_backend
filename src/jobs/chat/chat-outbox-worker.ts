@@ -107,17 +107,15 @@ export class ChatOutboxWorker {
       const payload = createdPayloadSchema.parse(event.payload);
       const message = await this.chat.messageForRealtime(payload.messageId);
       if (message) {
-        const memberIds = await this.chat.activeConversationMemberIds(
+        const memberIds = await this.joinConversationMembers(
           payload.conversationId,
         );
-        for (const memberId of memberIds) {
-          this.io
-            .in(`user:${memberId}`)
-            .socketsJoin(`conversation:${payload.conversationId}`);
-        }
-        this.io
-          .to(`conversation:${payload.conversationId}`)
-          .emit("message:new", message);
+        this.emitToConversationMembers(
+          payload.conversationId,
+          memberIds,
+          "message:new",
+          message,
+        );
       }
       return;
     }
@@ -125,9 +123,15 @@ export class ChatOutboxWorker {
       const payload = createdPayloadSchema.parse(event.payload);
       const message = await this.chat.messageForRealtime(payload.messageId);
       if (message) {
-        this.io
-          .to(`conversation:${payload.conversationId}`)
-          .emit("message:edited", message);
+        const memberIds = await this.joinConversationMembers(
+          payload.conversationId,
+        );
+        this.emitToConversationMembers(
+          payload.conversationId,
+          memberIds,
+          "message:edited",
+          message,
+        );
       }
       return;
     }
@@ -153,6 +157,33 @@ export class ChatOutboxWorker {
       messageId: payload.messageId,
       scope: payload.scope,
     });
+  }
+
+  private async joinConversationMembers(
+    conversationId: string,
+  ): Promise<string[]> {
+    const memberIds = await this.chat.activeConversationMemberIds(
+      conversationId,
+    );
+    const room = `conversation:${conversationId}`;
+    await Promise.all(
+      memberIds.map((memberId) =>
+        Promise.resolve(this.io.in(`user:${memberId}`).socketsJoin(room)),
+      ),
+    );
+    return memberIds;
+  }
+
+  private emitToConversationMembers(
+    conversationId: string,
+    memberIds: string[],
+    event: "message:new" | "message:edited",
+    message: object,
+  ): void {
+    this.io.to(`conversation:${conversationId}`).emit(event, message);
+    for (const memberId of memberIds) {
+      this.io.to(`user:${memberId}`).emit(event, message);
+    }
   }
 
   private claimNextEvent(): Promise<OutboxEvent | null> {

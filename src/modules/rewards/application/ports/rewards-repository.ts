@@ -90,4 +90,14 @@ export interface RewardsRepository extends SignupRewardsWriter {
     userId: string,
     claimId: string,
   ): Promise<{ amount: number; balance: number }>;
+  listActivePointPacks(): Promise<PointPackRecord[]>;
+}
+
+export interface PointPackRecord {
+  id: string;
+  currency: string;
+  amountMinor: number;
+  points: number;
+  label: string | null;
+  sortOrder: number;
 }

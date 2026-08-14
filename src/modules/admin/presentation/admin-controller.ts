@@ -52,6 +52,7 @@ import {
   adminAdQuerySchema,
   adminAdPlacementParamSchema,
   updateAdPlacementConfigSchema,
+  updateMobileAppConfigSchema,
   createCmsPageSchema,
   createInterestTagSchema,
   createPremiumPlanSchema,
@@ -473,6 +474,26 @@ export class AdminController {
     const data = await this.admin.updateAdPlacementConfig(
       requireUser(request),
       placement,
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  getMobileAppConfig = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.getMobileAppConfig();
+    response.status(200).json(success(request, data));
+  };
+
+  updateMobileAppConfig = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updateMobileAppConfigSchema.parse(request.body as unknown);
+    const data = await this.admin.updateMobileAppConfig(
+      requireUser(request),
       input,
     );
     response.status(200).json(success(request, data));

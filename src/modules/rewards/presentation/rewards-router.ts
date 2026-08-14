@@ -24,6 +24,7 @@ export function createRewardsRouter(
     asyncHandler(controller.listTransactions),
   );
   router.get("/referrals/me", authenticate, asyncHandler(controller.getReferrals));
+  router.get("/point-packs", authenticate, asyncHandler(controller.listPointPacks));
   router.get(
     "/referrals/validate/:code",
     asyncHandler(controller.validateReferralCode),

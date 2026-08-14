@@ -1,4 +1,4 @@
-import type { ReportStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
+import type { MobileAppConfig, ReportStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
 
 import type {
   AdminAuditLogRecord,
@@ -558,4 +558,20 @@ export interface AdminRepository {
   updatePointPurchaseRate(
     data: UpdatePointPurchaseRateData,
   ): Promise<AdminPointPurchaseRateRecord | null>;
+  getMobileAppConfig(): Promise<MobileAppConfig>;
+  updateMobileAppConfig(
+    data: UpdateMobileAppConfigData,
+  ): Promise<MobileAppConfig>;
+}
+
+export interface UpdateMobileAppConfigData {
+  actorId: string;
+  latestVersion?: string | undefined;
+  androidMinBuild?: number | undefined;
+  iosMinBuild?: number | undefined;
+  forceUpdate?: boolean | undefined;
+  androidStoreUrl?: string | undefined;
+  iosStoreUrl?: string | undefined;
+  title?: string | undefined;
+  message?: string | undefined;
 }

@@ -366,6 +366,21 @@ export class PrismaRewardsRepository implements RewardsRepository {
       };
     });
   }
+
+  listActivePointPacks() {
+    return this.database.pointPurchaseRate.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { amountMinor: "asc" }],
+      select: {
+        id: true,
+        currency: true,
+        amountMinor: true,
+        points: true,
+        label: true,
+        sortOrder: true,
+      },
+    });
+  }
 }
 
 async function creditWallet(

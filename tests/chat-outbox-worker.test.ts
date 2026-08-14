@@ -57,6 +57,9 @@ describe("ChatOutboxWorker", () => {
     await worker.tick();
 
     expect(io.to).toHaveBeenCalledWith(`conversation:${conversationId}`);
+    expect(io.to).toHaveBeenCalledWith(
+      "user:8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9",
+    );
     expect(socketsJoin).toHaveBeenCalledWith(
       `conversation:${conversationId}`,
     );

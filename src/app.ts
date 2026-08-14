@@ -26,6 +26,7 @@ import { createRewardsModule } from "./modules/rewards/index.js";
 import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
 import { createStoryModule } from "./modules/stories/index.js";
 import { createAdsModule } from "./modules/ads/index.js";
+import { createAppReleaseRouter } from "./modules/app-release/app-release-router.js";
 import { createPremiumModule } from "./modules/premium/index.js";
 import { createUserModule } from "./modules/users/index.js";
 import { asyncHandler } from "./shared/http/async-handler.js";
@@ -194,6 +195,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/push-devices", push.router);
   app.use("/api/v1/blocks", moderation.blocksRouter);
   app.use("/api/v1/reports", moderation.reportsRouter);
+  app.use("/api/v1/app", createAppReleaseRouter(database));
   app.use("/api/v1/admin", admin.router);
   app.use("/api/v1/blog", blog.router);
   app.use(notFoundHandler);

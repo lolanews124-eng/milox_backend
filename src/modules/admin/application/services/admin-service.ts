@@ -52,6 +52,7 @@ import {
   presentAdminWalletUser,
   presentAdminPointPurchaseRate,
 } from "../admin-view.js";
+import { presentMobileAppConfig } from "../../../app-release/mobile-app-config.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 
@@ -922,6 +923,38 @@ export class AdminService {
     }
   }
 
+  async getMobileAppConfig(): Promise<object> {
+    const config = await this.repository.getMobileAppConfig();
+    return presentMobileAppConfig(config);
+  }
+
+  async updateMobileAppConfig(
+    actorId: string,
+    input: {
+      latestVersion?: string | undefined;
+      androidMinBuild?: number | undefined;
+      iosMinBuild?: number | undefined;
+      forceUpdate?: boolean | undefined;
+      androidStoreUrl?: string | undefined;
+      iosStoreUrl?: string | undefined;
+      title?: string | undefined;
+      message?: string | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const config = await this.repository.updateMobileAppConfig({
+        actorId,
+        ...input,
+      });
+      return presentMobileAppConfig(config);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
   async listCmsPages(options: { page: number; pageSize: number }): Promise<object> {
     const result = await this.repository.listCmsPages(options);
     return paginate(result, options, presentAdminCmsPage);
@@ -1478,7 +1511,7 @@ export class AdminService {
     try {
       const rate = await this.repository.createPointPurchaseRate({
         actorId,
-        currency: input.currency.trim().toUpperCase(),
+        currency: "USD",
         amountMinor: input.amountMinor,
         points: input.points,
         ...(input.label !== undefined ? { label: input.label } : {}),
@@ -1510,9 +1543,7 @@ export class AdminService {
       const rate = await this.repository.updatePointPurchaseRate({
         actorId,
         rateId,
-        ...(input.currency !== undefined
-          ? { currency: input.currency.trim().toUpperCase() }
-          : {}),
+        currency: "USD",
         ...(input.amountMinor !== undefined ? { amountMinor: input.amountMinor } : {}),
         ...(input.points !== undefined ? { points: input.points } : {}),
         ...(input.label !== undefined ? { label: input.label } : {}),

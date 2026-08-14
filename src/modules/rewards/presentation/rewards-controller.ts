@@ -72,6 +72,18 @@ export class RewardsController {
       meta: { requestId: request.requestId },
     });
   };
+
+  listPointPacks = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    requireUserId(request);
+    response.status(200).json({
+      success: true,
+      data: await this.rewards.listPointPacks(),
+      meta: { requestId: request.requestId },
+    });
+  };
 }
 
 function requireUserId(request: Request): string {

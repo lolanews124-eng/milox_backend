@@ -22,6 +22,10 @@ import {
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
+import {
+  ensureMobileAppConfig,
+  MOBILE_APP_CONFIG_ID,
+} from "../../app-release/mobile-app-config.js";
 import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
 import {
   creditWallet,
@@ -80,6 +84,7 @@ import type {
   AdminOutboxQuery,
   UpdateMediaData,
   AdminMediaUpdateResult,
+  UpdateMobileAppConfigData,
 } from "../application/ports/admin-repository.js";
 import {
   AdminHierarchyError,
@@ -1994,6 +1999,56 @@ export class PrismaAdminRepository implements AdminRepository {
         {},
       );
       return mapAdPlacementConfig(updated);
+    });
+  }
+
+  getMobileAppConfig() {
+    return ensureMobileAppConfig(this.database);
+  }
+
+  updateMobileAppConfig(data: UpdateMobileAppConfigData) {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      await ensureMobileAppConfig(transaction);
+      const updated = await transaction.mobileAppConfig.update({
+        where: { id: MOBILE_APP_CONFIG_ID },
+        data: {
+          ...(data.latestVersion !== undefined
+            ? { latestVersion: data.latestVersion }
+            : {}),
+          ...(data.androidMinBuild !== undefined
+            ? { androidMinBuild: data.androidMinBuild }
+            : {}),
+          ...(data.iosMinBuild !== undefined
+            ? { iosMinBuild: data.iosMinBuild }
+            : {}),
+          ...(data.forceUpdate !== undefined
+            ? { forceUpdate: data.forceUpdate }
+            : {}),
+          ...(data.androidStoreUrl !== undefined
+            ? { androidStoreUrl: data.androidStoreUrl }
+            : {}),
+          ...(data.iosStoreUrl !== undefined
+            ? { iosStoreUrl: data.iosStoreUrl }
+            : {}),
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(data.message !== undefined ? { message: data.message } : {}),
+        },
+      });
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.mobile_app_config.updated",
+        "mobile_app_config",
+        updated.id,
+        {
+          forceUpdate: updated.forceUpdate,
+          androidMinBuild: updated.androidMinBuild,
+          iosMinBuild: updated.iosMinBuild,
+          latestVersion: updated.latestVersion,
+        },
+      );
+      return updated;
     });
   }
 

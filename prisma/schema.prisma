@@ -1267,7 +1267,7 @@ model Referral {
 model PointPurchaseRate {
   id          String   @id @default(uuid()) @db.Uuid
   currency    String   @default("USD") @db.VarChar(3)
-  /// Price in minor currency units (cents/paise).
+  /// Price in USD cents (PayPal).
   amountMinor Int
   points      Int
   label       String?  @db.VarChar(120)
@@ -1279,4 +1279,20 @@ model PointPurchaseRate {
 
   @@index([isActive, sortOrder])
   @@map("point_purchase_rates")
+}
+
+/// Singleton row (id = default) controlling mobile force-update from admin.
+model MobileAppConfig {
+  id                String   @id @default("default") @db.VarChar(32)
+  latestVersion     String   @default("1.0.7") @db.VarChar(32)
+  androidMinBuild   Int      @default(0)
+  iosMinBuild       Int      @default(0)
+  forceUpdate       Boolean  @default(false)
+  androidStoreUrl   String   @default("https://play.google.com/store/apps/details?id=com.milox.milox_mobile") @db.VarChar(500)
+  iosStoreUrl       String   @default("") @db.VarChar(500)
+  title             String   @default("Update required") @db.VarChar(120)
+  message           String   @default("A new version of Milox is available. Please update to continue.") @db.VarChar(500)
+  updatedAt         DateTime @updatedAt
+
+  @@map("mobile_app_configs")
 }

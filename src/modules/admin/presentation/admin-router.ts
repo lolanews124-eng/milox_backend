@@ -361,6 +361,18 @@ export function createAdminRouter(
     asyncHandler(controller.updateAdPlacementConfig),
   );
   router.get(
+    "/mobile-app",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.getMobileAppConfig),
+  );
+  router.patch(
+    "/mobile-app",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.updateMobileAppConfig),
+  );
+  router.get(
     "/cms-pages",
     readLimit,
     adminOnly,

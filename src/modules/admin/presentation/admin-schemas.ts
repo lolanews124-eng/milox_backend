@@ -319,6 +319,19 @@ export const updateAdPlacementConfigSchema = z
   })
   .strict();
 
+export const updateMobileAppConfigSchema = z
+  .object({
+    latestVersion: z.string().trim().min(1).max(32).optional(),
+    androidMinBuild: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    iosMinBuild: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    forceUpdate: z.boolean().optional(),
+    androidStoreUrl: z.string().trim().max(500).optional(),
+    iosStoreUrl: z.string().trim().max(500).optional(),
+    title: z.string().trim().min(1).max(120).optional(),
+    message: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
 export const adminAdIdParamSchema = z.object({
   adId: z.uuid(),
 });
@@ -539,7 +552,7 @@ export const adminPointPurchaseRateIdParamSchema = z.object({
 
 export const createPointPurchaseRateSchema = z
   .object({
-    currency: z.string().trim().length(3),
+    currency: z.enum(["USD"]).default("USD"),
     amountMinor: z.coerce.number().int().min(1).max(100_000_000),
     points: z.coerce.number().int().min(1).max(10_000_000),
     label: z.string().trim().min(1).max(120).optional(),
@@ -550,7 +563,7 @@ export const createPointPurchaseRateSchema = z
 
 export const updatePointPurchaseRateSchema = z
   .object({
-    currency: z.string().trim().length(3).optional(),
+    currency: z.enum(["USD"]).optional(),
     amountMinor: z.coerce.number().int().min(1).max(100_000_000).optional(),
     points: z.coerce.number().int().min(1).max(10_000_000).optional(),
     label: z.string().trim().min(1).max(120).nullable().optional(),

@@ -72,6 +72,20 @@ export class RewardsService {
       throw error;
     });
   }
+
+  async listPointPacks() {
+    const packs = await this.repository.listActivePointPacks();
+    return {
+      items: packs.map((pack) => ({
+        id: pack.id,
+        currency: pack.currency,
+        amountMinor: pack.amountMinor,
+        points: pack.points,
+        label: pack.label,
+        sortOrder: pack.sortOrder,
+      })),
+    };
+  }
 }
 
 function presentWallet(wallet: {
