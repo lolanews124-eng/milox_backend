@@ -18,7 +18,7 @@ const config = {
   API_PUBLIC_URL: "http://localhost:3001",
   JWT_ACCESS_SECRET: "interest-service-secret-at-least-32",
   INTEREST_DAILY_LIMIT: 20,
-  INTEREST_SEND_COST: 10,
+  INTEREST_SEND_COST: 40,
 } as AppConfig;
 const senderId = "8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9";
 const recipientId = "fca0622f-cba7-4398-bfe7-11842c026990";
@@ -48,7 +48,7 @@ describe("InterestService", () => {
       idempotencyKey: key,
       requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       dailyLimit: 20,
-      interestSendCost: 10,
+      interestSendCost: 40,
     });
   });
 
@@ -155,10 +155,16 @@ describe("InterestService", () => {
 });
 
 function createService(repository: InterestRepository): InterestService {
+  const database = {
+    userSubscription: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+  } as never;
   return new InterestService(
     repository,
     new FeedCursorCodec(config.JWT_ACCESS_SECRET),
     config,
+    database,
   );
 }
 

@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 
 import type { AppConfig } from "../../../config/env.js";
+import { INTEREST_SEND_COST_POINTS } from "../../../config/wallet-economy.js";
 import {
   generateReferralCode,
   normalizeReferralCode,
@@ -123,7 +124,7 @@ export class PrismaRewardsRepository implements RewardsRepository {
       balance: wallet.balance,
       lifetimeEarned: wallet.lifetimeEarned,
       lifetimeSpent: wallet.lifetimeSpent,
-      interestSendCost: this.config.INTEREST_SEND_COST,
+      interestSendCost: INTEREST_SEND_COST_POINTS,
       referralRewardPoints: this.config.REFERRAL_REWARD_POINTS,
       postRewardPoints: this.config.POST_REWARD_POINTS,
       welcomeBonus: this.config.WALLET_WELCOME_BONUS,

@@ -5,6 +5,7 @@ import type { InterestStatus } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
+import { INTEREST_SEND_COST_POINTS } from "../../../../config/wallet-economy.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { resolveUserEntitlements, interestSendCostForEntitlements } from "../../../premium/application/entitlements.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
@@ -55,7 +56,7 @@ export class InterestService {
         : entitlements.features.dailyInterestLimit;
     const interestSendCost = interestSendCostForEntitlements(
       entitlements,
-      this.config.INTEREST_SEND_COST,
+      INTEREST_SEND_COST_POINTS,
     );
     try {
       const created = await this.repository.create({
