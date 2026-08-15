@@ -6,6 +6,7 @@ import { MediaService } from "../media/application/services/media-service.js";
 import { PrismaMediaRepository } from "../media/infrastructure/prisma-media-repository.js";
 import { AdminService } from "./application/services/admin-service.js";
 import { PrismaAdminRepository } from "./infrastructure/prisma-admin-repository.js";
+import { VerifiedBadgeService } from "../premium/application/verified-badge-service.js";
 import { AdminController } from "./presentation/admin-controller.js";
 import { createAdminRouter } from "./presentation/admin-router.js";
 
@@ -33,6 +34,7 @@ export function createAdminModule(
     config.UPLOAD_ROOT,
     mediaService,
     officialChat,
+    new VerifiedBadgeService(database),
   );
   return {
     router: createAdminRouter(controller, database, authenticate),

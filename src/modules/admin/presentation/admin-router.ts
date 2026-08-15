@@ -217,6 +217,36 @@ export function createAdminRouter(
     asyncHandler(controller.setVerifiedBadge),
   );
   router.get(
+    "/verified-badge/product",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.getVerifiedBadgeProduct),
+  );
+  router.patch(
+    "/verified-badge/product",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.updateVerifiedBadgeProduct),
+  );
+  router.get(
+    "/verified-badge/orders",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listVerifiedBadgeOrders),
+  );
+  router.post(
+    "/verified-badge/orders/:orderId/complete",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.completeVerifiedBadgeOrder),
+  );
+  router.post(
+    "/verified-badge/orders/:orderId/reject",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.rejectVerifiedBadgeOrder),
+  );
+  router.get(
     "/interest-tags",
     readLimit,
     adminOnly,

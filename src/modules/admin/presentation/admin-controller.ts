@@ -7,6 +7,7 @@ import type { MediaService } from "../../media/application/services/media-servic
 import type { OfficialChatService } from "../../official-chat/application/official-chat-service.js";
 import { officialBroadcastJobStore } from "../../official-chat/application/official-broadcast-job-store.js";
 import type { OfficialMessageButton } from "../../official-chat/official-chat-types.js";
+import type { VerifiedBadgeService } from "../../premium/application/verified-badge-service.js";
 import type { AdminService } from "../application/services/admin-service.js";
 import {
   adminAdIdParamSchema,
@@ -66,6 +67,10 @@ import {
   adminPointPurchaseRateIdParamSchema,
   createPointPurchaseRateSchema,
   updatePointPurchaseRateSchema,
+  updateVerifiedBadgeProductSchema,
+  adminVerifiedBadgeOrderQuerySchema,
+  adminVerifiedBadgeOrderIdParamSchema,
+  adminVerifiedBadgeOrderActionSchema,
   resolveReportSchema,
   setVerifiedBadgeSchema,
   updateAdSchema,
@@ -82,6 +87,7 @@ export class AdminController {
     private readonly uploadRoot: string,
     private readonly media: MediaService,
     private readonly officialChat?: OfficialChatService,
+    private readonly verifiedBadge?: VerifiedBadgeService,
   ) {}
 
   dashboard = async (
@@ -815,6 +821,91 @@ export class AdminController {
     }
     response.status(200).json(success(request, job));
   };
+
+  getVerifiedBadgeProduct = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const product = await this.requireVerifiedBadge().getOrCreateProduct();
+    response.status(200).json(
+      success(request, {
+        id: product.id,
+        isActive: product.isActive,
+        title: product.title,
+        description: product.description,
+        currency: product.currency,
+        priceCents: product.priceCents,
+        pricePoints: product.pricePoints,
+        durationDays: product.durationDays,
+        paymentInstructions: product.paymentInstructions,
+        cashEnabled: product.priceCents > 0,
+        pointsEnabled: product.pricePoints > 0,
+        updatedAt: product.updatedAt.toISOString(),
+      }),
+    );
+  };
+
+  updateVerifiedBadgeProduct = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updateVerifiedBadgeProductSchema.parse(request.body as unknown);
+    const data = await this.requireVerifiedBadge().updateProduct(input);
+    response.status(200).json(success(request, data));
+  };
+
+  listVerifiedBadgeOrders = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminVerifiedBadgeOrderQuerySchema.parse(request.query);
+    const data = await this.requireVerifiedBadge().listOrders({
+      page: query.page,
+      pageSize: query.pageSize,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.q ? { q: query.q } : {}),
+    });
+    response.status(200).json(success(request, data));
+  };
+
+  completeVerifiedBadgeOrder = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { orderId } = adminVerifiedBadgeOrderIdParamSchema.parse(request.params);
+    const input = adminVerifiedBadgeOrderActionSchema.parse(
+      request.body as unknown,
+    );
+    const data = await this.requireVerifiedBadge().completeOrder(
+      requireUser(request),
+      orderId,
+      input.note,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  rejectVerifiedBadgeOrder = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { orderId } = adminVerifiedBadgeOrderIdParamSchema.parse(request.params);
+    const input = adminVerifiedBadgeOrderActionSchema.parse(
+      request.body as unknown,
+    );
+    const data = await this.requireVerifiedBadge().rejectOrder(
+      requireUser(request),
+      orderId,
+      input.note,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  private requireVerifiedBadge(): VerifiedBadgeService {
+    if (!this.verifiedBadge) {
+      throw new AppError("INTERNAL", "Verified badge service is unavailable", 500);
+    }
+    return this.verifiedBadge;
+  }
 }
 
 function requireUser(request: Request): string {

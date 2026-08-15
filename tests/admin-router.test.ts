@@ -97,6 +97,7 @@ function createHarness(currentRoleAllowed: boolean) {
   const controller = new AdminController(
     serviceObject as unknown as AdminService,
     "../../uploads",
+    {} as never,
   );
   const authenticate: RequestHandler = (req, _res, next) => {
     req.auth = {

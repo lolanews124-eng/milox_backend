@@ -1461,7 +1461,10 @@ export class PrismaAdminRepository implements AdminRepository {
         }
         const updated = await transaction.user.update({
           where: { id: target.id },
-          data: { isVerifiedBadge: data.isVerifiedBadge },
+          data: {
+            isVerifiedBadge: data.isVerifiedBadge,
+            verifiedBadgeExpiresAt: null,
+          },
           select: adminUserSelect,
         });
         await transaction.auditLog.create({

@@ -46,15 +46,19 @@ function activeSubscriptionWhere(now: Date) {
   } as const;
 }
 
-async function maybeRevokePremiumVerifiedBadge(
+export async function userHasStandaloneVerifiedBadge(
   database: PrismaClient,
   userId: string,
-): Promise<void> {
+  now = new Date(),
+): Promise<boolean> {
   const user = await database.user.findUnique({
     where: { id: userId },
-    select: { isVerifiedBadge: true },
+    select: { isVerifiedBadge: true, verifiedBadgeExpiresAt: true },
   });
-  if (!user?.isVerifiedBadge) return;
+  if (!user?.isVerifiedBadge) return false;
+  if (user.verifiedBadgeExpiresAt && user.verifiedBadgeExpiresAt > now) {
+    return true;
+  }
 
   const adminGrant = await database.auditLog.findFirst({
     where: {
@@ -65,19 +69,72 @@ async function maybeRevokePremiumVerifiedBadge(
     orderBy: { createdAt: "desc" },
     select: { metadata: true },
   });
-
   const metadata = adminGrant?.metadata;
   const adminSetVerified =
     metadata !== null &&
     typeof metadata === "object" &&
     !Array.isArray(metadata) &&
     (metadata as { isVerifiedBadge?: boolean }).isVerifiedBadge === true;
+  if (adminSetVerified && !user.verifiedBadgeExpiresAt) {
+    return true;
+  }
 
-  if (!adminSetVerified) {
-    await database.user.update({
-      where: { id: userId },
-      data: { isVerifiedBadge: false },
-    });
+  const paid = await database.verifiedBadgeOrder.findFirst({
+    where: {
+      userId,
+      status: "COMPLETED",
+      OR: [{ badgeExpiresAt: null }, { badgeExpiresAt: { gt: now } }],
+    },
+    select: { id: true },
+  });
+  return Boolean(paid);
+}
+
+async function maybeRevokePremiumVerifiedBadge(
+  database: PrismaClient,
+  userId: string,
+): Promise<void> {
+  const user = await database.user.findUnique({
+    where: { id: userId },
+    select: { isVerifiedBadge: true },
+  });
+  if (!user?.isVerifiedBadge) return;
+  const keep = await userHasStandaloneVerifiedBadge(database, userId);
+  if (keep) return;
+
+  await database.user.update({
+    where: { id: userId },
+    data: { isVerifiedBadge: false, verifiedBadgeExpiresAt: null },
+  });
+}
+
+export async function expireStandaloneVerifiedBadges(
+  database: PrismaClient,
+): Promise<void> {
+  const now = new Date();
+  const expired = await database.user.findMany({
+    where: {
+      isVerifiedBadge: true,
+      verifiedBadgeExpiresAt: { lte: now },
+    },
+    select: { id: true },
+    take: 200,
+  });
+  for (const row of expired) {
+    const entitlements = await resolveUserEntitlements(database, row.id);
+    if (entitlements.features.grantVerifiedBadge) {
+      await database.user.update({
+        where: { id: row.id },
+        data: {
+          isVerifiedBadge: true,
+          verifiedBadgeExpiresAt: entitlements.expiresAt
+            ? new Date(entitlements.expiresAt)
+            : null,
+        },
+      });
+      continue;
+    }
+    await maybeRevokePremiumVerifiedBadge(database, row.id);
   }
 }
 

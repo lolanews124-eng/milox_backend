@@ -2,7 +2,10 @@ import type { PrismaClient } from "@prisma/client";
 import { SubscriptionStatus } from "@prisma/client";
 
 import type { AppConfig } from "../../config/env.js";
-import { syncUserPremiumState } from "../../modules/premium/application/entitlements.js";
+import {
+  expireStandaloneVerifiedBadges,
+  syncUserPremiumState,
+} from "../../modules/premium/application/entitlements.js";
 
 export class SubscriptionExpiryWorker {
   private timer: NodeJS.Timeout | undefined;
@@ -40,17 +43,19 @@ export class SubscriptionExpiryWorker {
         select: { id: true, userId: true },
         take: 200,
       });
-      if (expired.length === 0) return;
+      if (expired.length > 0) {
+        await this.database.userSubscription.updateMany({
+          where: { id: { in: expired.map((row) => row.id) } },
+          data: { status: SubscriptionStatus.EXPIRED },
+        });
 
-      await this.database.userSubscription.updateMany({
-        where: { id: { in: expired.map((row) => row.id) } },
-        data: { status: SubscriptionStatus.EXPIRED },
-      });
-
-      const userIds = [...new Set(expired.map((row) => row.userId))];
-      for (const userId of userIds) {
-        await syncUserPremiumState(this.database, userId);
+        const userIds = [...new Set(expired.map((row) => row.userId))];
+        for (const userId of userIds) {
+          await syncUserPremiumState(this.database, userId);
+        }
       }
+
+      await expireStandaloneVerifiedBadges(this.database);
     } finally {
       this.running = false;
     }

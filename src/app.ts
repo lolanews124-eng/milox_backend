@@ -90,7 +90,11 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     auth.optionalAuthenticate,
   );
   const ads = createAdsModule(database, auth.optionalAuthenticate);
-  const premium = createPremiumModule(database, auth.optionalAuthenticate);
+  const premium = createPremiumModule(
+    database,
+    auth.optionalAuthenticate,
+    auth.authenticate,
+  );
   const stories = createStoryModule(config, database, {
     authenticate: auth.authenticate,
     requireVerified: auth.requireVerified,

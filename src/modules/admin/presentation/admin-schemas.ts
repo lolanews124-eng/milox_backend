@@ -571,3 +571,32 @@ export const updatePointPurchaseRateSchema = z
     sortOrder: z.coerce.number().int().min(0).max(10_000).optional(),
   })
   .strict();
+
+export const updateVerifiedBadgeProductSchema = z
+  .object({
+    isActive: z.boolean().optional(),
+    title: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(1000).nullable().optional(),
+    currency: z.string().trim().length(3).optional(),
+    priceCents: z.coerce.number().int().min(0).max(100_000_000).optional(),
+    pricePoints: z.coerce.number().int().min(0).max(10_000_000).optional(),
+    durationDays: z.coerce.number().int().min(0).max(36500).optional(),
+    paymentInstructions: z.string().trim().max(2000).nullable().optional(),
+  })
+  .strict();
+
+export const adminVerifiedBadgeOrderQuerySchema = z.object({
+  status: z.enum(["PENDING", "COMPLETED", "REJECTED", "CANCELLED"]).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+  ...offsetPageSchema,
+});
+
+export const adminVerifiedBadgeOrderIdParamSchema = z.object({
+  orderId: z.uuid(),
+});
+
+export const adminVerifiedBadgeOrderActionSchema = z
+  .object({
+    note: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();

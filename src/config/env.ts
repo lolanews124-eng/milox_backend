@@ -63,7 +63,7 @@ const envSchema = z
     WALLET_WELCOME_BONUS: z.coerce.number().int().nonnegative().default(500),
     REFERRAL_REWARD_POINTS: z.coerce.number().int().nonnegative().default(100),
     POST_REWARD_POINTS: z.coerce.number().int().nonnegative().default(5),
-    INTEREST_SEND_COST: z.coerce.number().int().nonnegative().default(10),
+    INTEREST_SEND_COST: z.coerce.number().int().nonnegative().default(40),
     REWARDED_AD_POINTS: z.coerce.number().int().positive().max(500).default(20),
     REWARDED_AD_DAILY_LIMIT: z.coerce.number().int().positive().max(50).default(10),
     CHAT_OUTBOX_POLL_MS: z.coerce.number().int().positive().default(100),

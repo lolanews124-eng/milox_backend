@@ -103,9 +103,12 @@ export class FcmPushSender implements PushSender {
       apns: {
         payload: {
           aps: {
-            sound: "default",
             contentAvailable: true,
           },
+        },
+        headers: {
+          "apns-push-type": "background",
+          "apns-priority": "5",
         },
       },
     });

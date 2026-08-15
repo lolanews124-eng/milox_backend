@@ -150,6 +150,19 @@ enum WalletTransactionType {
   REWARDED_AD
   INTEREST_SEND
   ADMIN_ADJUST
+  VERIFIED_BADGE
+}
+
+enum VerifiedBadgeOrderStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum VerifiedBadgePaymentMethod {
+  POINTS
+  MANUAL
 }
 
 enum ReferralStatus {
@@ -259,6 +272,8 @@ model User {
   websiteUrl          String?           @db.VarChar(255)
   instagramHandle     String?           @db.VarChar(64)
   isVerifiedBadge     Boolean           @default(false)
+  /// Null = lifetime (admin grant or paid lifetime). Set when the tick was purchased for a term.
+  verifiedBadgeExpiresAt DateTime?
   premiumTier         PremiumTier       @default(FREE)
   premiumExpiresAt    DateTime?
   /// Denormalized from active plan for discover ranking (0 = none, 1-3 = boost).
@@ -325,6 +340,8 @@ model User {
   reportsAgainst      Report[]                 @relation("ReportReportedUser")
   auditLogs           AuditLog[]
   subscriptions       UserSubscription[]
+  verifiedBadgeOrders VerifiedBadgeOrder[] @relation("VerifiedBadgeBuyer")
+  verifiedBadgeOrdersProcessed VerifiedBadgeOrder[] @relation("VerifiedBadgeOrderProcessor")
   moderationActions   ModerationAction[]       @relation("ModerationTargetUser")
   moderationActionsBy ModerationAction[]       @relation("ModerationActor")
   idempotencyRecords  IdempotencyRecord[]
@@ -340,6 +357,7 @@ model User {
   @@index([createdAt])
   @@index([country, gender, status])
   @@index([isVerifiedBadge, status])
+  @@index([verifiedBadgeExpiresAt])
   @@index([premiumTier, discoverBoost])
   @@index([deletedAt])
   @@map("users")
@@ -1132,6 +1150,51 @@ model UserSubscription {
   @@index([userId, status])
   @@index([endsAt])
   @@map("user_subscriptions")
+}
+
+/// Singleton-style row: admin configures the standalone verified-tick product.
+model VerifiedBadgeProduct {
+  id                   String   @id @db.Uuid
+  isActive             Boolean  @default(false)
+  title                String   @default("Verified badge") @db.VarChar(120)
+  description          String?  @db.VarChar(1000)
+  currency             String   @default("INR") @db.Char(3)
+  /// Fiat price in minor units (paise/cents). 0 disables cash / manual checkout.
+  priceCents           Int      @default(19900)
+  /// Wallet points price. 0 disables points checkout.
+  pricePoints          Int      @default(0)
+  /// 0 = lifetime until admin revokes.
+  durationDays         Int      @default(365)
+  /// Shown to users for UPI / bank transfer before they submit a manual order.
+  paymentInstructions  String?  @db.VarChar(2000)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("verified_badge_products")
+}
+
+model VerifiedBadgeOrder {
+  id             String                     @id @default(uuid()) @db.Uuid
+  userId         String                     @db.Uuid
+  status         VerifiedBadgeOrderStatus   @default(PENDING)
+  paymentMethod  VerifiedBadgePaymentMethod
+  amountCents    Int                        @default(0)
+  pointsSpent    Int                        @default(0)
+  currency       String                     @db.Char(3)
+  durationDays   Int
+  badgeExpiresAt DateTime?
+  note           String?                    @db.VarChar(500)
+  processedById  String?                    @db.Uuid
+  processedAt    DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  user        User  @relation("VerifiedBadgeBuyer", fields: [userId], references: [id], onDelete: Cascade)
+  processedBy User? @relation("VerifiedBadgeOrderProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("verified_badge_orders")
 }
 
 model Advertisement {
