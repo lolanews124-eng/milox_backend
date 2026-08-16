@@ -34,6 +34,7 @@ export const adminUserQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  activity: z.enum(["online", "today", "week", "quiet", "dormant"]).optional(),
   ...offsetPageSchema,
 });
 

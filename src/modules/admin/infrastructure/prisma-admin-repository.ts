@@ -26,7 +26,7 @@ import {
   ensureMobileAppConfig,
   MOBILE_APP_CONFIG_ID,
 } from "../../app-release/mobile-app-config.js";
-import { consumerPlatformUserWhere } from "../../../shared/user-visibility.js";
+import { consumerPlatformUserWhere, recentPresenceWhere, stalePresenceWhere } from "../../../shared/user-visibility.js";
 import {
   creditWallet,
   debitWallet,
@@ -426,6 +426,8 @@ export class PrismaAdminRepository implements AdminRepository {
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
     const onlineSince = new Date(now.getTime() - 15 * 60 * 1000);
+    const todaySince = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const quietSince = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
     const activeWhere = {
       deletedAt: null,
       status: { not: UserStatus.DELETED },
@@ -436,6 +438,8 @@ export class PrismaAdminRepository implements AdminRepository {
       totalUsers,
       verifiedUsers,
       onlineNow,
+      activeToday,
+      quiet14d,
       newUsersToday,
       suspendedUsers,
       reportedUsers,
@@ -448,6 +452,16 @@ export class PrismaAdminRepository implements AdminRepository {
       }),
       this.database.user.count({
         where: { ...activeWhere, lastSeenAt: { gte: onlineSince } },
+      }),
+      this.database.user.count({
+        where: { ...activeWhere, ...recentPresenceWhere(todaySince) },
+      }),
+      this.database.user.count({
+        where: {
+          ...activeWhere,
+          status: UserStatus.ACTIVE,
+          ...stalePresenceWhere(quietSince),
+        },
       }),
       this.database.user.count({
         where: { ...activeWhere, createdAt: { gte: dayStart } },
@@ -485,6 +499,8 @@ export class PrismaAdminRepository implements AdminRepository {
       totalUsers,
       verifiedUsers,
       onlineNow,
+      activeToday,
+      quiet14d,
       newUsersToday,
       maleUsers,
       femaleUsers,
@@ -525,45 +541,58 @@ export class PrismaAdminRepository implements AdminRepository {
   async listUsers(
     query: AdminUserQuery,
   ): Promise<AdminPage<AdminUserRecord>> {
+    const now = Date.now();
+    const activityWhere = activityFilterWhere(query.activity, now);
     const where: Prisma.UserWhereInput = {
-      ...consumerPlatformUserWhere(),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.verified !== undefined ? { isVerifiedBadge: query.verified } : {}),
-      ...(query.online
-        ? {
-            lastSeenAt: {
-              gte: new Date(Date.now() - 15 * 60 * 1000),
-            },
-          }
-        : {}),
-      ...(query.reported
-        ? {
-            reportsAgainst: {
-              some: {
-                status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+      AND: [
+        consumerPlatformUserWhere(),
+        query.status ? { status: query.status } : {},
+        query.verified !== undefined ? { isVerifiedBadge: query.verified } : {},
+        query.online || query.activity === "online"
+          ? { lastSeenAt: { gte: new Date(now - 15 * 60 * 1000) } }
+          : {},
+        activityWhere,
+        query.reported
+          ? {
+              reportsAgainst: {
+                some: {
+                  status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+                },
               },
-            },
-          }
-        : {}),
-      ...(query.emailVerified === true
-        ? { emailVerifiedAt: { not: null } }
-        : query.emailVerified === false
-          ? { emailVerifiedAt: null }
-          : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { username: { contains: query.q, mode: "insensitive" } },
-              { email: { contains: query.q, mode: "insensitive" } },
-              { displayName: { contains: query.q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+            }
+          : {},
+        query.emailVerified === true
+          ? { emailVerifiedAt: { not: null } }
+          : query.emailVerified === false
+            ? { emailVerifiedAt: null }
+            : {},
+        query.q
+          ? {
+              OR: [
+                { username: { contains: query.q, mode: "insensitive" } },
+                { email: { contains: query.q, mode: "insensitive" } },
+                { displayName: { contains: query.q, mode: "insensitive" } },
+              ],
+            }
+          : {},
+      ],
     };
+    const staleFirst =
+      query.activity === "quiet" || query.activity === "dormant";
+    const recentFirst =
+      query.activity === "online" ||
+      query.activity === "today" ||
+      query.activity === "week" ||
+      Boolean(query.online);
+    const orderBy: Prisma.UserOrderByWithRelationInput[] = recentFirst
+      ? [{ lastSeenAt: { sort: "desc", nulls: "last" } }, { id: "desc" }]
+      : staleFirst
+        ? [{ lastSeenAt: { sort: "asc", nulls: "first" } }, { id: "asc" }]
+        : [{ createdAt: "desc" }, { id: "desc" }];
     const [items, total] = await this.database.$transaction([
       this.database.user.findMany({
         where,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        orderBy,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         select: adminUserSelect,
@@ -590,24 +619,7 @@ export class PrismaAdminRepository implements AdminRepository {
           : query.emailVerified === false
             ? { emailVerifiedAt: null }
             : {},
-        query.audience === "inactive"
-          ? {
-              AND: [
-                {
-                  OR: [
-                    { lastSeenAt: null },
-                    { lastSeenAt: { lt: cutoff } },
-                  ],
-                },
-                {
-                  OR: [
-                    { lastLoginAt: null },
-                    { lastLoginAt: { lt: cutoff } },
-                  ],
-                },
-              ],
-            }
-          : {},
+        query.audience === "inactive" ? stalePresenceWhere(cutoff) : {},
       ],
     };
 
@@ -4400,4 +4412,31 @@ function csvCell(value: string | null | undefined): string {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
+}
+
+function activityFilterWhere(
+  activity: AdminUserQuery["activity"],
+  nowMs: number,
+): Prisma.UserWhereInput {
+  if (activity === "today") {
+    return recentPresenceWhere(new Date(nowMs - 24 * 60 * 60 * 1000));
+  }
+  if (activity === "week") {
+    return recentPresenceWhere(new Date(nowMs - 7 * 24 * 60 * 60 * 1000));
+  }
+  if (activity === "quiet") {
+    return {
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      ...stalePresenceWhere(new Date(nowMs - 14 * 24 * 60 * 60 * 1000)),
+    };
+  }
+  if (activity === "dormant") {
+    return {
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      ...stalePresenceWhere(new Date(nowMs - 30 * 24 * 60 * 60 * 1000)),
+    };
+  }
+  return {};
 }

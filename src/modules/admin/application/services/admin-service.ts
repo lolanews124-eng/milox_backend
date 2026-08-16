@@ -83,6 +83,7 @@ export class AdminService {
     online?: boolean | undefined;
     reported?: boolean | undefined;
     emailVerified?: boolean | undefined;
+    activity?: "online" | "today" | "week" | "quiet" | "dormant" | undefined;
     page: number;
     pageSize: number;
   }): Promise<object> {
@@ -95,6 +96,7 @@ export class AdminService {
       ...(options.online ? { online: true } : {}),
       ...(options.reported ? { reported: true } : {}),
       ...(options.emailVerified !== undefined ? { emailVerified: options.emailVerified } : {}),
+      ...(options.activity ? { activity: options.activity } : {}),
     });
     return {
       items: result.items.map(presentAdminUser),

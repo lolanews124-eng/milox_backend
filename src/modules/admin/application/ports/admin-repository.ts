@@ -56,6 +56,7 @@ export interface AdminUserQuery extends OffsetPage {
   online?: boolean;
   reported?: boolean;
   emailVerified?: boolean;
+  activity?: "online" | "today" | "week" | "quiet" | "dormant";
 }
 
 export interface AdminUserEmailExportQuery {

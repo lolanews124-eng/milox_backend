@@ -9,6 +9,8 @@ export interface AdminUsersStatsRecord {
   totalUsers: number;
   verifiedUsers: number;
   onlineNow: number;
+  activeToday: number;
+  quiet14d: number;
   newUsersToday: number;
   maleUsers: number;
   femaleUsers: number;

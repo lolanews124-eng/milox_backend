@@ -18,6 +18,26 @@ export function consumerPlatformUserWhere(): Prisma.UserWhereInput {
   };
 }
 
+/** Neither last-seen nor last-login is after `cutoff` (includes never seen). */
+export function stalePresenceWhere(cutoff: Date): Prisma.UserWhereInput {
+  return {
+    AND: [
+      { OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: cutoff } }] },
+      { OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: cutoff } }] },
+    ],
+  };
+}
+
+/** Last seen or last login at/after `since`. */
+export function recentPresenceWhere(since: Date): Prisma.UserWhereInput {
+  return {
+    OR: [
+      { lastSeenAt: { gte: since } },
+      { lastLoginAt: { gte: since } },
+    ],
+  };
+}
+
 /** Every human account that should receive Milox Official broadcasts. */
 export function activeBroadcastRecipientWhere(): Prisma.UserWhereInput {
   return {
