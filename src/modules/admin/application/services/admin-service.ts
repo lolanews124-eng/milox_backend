@@ -105,6 +105,36 @@ export class AdminService {
     };
   }
 
+  async exportUserEmails(options: {
+    actorId: string;
+    audience: "active" | "inactive";
+    inactiveDays: number;
+    emailVerified?: boolean | undefined;
+  }): Promise<{
+    csv: string;
+    count: number;
+    truncated: boolean;
+    filename: string;
+  }> {
+    const result = await this.repository.exportUserEmails({
+      actorId: options.actorId,
+      audience: options.audience,
+      inactiveDays: options.inactiveDays,
+      ...(options.emailVerified !== undefined
+        ? { emailVerified: options.emailVerified }
+        : {}),
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const audiencePart =
+      options.audience === "inactive"
+        ? `inactive-${options.inactiveDays}d`
+        : "active";
+    return {
+      ...result,
+      filename: `milox-emails-${audiencePart}-${stamp}.csv`,
+    };
+  }
+
   async getUser(userId: string): Promise<object> {
     const user = await this.repository.getUserById(userId);
     if (!user) {

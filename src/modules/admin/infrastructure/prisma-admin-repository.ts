@@ -43,6 +43,8 @@ import type {
   AdminStoryQuery,
   AdminReportQuery,
   AdminRepository,
+  AdminUserEmailExportQuery,
+  AdminUserEmailExportResult,
   AdminUserQuery,
   OffsetPage,
   ChangeStaffRoleData,
@@ -569,6 +571,132 @@ export class PrismaAdminRepository implements AdminRepository {
       this.database.user.count({ where }),
     ]);
     return { items, total };
+  }
+
+  async exportUserEmails(
+    query: AdminUserEmailExportQuery,
+  ): Promise<AdminUserEmailExportResult> {
+    const batchSize = 1_000;
+    const maxRows = 50_000;
+    const cutoff = new Date(
+      Date.now() - query.inactiveDays * 24 * 60 * 60 * 1_000,
+    );
+    const where: Prisma.UserWhereInput = {
+      AND: [
+        consumerPlatformUserWhere(),
+        { status: UserStatus.ACTIVE, deletedAt: null },
+        query.emailVerified === true
+          ? { emailVerifiedAt: { not: null } }
+          : query.emailVerified === false
+            ? { emailVerifiedAt: null }
+            : {},
+        query.audience === "inactive"
+          ? {
+              AND: [
+                {
+                  OR: [
+                    { lastSeenAt: null },
+                    { lastSeenAt: { lt: cutoff } },
+                  ],
+                },
+                {
+                  OR: [
+                    { lastLoginAt: null },
+                    { lastLoginAt: { lt: cutoff } },
+                  ],
+                },
+              ],
+            }
+          : {},
+      ],
+    };
+
+    const header = [
+      "email",
+      "username",
+      "displayName",
+      "country",
+      "status",
+      "emailVerified",
+      "createdAt",
+      "lastSeenAt",
+      "lastLoginAt",
+      "postCount",
+    ];
+    const lines = [header.map(csvCell).join(",")];
+    let cursor: string | undefined;
+    let count = 0;
+    let truncated = false;
+
+    while (count < maxRows) {
+      const take = Math.min(batchSize, maxRows - count);
+      const rows = await this.database.user.findMany({
+        where,
+        orderBy: { id: "asc" },
+        take,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          displayName: true,
+          country: true,
+          status: true,
+          emailVerifiedAt: true,
+          createdAt: true,
+          lastSeenAt: true,
+          lastLoginAt: true,
+          postCount: true,
+        },
+      });
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        lines.push(
+          [
+            csvCell(row.email),
+            csvCell(row.username),
+            csvCell(row.displayName),
+            csvCell(row.country),
+            csvCell(row.status),
+            csvCell(row.emailVerifiedAt ? "true" : "false"),
+            csvCell(row.createdAt.toISOString()),
+            csvCell(row.lastSeenAt?.toISOString() ?? ""),
+            csvCell(row.lastLoginAt?.toISOString() ?? ""),
+            csvCell(String(row.postCount)),
+          ].join(","),
+        );
+      }
+      count += rows.length;
+      cursor = rows[rows.length - 1]?.id;
+      if (rows.length < take) break;
+      if (count >= maxRows) {
+        truncated = true;
+        break;
+      }
+    }
+
+    await this.database.auditLog.create({
+      data: {
+        actorType: AuditActorType.ADMIN,
+        actorUserId: query.actorId,
+        action: "admin.users.emails_exported",
+        resourceType: "user",
+        resourceId: query.actorId,
+        metadata: {
+          count,
+          audience: query.audience,
+          inactiveDays: query.audience === "inactive" ? query.inactiveDays : null,
+          emailVerified: query.emailVerified ?? null,
+          truncated,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      csv: `\uFEFF${lines.join("\n")}\n`,
+      count,
+      truncated,
+    };
   }
 
   async getUserById(userId: string): Promise<AdminUserDetailRecord | null> {
@@ -4264,4 +4392,12 @@ function summarizeEmailPayload(payload: unknown): Record<string, unknown> {
     summary.userId = record.userId;
   }
   return summary;
+}
+
+function csvCell(value: string | null | undefined): string {
+  const text = value ?? "";
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
 }

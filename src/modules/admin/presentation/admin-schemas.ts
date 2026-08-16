@@ -37,6 +37,15 @@ export const adminUserQuerySchema = z.object({
   ...offsetPageSchema,
 });
 
+export const adminUserExportQuerySchema = z.object({
+  audience: z.enum(["active", "inactive"]).default("inactive"),
+  inactiveDays: z.coerce.number().int().min(1).max(365).default(14),
+  emailVerified: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+
 export const adminReportQuerySchema = z.object({
   status: z.enum(ReportStatus).optional(),
   ...offsetPageSchema,

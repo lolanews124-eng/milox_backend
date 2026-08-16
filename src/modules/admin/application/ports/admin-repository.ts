@@ -58,6 +58,19 @@ export interface AdminUserQuery extends OffsetPage {
   emailVerified?: boolean;
 }
 
+export interface AdminUserEmailExportQuery {
+  actorId: string;
+  audience: "active" | "inactive";
+  inactiveDays: number;
+  emailVerified?: boolean;
+}
+
+export interface AdminUserEmailExportResult {
+  csv: string;
+  count: number;
+  truncated: boolean;
+}
+
 export interface AdminReportQuery extends OffsetPage {
   status?: ReportStatus;
 }
@@ -431,6 +444,9 @@ export interface AdminRepository {
   usersStats(now: Date): Promise<AdminUsersStatsRecord>;
   verificationStats(): Promise<AdminVerificationStatsRecord>;
   listUsers(query: AdminUserQuery): Promise<AdminPage<AdminUserRecord>>;
+  exportUserEmails(
+    query: AdminUserEmailExportQuery,
+  ): Promise<AdminUserEmailExportResult>;
   getUserById(userId: string): Promise<AdminUserDetailRecord | null>;
   listUserModerationHistory(
     userId: string,

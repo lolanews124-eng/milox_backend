@@ -150,6 +150,11 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     cors({
       origin: createCorsOriginChecker(config),
       credentials: true,
+      exposedHeaders: [
+        "Content-Disposition",
+        "X-Export-Count",
+        "X-Export-Truncated",
+      ],
     }),
   );
   app.use(express.json({ limit: "1mb" }));

@@ -45,6 +45,7 @@ import {
   adminSubscriptionQuerySchema,
   adminUserIdParamSchema,
   adminUserQuerySchema,
+  adminUserExportQuerySchema,
   broadcastOfficialMessageSchema,
   officialBroadcastJobIdParamSchema,
   changeStaffRoleSchema,
@@ -105,6 +106,29 @@ export class AdminController {
     const query = adminUserQuerySchema.parse(request.query);
     const data = await this.admin.listUsers(query);
     response.status(200).json(success(request, data));
+  };
+
+  exportUserEmails = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminUserExportQuerySchema.parse(request.query);
+    const data = await this.admin.exportUserEmails({
+      actorId: requireUser(request),
+      audience: query.audience,
+      inactiveDays: query.inactiveDays,
+      ...(query.emailVerified !== undefined
+        ? { emailVerified: query.emailVerified }
+        : {}),
+    });
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${data.filename}"`,
+    );
+    response.setHeader("X-Export-Count", String(data.count));
+    response.setHeader("X-Export-Truncated", data.truncated ? "true" : "false");
+    response.status(200).send(data.csv);
   };
 
   usersStats = async (

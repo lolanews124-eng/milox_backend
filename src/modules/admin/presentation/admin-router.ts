@@ -85,6 +85,12 @@ export function createAdminRouter(
     asyncHandler(controller.listUsers),
   );
   router.get(
+    "/users/export",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.exportUserEmails),
+  );
+  router.get(
     "/users/verification/stats",
     readLimit,
     adminOnly,
