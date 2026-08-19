@@ -1,4 +1,4 @@
-import type { MobileAppConfig, ReportStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
+import type { MobileAppConfig, PaypalSettings, ReportStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
 
 import type {
   AdminAuditLogRecord,
@@ -579,6 +579,47 @@ export interface AdminRepository {
   updateMobileAppConfig(
     data: UpdateMobileAppConfigData,
   ): Promise<MobileAppConfig>;
+  getPaypalSettings(): Promise<PaypalSettings>;
+  updatePaypalSettings(
+    data: UpdatePaypalSettingsData,
+  ): Promise<PaypalSettings>;
+  paypalIncomeReport(): Promise<AdminPaypalIncomeRecord>;
+}
+
+export interface UpdatePaypalSettingsData {
+  actorId: string;
+  encryptionSecret: string;
+  clientId?: string | undefined;
+  clientSecret?: string | undefined;
+  mode?: "sandbox" | "live" | undefined;
+  webhookId?: string | undefined;
+  clearSecret?: boolean | undefined;
+}
+
+export interface AdminPaypalIncomeRecord {
+  allTime: Array<{ currency: string; amountMinor: number; count: number }>;
+  today: Array<{ currency: string; amountMinor: number; count: number }>;
+  last7Days: Array<{ currency: string; amountMinor: number; count: number }>;
+  last30Days: Array<{ currency: string; amountMinor: number; count: number }>;
+  byKind: Array<{
+    kind: string;
+    currency: string;
+    amountMinor: number;
+    count: number;
+  }>;
+  series: Array<{
+    date: string;
+    totals: Array<{ currency: string; amountMinor: number; count: number }>;
+  }>;
+  recent: Array<{
+    id: string;
+    kind: string;
+    username: string;
+    amountMinor: number;
+    currency: string;
+    description: string;
+    paidAt: string;
+  }>;
 }
 
 export interface UpdateMobileAppConfigData {

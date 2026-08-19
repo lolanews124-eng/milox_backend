@@ -9,6 +9,7 @@ import { PrismaAdminRepository } from "./infrastructure/prisma-admin-repository.
 import { VerifiedBadgeService } from "../premium/application/verified-badge-service.js";
 import { AdminController } from "./presentation/admin-controller.js";
 import { createAdminRouter } from "./presentation/admin-router.js";
+import type { PaypalClient } from "../payments/infrastructure/paypal-client.js";
 
 import type { OfficialChatService } from "../official-chat/application/official-chat-service.js";
 
@@ -22,9 +23,14 @@ export function createAdminModule(
   database: PrismaClient,
   authenticate: RequestHandler,
   officialChat?: OfficialChatService,
+  paypalClient?: PaypalClient,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
-  const service = new AdminService(repository, config.UPLOAD_ROOT);
+  const service = new AdminService(
+    repository,
+    config.UPLOAD_ROOT,
+    paypalClient ? { config, client: paypalClient } : undefined,
+  );
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),
     config,

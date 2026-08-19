@@ -409,6 +409,30 @@ export function createAdminRouter(
     asyncHandler(controller.updateMobileAppConfig),
   );
   router.get(
+    "/paypal",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.getPaypalSettings),
+  );
+  router.patch(
+    "/paypal",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.updatePaypalSettings),
+  );
+  router.post(
+    "/paypal/test",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.testPaypalSettings),
+  );
+  router.get(
+    "/income",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.paypalIncomeReport),
+  );
+  router.get(
     "/cms-pages",
     readLimit,
     adminOnly,

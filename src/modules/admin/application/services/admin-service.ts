@@ -53,6 +53,9 @@ import {
   presentAdminPointPurchaseRate,
 } from "../admin-view.js";
 import { presentMobileAppConfig } from "../../../app-release/mobile-app-config.js";
+import type { AppConfig } from "../../../../config/env.js";
+import { presentPaypalSettings } from "../../../payments/application/paypal-settings.js";
+import type { PaypalClient } from "../../../payments/infrastructure/paypal-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 
@@ -60,6 +63,10 @@ export class AdminService {
   constructor(
     private readonly repository: AdminRepository,
     private readonly uploadRoot: string,
+    private readonly paypal?: {
+      config: AppConfig;
+      client: PaypalClient;
+    },
   ) {}
 
   dashboard(): ReturnType<AdminRepository["dashboard"]> {
@@ -985,6 +992,59 @@ export class AdminService {
       }
       throw error;
     }
+  }
+
+  private requirePaypal() {
+    if (!this.paypal) {
+      throw new AppError("PAYPAL_NOT_CONFIGURED", "PayPal is not available", 503);
+    }
+    return this.paypal;
+  }
+
+  async getPaypalSettings(): Promise<object> {
+    const paypal = this.requirePaypal();
+    const [row, runtime] = await Promise.all([
+      this.repository.getPaypalSettings(),
+      paypal.client.runtime(),
+    ]);
+    return presentPaypalSettings(row, paypal.config, runtime);
+  }
+
+  async updatePaypalSettings(
+    actorId: string,
+    input: {
+      clientId?: string | undefined;
+      clientSecret?: string | undefined;
+      mode?: "sandbox" | "live" | undefined;
+      webhookId?: string | undefined;
+      clearSecret?: boolean | undefined;
+    },
+  ): Promise<object> {
+    const paypal = this.requirePaypal();
+    try {
+      const row = await this.repository.updatePaypalSettings({
+        actorId,
+        encryptionSecret: paypal.config.JWT_ACCESS_SECRET,
+        ...input,
+      });
+      paypal.client.invalidate();
+      const runtime = await paypal.client.runtime();
+      return presentPaypalSettings(row, paypal.config, runtime);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async testPaypalSettings(): Promise<object> {
+    const paypal = this.requirePaypal();
+    return paypal.client.verifyCredentials();
+  }
+
+  paypalIncomeReport(): Promise<object> {
+    return this.repository.paypalIncomeReport();
   }
 
   async listCmsPages(options: { page: number; pageSize: number }): Promise<object> {

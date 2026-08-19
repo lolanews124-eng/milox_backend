@@ -21,6 +21,9 @@ import { createMediaModule } from "./modules/media/index.js";
 import { createModerationModule } from "./modules/moderation/index.js";
 import { createNotificationModule } from "./modules/notifications/index.js";
 import { createPushModule } from "./modules/push/index.js";
+import { createPaymentsModule } from "./modules/payments/index.js";
+import { PaypalClient } from "./modules/payments/infrastructure/paypal-client.js";
+import { resolvePaypalCredentials } from "./modules/payments/application/paypal-settings.js";
 import { createPostModule } from "./modules/posts/index.js";
 import { createRewardsModule } from "./modules/rewards/index.js";
 import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
@@ -60,11 +63,21 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     auth.authenticate,
     rewardsRepository,
   );
+  const paypalClient = new PaypalClient(() =>
+    resolvePaypalCredentials(database, config),
+  );
+  const payments = createPaymentsModule(
+    config,
+    database,
+    auth.authenticate,
+    paypalClient,
+  );
   const admin = createAdminModule(
     config,
     database,
     auth.authenticate,
     dependencies.officialChat,
+    paypalClient,
   );
   const blog = createBlogModule(database);
   const posts = createPostModule(config, database, {
@@ -157,7 +170,17 @@ export function createApp(dependencies: AppDependencies = {}): Express {
       ],
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
+  app.use(
+    express.json({
+      limit: "1mb",
+      verify: (request, _response, buffer) => {
+        if (request.url?.includes("/payments/paypal/webhook")) {
+          (request as typeof request & { rawBody?: string }).rawBody =
+            buffer.toString("utf8");
+        }
+      },
+    }),
+  );
   app.use(cookieParser());
   app.use(requestId);
 
@@ -189,6 +212,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/feed", feed.router);
   app.use("/api/v1/ads", ads.router);
   app.use("/api/v1/premium", premium.router);
+  app.use("/api/v1/payments", payments.router);
   app.use("/api/v1/posts", comments.postCommentsRouter);
   app.use("/api/v1/posts", posts.router);
   app.use("/api/v1/hashtags", posts.hashtags);

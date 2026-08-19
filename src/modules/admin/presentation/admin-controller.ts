@@ -55,6 +55,7 @@ import {
   adminAdPlacementParamSchema,
   updateAdPlacementConfigSchema,
   updateMobileAppConfigSchema,
+  updatePaypalSettingsSchema,
   createCmsPageSchema,
   createInterestTagSchema,
   createPremiumPlanSchema,
@@ -526,6 +527,39 @@ export class AdminController {
       requireUser(request),
       input,
     );
+    response.status(200).json(success(request, data));
+  };
+
+  getPaypalSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.getPaypalSettings();
+    response.status(200).json(success(request, data));
+  };
+
+  updatePaypalSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updatePaypalSettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.updatePaypalSettings(requireUser(request), input);
+    response.status(200).json(success(request, data));
+  };
+
+  testPaypalSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.testPaypalSettings();
+    response.status(200).json(success(request, data));
+  };
+
+  paypalIncomeReport = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.paypalIncomeReport();
     response.status(200).json(success(request, data));
   };
 

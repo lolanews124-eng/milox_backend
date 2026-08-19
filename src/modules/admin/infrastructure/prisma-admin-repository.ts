@@ -26,6 +26,11 @@ import {
   ensureMobileAppConfig,
   MOBILE_APP_CONFIG_ID,
 } from "../../app-release/mobile-app-config.js";
+import {
+  ensurePaypalSettings,
+  paypalIncomeReport,
+  savePaypalSettings,
+} from "../../payments/application/paypal-settings.js";
 import { consumerPlatformUserWhere, recentPresenceWhere, stalePresenceWhere } from "../../../shared/user-visibility.js";
 import {
   creditWallet,
@@ -87,6 +92,8 @@ import type {
   UpdateMediaData,
   AdminMediaUpdateResult,
   UpdateMobileAppConfigData,
+  UpdatePaypalSettingsData,
+  AdminPaypalIncomeRecord,
 } from "../application/ports/admin-repository.js";
 import {
   AdminHierarchyError,
@@ -2193,6 +2200,41 @@ export class PrismaAdminRepository implements AdminRepository {
       );
       return updated;
     });
+  }
+
+  getPaypalSettings() {
+    return ensurePaypalSettings(this.database);
+  }
+
+  updatePaypalSettings(data: UpdatePaypalSettingsData) {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const updated = await savePaypalSettings(transaction, data.encryptionSecret, {
+        clientId: data.clientId,
+        clientSecret: data.clientSecret,
+        mode: data.mode,
+        webhookId: data.webhookId,
+        clearSecret: data.clearSecret,
+      });
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.paypal_settings.updated",
+        "paypal_settings",
+        updated.id,
+        {
+          mode: updated.mode,
+          hasClientId: Boolean(updated.clientId),
+          hasSecret: Boolean(updated.clientSecret),
+          hasWebhookId: Boolean(updated.webhookId),
+        },
+      );
+      return updated;
+    });
+  }
+
+  paypalIncomeReport(): Promise<AdminPaypalIncomeRecord> {
+    return paypalIncomeReport(this.database);
   }
 
   async listCmsPages(

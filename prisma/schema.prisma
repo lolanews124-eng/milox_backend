@@ -151,6 +151,7 @@ enum WalletTransactionType {
   INTEREST_SEND
   ADMIN_ADJUST
   VERIFIED_BADGE
+  POINT_PURCHASE
 }
 
 enum VerifiedBadgeOrderStatus {
@@ -163,6 +164,20 @@ enum VerifiedBadgeOrderStatus {
 enum VerifiedBadgePaymentMethod {
   POINTS
   MANUAL
+  PAYPAL
+}
+
+enum PaypalCheckoutKind {
+  POINT_PACK
+  PREMIUM
+  VERIFIED_BADGE
+}
+
+enum PaypalCheckoutStatus {
+  CREATED
+  COMPLETED
+  FAILED
+  CANCELLED
 }
 
 enum ReferralStatus {
@@ -342,6 +357,7 @@ model User {
   subscriptions       UserSubscription[]
   verifiedBadgeOrders VerifiedBadgeOrder[] @relation("VerifiedBadgeBuyer")
   verifiedBadgeOrdersProcessed VerifiedBadgeOrder[] @relation("VerifiedBadgeOrderProcessor")
+  paypalCheckouts     PaypalCheckout[]
   moderationActions   ModerationAction[]       @relation("ModerationTargetUser")
   moderationActionsBy ModerationAction[]       @relation("ModerationActor")
   idempotencyRecords  IdempotencyRecord[]
@@ -1326,6 +1342,31 @@ model Referral {
   @@map("referrals")
 }
 
+model PaypalCheckout {
+  id               String               @id @default(uuid()) @db.Uuid
+  userId           String               @db.Uuid
+  kind             PaypalCheckoutKind
+  status           PaypalCheckoutStatus @default(CREATED)
+  paypalOrderId    String               @unique @db.VarChar(64)
+  paypalCaptureId  String?              @unique @db.VarChar(64)
+  amountMinor      Int
+  currency         String               @db.Char(3)
+  description      String               @db.VarChar(255)
+  packId           String?              @db.Uuid
+  planId           String?              @db.Uuid
+  planPriceId      String?              @db.Uuid
+  billingCycle     PremiumBillingCycle?
+  fulfilledAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("paypal_checkouts")
+}
+
 /// Admin-configured money → points packages for future in-app purchases.
 model PointPurchaseRate {
   id          String   @id @default(uuid()) @db.Uuid
@@ -1342,6 +1383,18 @@ model PointPurchaseRate {
 
   @@index([isActive, sortOrder])
   @@map("point_purchase_rates")
+}
+
+/// Super-admin PayPal keys. Overrides env when clientId + secret are set.
+model PaypalSettings {
+  id           String   @id @default("default") @db.VarChar(32)
+  clientId     String   @default("") @db.VarChar(255)
+  clientSecret String   @default("") @db.Text
+  mode         String   @default("live") @db.VarChar(16)
+  webhookId    String   @default("") @db.VarChar(255)
+  updatedAt    DateTime @updatedAt
+
+  @@map("paypal_settings")
 }
 
 /// Singleton row (id = default) controlling mobile force-update from admin.

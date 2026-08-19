@@ -329,6 +329,16 @@ export const updateAdPlacementConfigSchema = z
   })
   .strict();
 
+export const updatePaypalSettingsSchema = z
+  .object({
+    clientId: z.string().trim().max(255).optional(),
+    clientSecret: z.string().trim().max(2000).optional(),
+    mode: z.enum(["sandbox", "live"]).optional(),
+    webhookId: z.string().trim().max(255).optional(),
+    clearSecret: z.boolean().optional(),
+  })
+  .strict();
+
 export const updateMobileAppConfigSchema = z
   .object({
     latestVersion: z.string().trim().min(1).max(32).optional(),

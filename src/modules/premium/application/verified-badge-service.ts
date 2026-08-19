@@ -373,6 +373,50 @@ export class VerifiedBadgeService {
     return presentOrder(updated);
   }
 
+  async completePaypalPurchase(
+    input: {
+      userId: string;
+      amountCents: number;
+      currency: string;
+      durationDays: number;
+      checkoutId: string;
+    },
+    database: Prisma.TransactionClient | PrismaClient = this.database,
+  ) {
+    const note = `paypal:${input.checkoutId}`;
+    const existing = await database.verifiedBadgeOrder.findFirst({
+      where: { note },
+    });
+    if (existing?.status === VerifiedBadgeOrderStatus.COMPLETED) {
+      return existing;
+    }
+    const run = async (tx: Prisma.TransactionClient) => {
+      const expiresAt = this.computeExpiry(
+        input.durationDays,
+        await this.currentExpiry(tx, input.userId),
+      );
+      await this.grantBadge(tx, input.userId, expiresAt);
+      return tx.verifiedBadgeOrder.create({
+        data: {
+          userId: input.userId,
+          status: VerifiedBadgeOrderStatus.COMPLETED,
+          paymentMethod: VerifiedBadgePaymentMethod.PAYPAL,
+          amountCents: input.amountCents,
+          pointsSpent: 0,
+          currency: input.currency,
+          durationDays: input.durationDays,
+          badgeExpiresAt: expiresAt,
+          processedAt: new Date(),
+          note,
+        },
+      });
+    };
+    if (typeof (database as PrismaClient).$transaction === "function") {
+      return (database as PrismaClient).$transaction(run);
+    }
+    return run(database as Prisma.TransactionClient);
+  }
+
   private async completePointsPurchase(
     userId: string,
     product: Awaited<ReturnType<VerifiedBadgeService["getOrCreateProduct"]>>,
