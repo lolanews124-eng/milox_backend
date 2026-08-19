@@ -105,7 +105,13 @@ export async function savePaypalSettings(
       ...(input.clientId !== undefined ? { clientId: input.clientId.trim() } : {}),
       ...secretUpdate,
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
-      ...(input.webhookId !== undefined ? { webhookId: input.webhookId.trim() } : {}),
+      ...(input.webhookId !== undefined
+        ? {
+            webhookId: input.webhookId.trim().startsWith("http")
+              ? ""
+              : input.webhookId.trim(),
+          }
+        : {}),
     },
   });
 }

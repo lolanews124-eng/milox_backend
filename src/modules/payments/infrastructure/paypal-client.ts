@@ -191,12 +191,19 @@ export class PaypalClient {
     const json = (await response.json()) as {
       access_token?: string;
       expires_in?: number;
+      error?: string;
       error_description?: string;
     };
     if (!response.ok || !json.access_token) {
+      const description = json.error_description ?? "";
+      const authFailed =
+        json.error === "invalid_client" ||
+        description.toLowerCase().includes("client authentication failed");
       throw new AppError(
         "PAYPAL_ERROR",
-        json.error_description ?? "Could not authenticate with PayPal",
+        authFailed
+          ? "PayPal rejected these keys. Open Developer Dashboard → Live (not Sandbox) → Milox → copy Client ID and Secret again, then Save."
+          : description || "Could not authenticate with PayPal",
         502,
       );
     }
