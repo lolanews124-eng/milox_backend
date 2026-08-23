@@ -59,12 +59,24 @@ export type LiveCallView = {
   connectedSeconds: number;
 };
 
+export type CallHistoryItemView = {
+  id: string;
+  conversationId: string;
+  peerName: string;
+  outgoing: boolean;
+  missed: boolean;
+  billedMinutes: number;
+  ringingAt: string;
+  endedAt: string | null;
+};
+
 export type IncomingCallPush = {
   callId: string;
   conversationId: string;
   callerId: string;
   callerUsername: string;
   callerDisplayName: string | null;
+  callerPhotoUrl: string | null;
   pointsPerMinute: number;
 };
 
@@ -246,7 +258,11 @@ export class CallService {
 
     const caller = await this.database.user.findUnique({
       where: { id: callerId },
-      select: { username: true, displayName: true },
+      select: {
+        username: true,
+        displayName: true,
+        profilePhotoMediaId: true,
+      },
     });
     if (!caller) {
       throw new AppError("NOT_FOUND", "User not found", 404);
@@ -309,12 +325,17 @@ export class CallService {
       where: { id: session.id },
     });
     const view = this.present(billed, rate, callerId);
+    const callerPhotoUrl = mediaUrl(
+      caller.profilePhotoMediaId,
+      this.config,
+    );
     this.emitter?.emitToUser(peerId, "call:invite", {
       call: view,
       caller: {
         id: callerId,
         username: caller.username,
         displayName: caller.displayName,
+        profilePhotoUrl: callerPhotoUrl,
       },
     });
     this.emitter?.onIncomingCall?.(peerId, {
@@ -323,6 +344,7 @@ export class CallService {
       callerId,
       callerUsername: caller.username,
       callerDisplayName: caller.displayName,
+      callerPhotoUrl,
       pointsPerMinute: rate,
     });
 
@@ -887,24 +909,33 @@ export class CallService {
     const missed =
       neverStarted &&
       (reason === CallEndReason.TIMEOUT || reason === CallEndReason.REJECT);
+    // Chat shows a centered system log (times). Points stay in metadata only.
     let body: string;
-    if (ended.pointsCharged > 0) {
-      if (missed) {
-        body = `Missed video call · ${ended.pointsCharged} pts`;
-      } else if (neverStarted) {
-        body = `Cancelled video call · ${ended.pointsCharged} pts`;
-      } else {
-        body = `Video call · ${ended.billedMinutes} min · ${ended.pointsCharged} pts`;
-      }
-    } else if (missed) {
+    if (missed) {
       body = "Missed video call";
     } else if (neverStarted) {
       body = "Cancelled video call";
+    } else if (ended.billedMinutes > 0) {
+      body = `Video call · ${ended.billedMinutes} min`;
     } else {
       body = "Video call ended";
     }
 
     await this.database.$transaction(async (tx) => {
+      // One system log per call — skip if already written (double end / race).
+      const existing = await tx.message.findFirst({
+        where: {
+          conversationId: ended.conversationId,
+          type: MessageType.SYSTEM,
+          metadata: {
+            path: ["callId"],
+            equals: ended.id,
+          },
+        },
+        select: { id: true },
+      });
+      if (existing) return;
+
       const created = await tx.message.create({
         data: {
           conversationId: ended.conversationId,
@@ -917,6 +948,9 @@ export class CallService {
             endReason: reason,
             billedMinutes: ended.billedMinutes,
             pointsCharged: ended.pointsCharged,
+            ringingAt: ended.ringingAt.toISOString(),
+            startedAt: ended.startedAt?.toISOString() ?? null,
+            endedAt: ended.endedAt?.toISOString() ?? new Date().toISOString(),
           },
         },
         select: { id: true, createdAt: true },
@@ -947,6 +981,53 @@ export class CallService {
         ],
       });
     });
+  }
+
+  async listCallHistory(
+    userId: string,
+  ): Promise<{ items: CallHistoryItemView[] }> {
+    const sessions = await this.database.callSession.findMany({
+      where: {
+        status: CallSessionStatus.ENDED,
+        OR: [{ callerId: userId }, { calleeId: userId }],
+      },
+      orderBy: { ringingAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        conversationId: true,
+        callerId: true,
+        calleeId: true,
+        endReason: true,
+        ringingAt: true,
+        startedAt: true,
+        endedAt: true,
+        billedMinutes: true,
+        caller: { select: { username: true, displayName: true } },
+        callee: { select: { username: true, displayName: true } },
+      },
+    });
+
+    return {
+      items: sessions.map((session) => {
+        const outgoing = session.callerId === userId;
+        const peer = outgoing ? session.callee : session.caller;
+        const missed =
+          session.startedAt == null &&
+          (session.endReason === CallEndReason.TIMEOUT ||
+            session.endReason === CallEndReason.REJECT);
+        return {
+          id: session.id,
+          conversationId: session.conversationId,
+          peerName: peer.displayName?.trim() || peer.username || "Milox match",
+          outgoing,
+          missed,
+          billedMinutes: session.billedMinutes,
+          ringingAt: session.ringingAt.toISOString(),
+          endedAt: session.endedAt?.toISOString() ?? null,
+        };
+      }),
+    };
   }
 
   async getCallForUser(
@@ -980,4 +1061,12 @@ export class CallService {
       iceServers: buildIceServers(this.config, forUserId),
     };
   }
+}
+
+function mediaUrl(
+  mediaId: string | null | undefined,
+  config: AppConfig,
+): string | null {
+  if (!mediaId) return null;
+  return `${config.API_PUBLIC_URL.replace(/\/$/, "")}/api/v1/media/${mediaId}`;
 }

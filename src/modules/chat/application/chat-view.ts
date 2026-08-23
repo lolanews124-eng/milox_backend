@@ -111,7 +111,28 @@ function normalizeMessageMetadata(metadata: unknown): object | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return null;
   }
-  const buttons = (metadata as { buttons?: unknown }).buttons;
+  const raw = metadata as Record<string, unknown>;
+
+  // Preserve video-call system-log fields (must not be stripped — otherwise
+  // the app falls back to a normal left/right chat bubble).
+  if (raw.kind === "VIDEO_CALL") {
+    return {
+      kind: "VIDEO_CALL",
+      ...(typeof raw.callId === "string" ? { callId: raw.callId } : {}),
+      ...(typeof raw.endReason === "string" ? { endReason: raw.endReason } : {}),
+      ...(typeof raw.billedMinutes === "number"
+        ? { billedMinutes: raw.billedMinutes }
+        : {}),
+      ...(typeof raw.pointsCharged === "number"
+        ? { pointsCharged: raw.pointsCharged }
+        : {}),
+      ...(typeof raw.ringingAt === "string" ? { ringingAt: raw.ringingAt } : {}),
+      ...(typeof raw.startedAt === "string" ? { startedAt: raw.startedAt } : {}),
+      ...(typeof raw.endedAt === "string" ? { endedAt: raw.endedAt } : {}),
+    };
+  }
+
+  const buttons = raw.buttons;
   if (!Array.isArray(buttons) || buttons.length === 0) return null;
   const normalized = buttons
     .map((entry) => {

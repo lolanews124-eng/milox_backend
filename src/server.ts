@@ -100,6 +100,8 @@ async function bootstrap(): Promise<void> {
       conversationId: payload.conversationId,
       callerId: payload.callerId,
       actorUsername: payload.callerUsername,
+      callerDisplayName: payload.callerDisplayName ?? "",
+      callerPhotoUrl: payload.callerPhotoUrl ?? "",
       title: "Incoming video call",
       body: `${payload.callerDisplayName ?? payload.callerUsername} is calling`,
       pointsPerMinute: String(payload.pointsPerMinute),

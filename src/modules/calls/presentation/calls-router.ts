@@ -48,6 +48,14 @@ export function createCallsRouter(
   );
 
   router.get(
+    "/history",
+    asyncHandler(async (request, response) => {
+      const data = await calls.listCallHistory(requireUser(request));
+      response.status(200).json(ok(request, data));
+    }),
+  );
+
+  router.get(
     "/:callId",
     asyncHandler(async (request, response) => {
       const { callId } = callIdParamSchema.parse(request.params);
