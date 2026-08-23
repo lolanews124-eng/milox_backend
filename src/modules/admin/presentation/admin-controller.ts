@@ -71,6 +71,8 @@ import {
   updatePointPurchaseRateSchema,
   updateEconomyConfigSchema,
   adminCallIdParamSchema,
+  adminCallStatsQuerySchema,
+  adminCallHistoryQuerySchema,
   updateVerifiedBadgeProductSchema,
   adminVerifiedBadgeOrderQuerySchema,
   adminVerifiedBadgeOrderIdParamSchema,
@@ -135,6 +137,33 @@ export class AdminController {
     response
       .status(200)
       .json(success(request, await this.admin.listLiveCalls()));
+  };
+
+  getCallStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminCallStatsQuerySchema.parse(request.query);
+    response
+      .status(200)
+      .json(success(request, await this.admin.getCallStats(query.days)));
+  };
+
+  listCallHistory = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminCallHistoryQuerySchema.parse(request.query);
+    response.status(200).json(
+      success(
+        request,
+        await this.admin.listCallHistory({
+          page: query.page,
+          pageSize: query.pageSize,
+          days: query.days,
+        }),
+      ),
+    );
   };
 
   forceEndCall = async (

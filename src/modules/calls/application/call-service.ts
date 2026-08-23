@@ -622,6 +622,271 @@ export class CallService {
     return this.present(ended, economy.videoCallPointsPerMinute, staffUserId);
   }
 
+  /**
+   * Admin date-wise call report: daily counts, billed minutes, points charged
+   * (caller spend = platform points revenue signal).
+   */
+  async getAdminCallStats(days: number): Promise<{
+    summary: {
+      callsToday: number;
+      callsLast7Days: number;
+      callsLast30Days: number;
+      callsInRange: number;
+      pointsChargedToday: number;
+      pointsChargedLast7Days: number;
+      pointsChargedLast30Days: number;
+      pointsChargedInRange: number;
+      billedMinutesToday: number;
+      billedMinutesLast7Days: number;
+      billedMinutesLast30Days: number;
+      billedMinutesInRange: number;
+      liveCalls: number;
+      completedCallsInRange: number;
+      missedOrRejectedInRange: number;
+    };
+    series: Array<{
+      date: string;
+      callCount: number;
+      completedCount: number;
+      pointsCharged: number;
+      billedMinutes: number;
+    }>;
+    endReasonBreakdown: Array<{ reason: string; count: number }>;
+    rangeDays: number;
+    rangeStart: string;
+    rangeEnd: string;
+  }> {
+    const clampedDays = Math.min(90, Math.max(1, Math.floor(days)));
+    const now = new Date();
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+    const monthStart = new Date(dayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
+    const rangeStart = new Date(
+      dayStart.getTime() - (clampedDays - 1) * 24 * 60 * 60 * 1000,
+    );
+    const rangeEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const [
+      liveCalls,
+      sessionsToday,
+      sessionsWeek,
+      sessionsMonth,
+      sessionsInRange,
+    ] = await Promise.all([
+      this.database.callSession.count({
+        where: {
+          status: {
+            in: [CallSessionStatus.RINGING, CallSessionStatus.ACTIVE],
+          },
+        },
+      }),
+      this.database.callSession.findMany({
+        where: { ringingAt: { gte: dayStart } },
+        select: {
+          billedMinutes: true,
+          pointsCharged: true,
+          status: true,
+          endReason: true,
+        },
+      }),
+      this.database.callSession.findMany({
+        where: { ringingAt: { gte: weekStart } },
+        select: { billedMinutes: true, pointsCharged: true },
+      }),
+      this.database.callSession.findMany({
+        where: { ringingAt: { gte: monthStart } },
+        select: { billedMinutes: true, pointsCharged: true },
+      }),
+      this.database.callSession.findMany({
+        where: { ringingAt: { gte: rangeStart, lt: rangeEnd } },
+        select: {
+          ringingAt: true,
+          billedMinutes: true,
+          pointsCharged: true,
+          status: true,
+          endReason: true,
+        },
+        orderBy: { ringingAt: "asc" },
+      }),
+    ]);
+
+    const sumPoints = (
+      rows: Array<{ pointsCharged: number }>,
+    ) => rows.reduce((total, row) => total + row.pointsCharged, 0);
+    const sumMinutes = (
+      rows: Array<{ billedMinutes: number }>,
+    ) => rows.reduce((total, row) => total + row.billedMinutes, 0);
+
+    const buckets = new Map<
+      string,
+      {
+        callCount: number;
+        completedCount: number;
+        pointsCharged: number;
+        billedMinutes: number;
+      }
+    >();
+    for (let index = 0; index < clampedDays; index += 1) {
+      const day = new Date(rangeStart);
+      day.setUTCDate(rangeStart.getUTCDate() + index);
+      buckets.set(day.toISOString().slice(0, 10), {
+        callCount: 0,
+        completedCount: 0,
+        pointsCharged: 0,
+        billedMinutes: 0,
+      });
+    }
+
+    const endReasonCounts = new Map<string, number>();
+    let completedCallsInRange = 0;
+    let missedOrRejectedInRange = 0;
+
+    for (const session of sessionsInRange) {
+      const key = session.ringingAt.toISOString().slice(0, 10);
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+      bucket.callCount += 1;
+      bucket.pointsCharged += session.pointsCharged;
+      bucket.billedMinutes += session.billedMinutes;
+      const completed =
+        session.status === CallSessionStatus.ENDED &&
+        session.billedMinutes > 0;
+      if (completed) {
+        bucket.completedCount += 1;
+        completedCallsInRange += 1;
+      }
+      if (
+        session.endReason === CallEndReason.REJECT ||
+        session.endReason === CallEndReason.TIMEOUT ||
+        session.endReason === CallEndReason.BUSY
+      ) {
+        missedOrRejectedInRange += 1;
+      }
+      if (session.endReason) {
+        endReasonCounts.set(
+          session.endReason,
+          (endReasonCounts.get(session.endReason) ?? 0) + 1,
+        );
+      }
+    }
+
+    return {
+      summary: {
+        callsToday: sessionsToday.length,
+        callsLast7Days: sessionsWeek.length,
+        callsLast30Days: sessionsMonth.length,
+        callsInRange: sessionsInRange.length,
+        pointsChargedToday: sumPoints(sessionsToday),
+        pointsChargedLast7Days: sumPoints(sessionsWeek),
+        pointsChargedLast30Days: sumPoints(sessionsMonth),
+        pointsChargedInRange: sumPoints(sessionsInRange),
+        billedMinutesToday: sumMinutes(sessionsToday),
+        billedMinutesLast7Days: sumMinutes(sessionsWeek),
+        billedMinutesLast30Days: sumMinutes(sessionsMonth),
+        billedMinutesInRange: sumMinutes(sessionsInRange),
+        liveCalls,
+        completedCallsInRange,
+        missedOrRejectedInRange,
+      },
+      series: [...buckets.entries()].map(([date, value]) => ({
+        date,
+        ...value,
+      })),
+      endReasonBreakdown: [...endReasonCounts.entries()]
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count),
+      rangeDays: clampedDays,
+      rangeStart: rangeStart.toISOString(),
+      rangeEnd: dayStart.toISOString(),
+    };
+  }
+
+  async listAdminCallHistory(input: {
+    page: number;
+    pageSize: number;
+    days: number;
+  }): Promise<{
+    items: Array<{
+      id: string;
+      conversationId: string;
+      callerId: string;
+      callerUsername: string;
+      calleeId: string;
+      calleeUsername: string;
+      status: string;
+      endReason: string | null;
+      ringingAt: string;
+      startedAt: string | null;
+      endedAt: string | null;
+      billedMinutes: number;
+      pointsCharged: number;
+    }>;
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, input.page);
+    const pageSize = Math.min(100, Math.max(1, input.pageSize));
+    const clampedDays = Math.min(90, Math.max(1, Math.floor(input.days)));
+    const now = new Date();
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const rangeStart = new Date(
+      dayStart.getTime() - (clampedDays - 1) * 24 * 60 * 60 * 1000,
+    );
+    const where = { ringingAt: { gte: rangeStart } };
+    const [total, sessions] = await Promise.all([
+      this.database.callSession.count({ where }),
+      this.database.callSession.findMany({
+        where,
+        select: {
+          id: true,
+          conversationId: true,
+          callerId: true,
+          calleeId: true,
+          status: true,
+          endReason: true,
+          ringingAt: true,
+          startedAt: true,
+          endedAt: true,
+          billedMinutes: true,
+          pointsCharged: true,
+          caller: { select: { username: true } },
+          callee: { select: { username: true } },
+        },
+        orderBy: { ringingAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      items: sessions.map((session) => ({
+        id: session.id,
+        conversationId: session.conversationId,
+        callerId: session.callerId,
+        callerUsername: session.caller.username,
+        calleeId: session.calleeId,
+        calleeUsername: session.callee.username,
+        status: session.status,
+        endReason: session.endReason,
+        ringingAt: session.ringingAt.toISOString(),
+        startedAt: session.startedAt?.toISOString() ?? null,
+        endedAt: session.endedAt?.toISOString() ?? null,
+        billedMinutes: session.billedMinutes,
+        pointsCharged: session.pointsCharged,
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
+  }
+
   async reportQuality(
     callId: string,
     userId: string,

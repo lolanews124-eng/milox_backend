@@ -31,6 +31,16 @@ export const adminCallIdParamSchema = z.object({
   callId: z.uuid(),
 });
 
+export const adminCallStatsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30),
+});
+
+export const adminCallHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  days: z.coerce.number().int().min(1).max(90).default(30),
+});
+
 export const adminUserIdParamSchema = z.object({
   userId: z.uuid(),
 });

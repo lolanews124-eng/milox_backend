@@ -336,6 +336,18 @@ export function createAdminRouter(
     adminOnly,
     asyncHandler(controller.listLiveCalls),
   );
+  router.get(
+    "/calls/stats",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.getCallStats),
+  );
+  router.get(
+    "/calls/history",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listCallHistory),
+  );
   router.post(
     "/calls/:callId/force-end",
     mutationLimit,

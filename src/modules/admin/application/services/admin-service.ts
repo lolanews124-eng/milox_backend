@@ -102,6 +102,18 @@ export class AdminService {
     return { items: await this.requireCalls().listLiveCalls() };
   }
 
+  async getCallStats(days: number): Promise<object> {
+    return this.requireCalls().getAdminCallStats(days);
+  }
+
+  async listCallHistory(input: {
+    page: number;
+    pageSize: number;
+    days: number;
+  }): Promise<object> {
+    return this.requireCalls().listAdminCallHistory(input);
+  }
+
   async forceEndCall(staffUserId: string, callId: string): Promise<object> {
     return this.requireCalls().forceEndCall(callId, staffUserId);
   }
