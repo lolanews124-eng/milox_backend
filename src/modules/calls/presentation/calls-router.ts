@@ -30,7 +30,7 @@ export function createCallsRouter(
   requireVerified: RequestHandler,
 ): Router {
   const router = Router();
-  const createLimit = createRateLimit(5, 10 * 60 * 1000, {
+  const createLimit = createRateLimit(40, 10 * 60 * 1000, {
     keyGenerator: authenticatedRateLimitKey,
   });
   const actionLimit = createRateLimit(60, 10 * 60 * 1000, {

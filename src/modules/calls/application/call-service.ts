@@ -225,7 +225,7 @@ export class CallService {
         ringingAt: { gte: peerSpamWindowStart },
       },
     });
-    if (recentToPeer >= 3) {
+    if (recentToPeer >= 20) {
       throw new AppError(
         "CALL_RATE_LIMITED",
         "Too many calls to this person. Wait a few minutes before trying again.",
@@ -247,7 +247,7 @@ export class CallService {
     });
     if (
       lastWithPeer?.endedAt &&
-      Date.now() - lastWithPeer.endedAt.getTime() < 30_000
+      Date.now() - lastWithPeer.endedAt.getTime() < 8_000
     ) {
       throw new AppError(
         "CALL_COOLDOWN",
