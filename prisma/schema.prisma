@@ -152,6 +152,23 @@ enum WalletTransactionType {
   ADMIN_ADJUST
   VERIFIED_BADGE
   POINT_PURCHASE
+  VIDEO_CALL
+}
+
+enum CallSessionStatus {
+  RINGING
+  ACTIVE
+  ENDED
+}
+
+enum CallEndReason {
+  HANGUP
+  REJECT
+  TIMEOUT
+  BUSY
+  INSUFFICIENT_POINTS
+  UNMATCH
+  ERROR
 }
 
 enum VerifiedBadgeOrderStatus {
@@ -367,6 +384,8 @@ model User {
   referralReceived    Referral?           @relation("ReferralReceived")
   pushDevices         PushDevice[]
   officialConversation Conversation? @relation("OfficialConversationRecipient")
+  callsInitiated      CallSession[]            @relation("CallCaller")
+  callsReceived       CallSession[]            @relation("CallCallee")
 
   @@index([status, createdAt])
   @@index([referredByUserId])
@@ -792,12 +811,61 @@ model Conversation {
   recipientUser User?                @relation("OfficialConversationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
   members       ConversationMember[]
   messages      Message[]
+  callSessions  CallSession[]
 
   @@unique([directUserLowId, directUserHighId])
   @@index([status, updatedAt])
   @@index([kind, recipientUserId])
   @@index([kind, directUserLowId, directUserHighId])
   @@map("conversations")
+}
+
+// -----------------------------------------------------------------------------
+// Video calls (MATCH chat WebRTC)
+// -----------------------------------------------------------------------------
+
+model CallSession {
+  id             String            @id @default(uuid()) @db.Uuid
+  conversationId String            @db.Uuid
+  matchId        String            @db.Uuid
+  callerId       String            @db.Uuid
+  calleeId       String            @db.Uuid
+  status         CallSessionStatus @default(RINGING)
+  endReason      CallEndReason?
+  ringingAt      DateTime          @default(now())
+  startedAt      DateTime?
+  endedAt        DateTime?
+  billedMinutes  Int               @default(0)
+  pointsCharged  Int               @default(0)
+  /// Client-reported ICE restart attempts (quality signal).
+  iceRestartCount Int              @default(0)
+  /// Client-reported poor-network / disconnect events.
+  poorNetworkEvents Int            @default(0)
+  /// Seconds spent in connected media state (client-reported).
+  connectedSeconds Int             @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  caller       User         @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  callee       User         @relation("CallCallee", fields: [calleeId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, status])
+  @@index([callerId, status])
+  @@index([calleeId, status])
+  @@index([status, ringingAt])
+  @@map("call_sessions")
+}
+
+/// Singleton row (id = default) for video-call economy and related app rates.
+model AppEconomyConfig {
+  id                         String   @id @default("default") @db.VarChar(32)
+  videoCallEnabled           Boolean  @default(true)
+  videoCallPointsPerMinute   Int      @default(40)
+  videoCallRingTimeoutSec    Int      @default(45)
+  updatedAt                  DateTime @updatedAt
+
+  @@map("app_economy_configs")
 }
 
 model ConversationMember {

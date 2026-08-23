@@ -83,6 +83,22 @@ const envSchema = z
       .default(500),
     /** Path to Firebase service account JSON for FCM push notifications. */
     GOOGLE_APPLICATION_CREDENTIALS: z.string().default(""),
+    /** Comma-separated STUN URLs (optional; Google STUN used when empty). */
+    STUN_URLS: z.string().default(""),
+    /** Comma-separated TURN URLs for coturn (e.g. turn:turn.example.com:3478). */
+    TURN_URLS: z.string().default(""),
+    /** coturn static-auth-secret for time-limited TURN REST credentials. */
+    TURN_SECRET: z.string().default(""),
+    /** Fallback static TURN username when TURN_SECRET is empty. */
+    TURN_USERNAME: z.string().default(""),
+    /** Fallback static TURN password when TURN_SECRET is empty. */
+    TURN_PASSWORD: z.string().default(""),
+    /** TURN credential lifetime in seconds (REST auth). */
+    TURN_CREDENTIAL_TTL_SEC: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(86_400),
   })
   .superRefine((environment, context) => {
     if (

@@ -429,13 +429,37 @@ export class PrismaUserRepository implements UserRepository {
       await transaction.notification.deleteMany({
         where: { actorId: userId },
       });
-      await transaction.match.updateMany({
+      const activeMatches = await transaction.match.findMany({
         where: {
           status: MatchStatus.ACTIVE,
           OR: [{ userAId: userId }, { userBId: userId }],
         },
-        data: { status: MatchStatus.UNMATCHED, unmatchedAt: now },
+        select: {
+          id: true,
+          conversation: { select: { id: true } },
+        },
       });
+      if (activeMatches.length > 0) {
+        await transaction.match.updateMany({
+          where: {
+            id: { in: activeMatches.map(({ id }) => id) },
+            status: MatchStatus.ACTIVE,
+          },
+          data: { status: MatchStatus.UNMATCHED, unmatchedAt: now },
+        });
+        await transaction.outboxEvent.createMany({
+          data: activeMatches.map((match) => ({
+            eventType: "chat.match.unmatched",
+            aggregateType: "match",
+            aggregateId: match.id,
+            payload: {
+              matchId: match.id,
+              conversationId: match.conversation?.id ?? null,
+              actorId: userId,
+            },
+          })),
+        });
+      }
       await transaction.conversation.updateMany({
         where: { members: { some: { userId } } },
         data: { status: ConversationStatus.CLOSED },

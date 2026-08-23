@@ -8,6 +8,8 @@ import { z } from "zod";
 import type { AppConfig } from "../../config/env.js";
 import type { ChatService } from "../../modules/chat/application/services/chat-service.js";
 import type { ChatIo } from "../../modules/chat/realtime/chat-gateway.js";
+import type { CallService } from "../../modules/calls/application/call-service.js";
+import { CallEndReason } from "@prisma/client";
 import { runSerializableTransaction } from "../../shared/prisma-serializable-transaction.js";
 
 const createdPayloadSchema = z.object({
@@ -39,6 +41,7 @@ export class ChatOutboxWorker {
     private readonly chat: ChatService,
     private readonly io: ChatIo,
     private readonly config: AppConfig,
+    private readonly calls?: CallService,
   ) {}
 
   async start(): Promise<void> {
@@ -138,6 +141,10 @@ export class ChatOutboxWorker {
     if (event.eventType === "chat.match.unmatched") {
       const payload = unmatchedPayloadSchema.parse(event.payload);
       if (payload.conversationId) {
+        await this.calls?.endCallsForConversation(
+          payload.conversationId,
+          CallEndReason.UNMATCH,
+        );
         const room = `conversation:${payload.conversationId}`;
         this.io.to(room).emit("match:ended", {
           matchId: payload.matchId,
@@ -162,9 +169,8 @@ export class ChatOutboxWorker {
   private async joinConversationMembers(
     conversationId: string,
   ): Promise<string[]> {
-    const memberIds = await this.chat.activeConversationMemberIds(
-      conversationId,
-    );
+    const memberIds =
+      await this.chat.activeConversationMemberIds(conversationId);
     const room = `conversation:${conversationId}`;
     await Promise.all(
       memberIds.map((memberId) =>
@@ -211,10 +217,7 @@ export class ChatOutboxWorker {
     });
   }
 
-  private async failOrRetry(
-    event: OutboxEvent,
-    error: unknown,
-  ): Promise<void> {
+  private async failOrRetry(event: OutboxEvent, error: unknown): Promise<void> {
     const exhausted = event.attempts >= 10;
     const message =
       error instanceof Error ? error.message.slice(0, 1_000) : "Unknown error";

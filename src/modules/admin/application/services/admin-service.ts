@@ -1,4 +1,9 @@
-import type { ReportStatus, UserRole, UserStatus } from "@prisma/client";
+import type {
+  PrismaClient,
+  ReportStatus,
+  UserRole,
+  UserStatus,
+} from "@prisma/client";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 
@@ -58,6 +63,12 @@ import { presentPaypalSettings } from "../../../payments/application/paypal-sett
 import type { PaypalClient } from "../../../payments/infrastructure/paypal-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
+import {
+  ensureAppEconomyConfig,
+  presentEconomyConfig,
+  updateAppEconomyConfig,
+} from "../../../economy/app-economy-config.js";
+import type { CallService } from "../../../calls/application/call-service.js";
 
 export class AdminService {
   constructor(
@@ -67,7 +78,47 @@ export class AdminService {
       config: AppConfig;
       client: PaypalClient;
     },
+    private readonly database?: PrismaClient,
+    private readonly calls?: CallService,
   ) {}
+
+  async economyConfig(): Promise<object> {
+    return presentEconomyConfig(
+      await ensureAppEconomyConfig(this.requireDatabase()),
+    );
+  }
+
+  async updateEconomyConfig(input: {
+    videoCallEnabled?: boolean;
+    videoCallPointsPerMinute?: number;
+    videoCallRingTimeoutSec?: number;
+  }): Promise<object> {
+    return presentEconomyConfig(
+      await updateAppEconomyConfig(this.requireDatabase(), input),
+    );
+  }
+
+  async listLiveCalls(): Promise<object> {
+    return { items: await this.requireCalls().listLiveCalls() };
+  }
+
+  async forceEndCall(staffUserId: string, callId: string): Promise<object> {
+    return this.requireCalls().forceEndCall(callId, staffUserId);
+  }
+
+  private requireDatabase(): PrismaClient {
+    if (!this.database) {
+      throw new AppError("INTERNAL_ERROR", "Database is unavailable", 500);
+    }
+    return this.database;
+  }
+
+  private requireCalls(): CallService {
+    if (!this.calls) {
+      throw new AppError("INTERNAL_ERROR", "Call service is unavailable", 500);
+    }
+    return this.calls;
+  }
 
   dashboard(): ReturnType<AdminRepository["dashboard"]> {
     return this.repository.dashboard(new Date());
@@ -102,7 +153,9 @@ export class AdminService {
       ...(options.verified !== undefined ? { verified: options.verified } : {}),
       ...(options.online ? { online: true } : {}),
       ...(options.reported ? { reported: true } : {}),
-      ...(options.emailVerified !== undefined ? { emailVerified: options.emailVerified } : {}),
+      ...(options.emailVerified !== undefined
+        ? { emailVerified: options.emailVerified }
+        : {}),
       ...(options.activity ? { activity: options.activity } : {}),
     });
     return {
@@ -194,11 +247,7 @@ export class AdminService {
         reason,
       });
       if (!user) {
-        throw new AppError(
-          "ADMIN_USER_NOT_FOUND",
-          "User not found",
-          404,
-        );
+        throw new AppError("ADMIN_USER_NOT_FOUND", "User not found", 404);
       }
       return presentAdminUser(user);
     } catch (error) {
@@ -264,11 +313,7 @@ export class AdminService {
         note: input.note?.trim() || null,
       });
       if (!report) {
-        throw new AppError(
-          "ADMIN_REPORT_NOT_FOUND",
-          "Report not found",
-          404,
-        );
+        throw new AppError("ADMIN_REPORT_NOT_FOUND", "Report not found", 404);
       }
       return presentAdminReport(report);
     } catch (error) {
@@ -520,7 +565,11 @@ export class AdminService {
         );
       }
       if (error instanceof AdminHierarchyError) {
-        throw new AppError("FORBIDDEN", "Insufficient moderation authority", 403);
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
       }
       throw error;
     }
@@ -550,7 +599,11 @@ export class AdminService {
         );
       }
       if (error instanceof AdminHierarchyError) {
-        throw new AppError("FORBIDDEN", "Insufficient moderation authority", 403);
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
       }
       throw error;
     }
@@ -566,7 +619,9 @@ export class AdminService {
       page: options.page,
       pageSize: options.pageSize,
       ...(options.action ? { action: options.action.trim() } : {}),
-      ...(options.resourceType ? { resourceType: options.resourceType.trim() } : {}),
+      ...(options.resourceType
+        ? { resourceType: options.resourceType.trim() }
+        : {}),
     });
     return {
       items: result.items.map(presentAdminAuditLog),
@@ -577,7 +632,10 @@ export class AdminService {
     };
   }
 
-  async listStaff(options: { page: number; pageSize: number }): Promise<object> {
+  async listStaff(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
     const result = await this.repository.listStaff(options);
     return {
       items: result.items.map(presentAdminUser),
@@ -642,7 +700,11 @@ export class AdminService {
       return presentAdminUser(user);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
-        throw new AppError("FORBIDDEN", "Insufficient moderation authority", 403);
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
       }
       if (error instanceof AdminStateConflictError) {
         throw new AppError(
@@ -689,7 +751,11 @@ export class AdminService {
       return presentAdminInterestTag(tag);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
-        throw new AppError("FORBIDDEN", "Insufficient moderation authority", 403);
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
       }
       throw error;
     }
@@ -708,12 +774,20 @@ export class AdminService {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       });
       if (!tag) {
-        throw new AppError("ADMIN_TAG_NOT_FOUND", "Interest tag not found", 404);
+        throw new AppError(
+          "ADMIN_TAG_NOT_FOUND",
+          "Interest tag not found",
+          404,
+        );
       }
       return presentAdminInterestTag(tag);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
-        throw new AppError("FORBIDDEN", "Insufficient moderation authority", 403);
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
       }
       throw error;
     }
@@ -724,13 +798,22 @@ export class AdminService {
     return presentAdminAnalytics(data);
   }
 
-  async listPremiumPlans(options: { page: number; pageSize: number }): Promise<object> {
+  async listPremiumPlans(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
     const result = await this.repository.listPremiumPlans(options);
     return paginate(result, options, presentAdminPremiumPlan);
   }
 
-  async createPremiumPlan(actorId: string, input: Record<string, unknown>): Promise<object> {
-    return this.createPremiumPlanFromInput(actorId, input as Omit<CreatePremiumPlanData, "actorId">);
+  async createPremiumPlan(
+    actorId: string,
+    input: Record<string, unknown>,
+  ): Promise<object> {
+    return this.createPremiumPlanFromInput(
+      actorId,
+      input as Omit<CreatePremiumPlanData, "actorId">,
+    );
   }
 
   private async createPremiumPlanFromInput(
@@ -747,12 +830,22 @@ export class AdminService {
         currency: input.currency.toUpperCase(),
         durationDays: input.durationDays,
         ...(input.tier !== undefined ? { tier: input.tier } : {}),
-        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
-        ...(input.badgeLabel !== undefined ? { badgeLabel: input.badgeLabel } : {}),
+        ...(input.sortOrder !== undefined
+          ? { sortOrder: input.sortOrder }
+          : {}),
+        ...(input.badgeLabel !== undefined
+          ? { badgeLabel: input.badgeLabel }
+          : {}),
         ...(input.adsFree !== undefined ? { adsFree: input.adsFree } : {}),
-        ...(input.houseAdsFree !== undefined ? { houseAdsFree: input.houseAdsFree } : {}),
-        ...(input.profileViews !== undefined ? { profileViews: input.profileViews } : {}),
-        ...(input.discoverBoost !== undefined ? { discoverBoost: input.discoverBoost } : {}),
+        ...(input.houseAdsFree !== undefined
+          ? { houseAdsFree: input.houseAdsFree }
+          : {}),
+        ...(input.profileViews !== undefined
+          ? { profileViews: input.profileViews }
+          : {}),
+        ...(input.discoverBoost !== undefined
+          ? { discoverBoost: input.discoverBoost }
+          : {}),
         ...(input.grantVerifiedBadge !== undefined
           ? { grantVerifiedBadge: input.grantVerifiedBadge }
           : {}),
@@ -800,7 +893,8 @@ export class AdminService {
         ...input,
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       });
-      if (!plan) throw new AppError("ADMIN_PLAN_NOT_FOUND", "Plan not found", 404);
+      if (!plan)
+        throw new AppError("ADMIN_PLAN_NOT_FOUND", "Plan not found", 404);
       return presentAdminPremiumPlan(plan);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
@@ -839,16 +933,18 @@ export class AdminService {
         ...(input.billingCycle
           ? {
               billingCycle: input.billingCycle as
-                | "MONTHLY"
-                | "YEARLY"
-                | "ONE_TIME",
+                "MONTHLY" | "YEARLY" | "ONE_TIME",
             }
           : {}),
       });
       return presentAdminSubscription(sub);
     } catch (error) {
       if (error instanceof AdminStateConflictError) {
-        throw new AppError("ADMIN_STATE_CONFLICT", "User or plan not available", 409);
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "User or plan not available",
+          409,
+        );
       }
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);
@@ -857,14 +953,29 @@ export class AdminService {
     }
   }
 
-  async cancelSubscription(actorId: string, subscriptionId: string): Promise<object> {
+  async cancelSubscription(
+    actorId: string,
+    subscriptionId: string,
+  ): Promise<object> {
     try {
-      const sub = await this.repository.cancelSubscription({ actorId, subscriptionId });
-      if (!sub) throw new AppError("ADMIN_SUBSCRIPTION_NOT_FOUND", "Subscription not found", 404);
+      const sub = await this.repository.cancelSubscription({
+        actorId,
+        subscriptionId,
+      });
+      if (!sub)
+        throw new AppError(
+          "ADMIN_SUBSCRIPTION_NOT_FOUND",
+          "Subscription not found",
+          404,
+        );
       return presentAdminSubscription(sub);
     } catch (error) {
       if (error instanceof AdminStateConflictError) {
-        throw new AppError("ADMIN_STATE_CONFLICT", "Subscription is not active", 409);
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "Subscription is not active",
+          409,
+        );
       }
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);
@@ -890,7 +1001,10 @@ export class AdminService {
 
   async createAd(actorId: string, input: object): Promise<object> {
     try {
-      const ad = await this.repository.createAd({ actorId, ...(input as CreateAdInput) });
+      const ad = await this.repository.createAd({
+        actorId,
+        ...(input as CreateAdInput),
+      });
       return presentAdminAd(ad);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
@@ -900,9 +1014,17 @@ export class AdminService {
     }
   }
 
-  async updateAd(actorId: string, adId: string, input: object): Promise<object> {
+  async updateAd(
+    actorId: string,
+    adId: string,
+    input: object,
+  ): Promise<object> {
     try {
-      const ad = await this.repository.updateAd({ actorId, adId, ...(input as UpdateAdInput) });
+      const ad = await this.repository.updateAd({
+        actorId,
+        adId,
+        ...(input as UpdateAdInput),
+      });
       if (!ad) throw new AppError("ADMIN_AD_NOT_FOUND", "Ad not found", 404);
       return presentAdminAd(ad);
     } catch (error) {
@@ -946,9 +1068,15 @@ export class AdminService {
         actorId,
         placement,
         ...(input.label !== undefined ? { label: input.label } : {}),
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
-        ...(input.insertEvery !== undefined ? { insertEvery: input.insertEvery } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+        ...(input.isEnabled !== undefined
+          ? { isEnabled: input.isEnabled }
+          : {}),
+        ...(input.insertEvery !== undefined
+          ? { insertEvery: input.insertEvery }
+          : {}),
       });
       if (!config) {
         throw new AppError("NOT_FOUND", "Ad placement not found", 404);
@@ -996,7 +1124,11 @@ export class AdminService {
 
   private requirePaypal() {
     if (!this.paypal) {
-      throw new AppError("PAYPAL_NOT_CONFIGURED", "PayPal is not available", 503);
+      throw new AppError(
+        "PAYPAL_NOT_CONFIGURED",
+        "PayPal is not available",
+        503,
+      );
     }
     return this.paypal;
   }
@@ -1047,14 +1179,22 @@ export class AdminService {
     return this.repository.paypalIncomeReport();
   }
 
-  async listCmsPages(options: { page: number; pageSize: number }): Promise<object> {
+  async listCmsPages(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
     const result = await this.repository.listCmsPages(options);
     return paginate(result, options, presentAdminCmsPage);
   }
 
   async createCmsPage(
     actorId: string,
-    input: { slug: string; title: string; bodyMarkdown: string; status?: string | undefined },
+    input: {
+      slug: string;
+      title: string;
+      bodyMarkdown: string;
+      status?: string | undefined;
+    },
   ): Promise<object> {
     try {
       const page = await this.repository.createCmsPage({
@@ -1076,17 +1216,24 @@ export class AdminService {
   async updateCmsPage(
     actorId: string,
     pageId: string,
-    input: { title?: string | undefined; bodyMarkdown?: string | undefined; status?: string | undefined },
+    input: {
+      title?: string | undefined;
+      bodyMarkdown?: string | undefined;
+      status?: string | undefined;
+    },
   ): Promise<object> {
     try {
       const page = await this.repository.updateCmsPage({
         actorId,
         pageId,
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
-        ...(input.bodyMarkdown !== undefined ? { bodyMarkdown: input.bodyMarkdown } : {}),
+        ...(input.bodyMarkdown !== undefined
+          ? { bodyMarkdown: input.bodyMarkdown }
+          : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
       });
-      if (!page) throw new AppError("ADMIN_CMS_NOT_FOUND", "CMS page not found", 404);
+      if (!page)
+        throw new AppError("ADMIN_CMS_NOT_FOUND", "CMS page not found", 404);
       return presentAdminCmsPage(page);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
@@ -1164,8 +1311,12 @@ export class AdminService {
         ...(input.slug !== undefined ? { slug: input.slug } : {}),
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
         ...(input.excerpt !== undefined ? { excerpt: input.excerpt } : {}),
-        ...(input.bodyMarkdown !== undefined ? { bodyMarkdown: input.bodyMarkdown } : {}),
-        ...(input.coverImageUrl !== undefined ? { coverImageUrl: input.coverImageUrl } : {}),
+        ...(input.bodyMarkdown !== undefined
+          ? { bodyMarkdown: input.bodyMarkdown }
+          : {}),
+        ...(input.coverImageUrl !== undefined
+          ? { coverImageUrl: input.coverImageUrl }
+          : {}),
         ...(input.metaDescription !== undefined
           ? { metaDescription: input.metaDescription }
           : {}),
@@ -1221,7 +1372,9 @@ export class AdminService {
       page: options.page,
       pageSize: options.pageSize,
       ...(options.q ? { q: options.q.trim() } : {}),
-      ...(options.referrerUserId ? { referrerUserId: options.referrerUserId } : {}),
+      ...(options.referrerUserId
+        ? { referrerUserId: options.referrerUserId }
+        : {}),
     });
     return paginate(result, options, presentAdminReferral);
   }
@@ -1396,7 +1549,9 @@ export class AdminService {
       pageSize: options.pageSize,
       ...(options.status ? { status: options.status } : {}),
       ...(options.eventType ? { eventType: options.eventType } : {}),
-      ...(options.aggregateType ? { aggregateType: options.aggregateType } : {}),
+      ...(options.aggregateType
+        ? { aggregateType: options.aggregateType }
+        : {}),
     });
     return paginate(result, options, presentAdminOutboxEvent);
   }
@@ -1405,7 +1560,11 @@ export class AdminService {
     try {
       const event = await this.repository.retryOutboxEvent(actorId, eventId);
       if (!event) {
-        throw new AppError("ADMIN_OUTBOX_NOT_FOUND", "Outbox event not found", 404);
+        throw new AppError(
+          "ADMIN_OUTBOX_NOT_FOUND",
+          "Outbox event not found",
+          404,
+        );
       }
       return presentAdminOutboxEvent(event);
     } catch (error) {
@@ -1442,7 +1601,11 @@ export class AdminService {
     try {
       const job = await this.repository.retryEmailJob(actorId, jobId);
       if (!job) {
-        throw new AppError("ADMIN_EMAIL_JOB_NOT_FOUND", "Email job not found", 404);
+        throw new AppError(
+          "ADMIN_EMAIL_JOB_NOT_FOUND",
+          "Email job not found",
+          404,
+        );
       }
       return presentAdminEmailJob(job);
     } catch (error) {
@@ -1576,7 +1739,11 @@ export class AdminService {
       pageSize: options.pageSize,
       ...(options.q ? { q: options.q.trim() } : {}),
       ...(options.userId ? { userId: options.userId } : {}),
-      ...(options.type ? { type: options.type as import("@prisma/client").WalletTransactionType } : {}),
+      ...(options.type
+        ? {
+            type: options.type as import("@prisma/client").WalletTransactionType,
+          }
+        : {}),
     });
     return paginate(result, options, presentAdminWalletTransaction);
   }
@@ -1608,7 +1775,9 @@ export class AdminService {
         points: input.points,
         ...(input.label !== undefined ? { label: input.label } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        ...(input.sortOrder !== undefined
+          ? { sortOrder: input.sortOrder }
+          : {}),
       });
       return presentAdminPointPurchaseRate(rate);
     } catch (error) {
@@ -1636,11 +1805,15 @@ export class AdminService {
         actorId,
         rateId,
         currency: "USD",
-        ...(input.amountMinor !== undefined ? { amountMinor: input.amountMinor } : {}),
+        ...(input.amountMinor !== undefined
+          ? { amountMinor: input.amountMinor }
+          : {}),
         ...(input.points !== undefined ? { points: input.points } : {}),
         ...(input.label !== undefined ? { label: input.label } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        ...(input.sortOrder !== undefined
+          ? { sortOrder: input.sortOrder }
+          : {}),
       });
       if (!rate) {
         throw new AppError("NOT_FOUND", "Point purchase rate not found", 404);
@@ -1673,8 +1846,9 @@ export class AdminService {
         pageSize: 10,
       });
       const match =
-        result.items.find((user) => user.username.toLowerCase() === normalized) ??
-        result.items[0];
+        result.items.find(
+          (user) => user.username.toLowerCase() === normalized,
+        ) ?? result.items[0];
       if (!match) {
         throw new AppError("NOT_FOUND", "User not found", 404);
       }
@@ -1724,7 +1898,10 @@ function isUuid(value: string): boolean {
   );
 }
 
-async function unlinkMediaFile(uploadRoot: string, storageKey: string): Promise<void> {
+async function unlinkMediaFile(
+  uploadRoot: string,
+  storageKey: string,
+): Promise<void> {
   const root = path.resolve(uploadRoot);
   const absolutePath = path.resolve(root, storageKey);
   if (!absolutePath.startsWith(`${root}${path.sep}`)) {

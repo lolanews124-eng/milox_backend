@@ -12,6 +12,7 @@ import { createAdminRouter } from "./presentation/admin-router.js";
 import type { PaypalClient } from "../payments/infrastructure/paypal-client.js";
 
 import type { OfficialChatService } from "../official-chat/application/official-chat-service.js";
+import type { CallService } from "../calls/application/call-service.js";
 
 export interface AdminModule {
   router: Router;
@@ -24,12 +25,15 @@ export function createAdminModule(
   authenticate: RequestHandler,
   officialChat?: OfficialChatService,
   paypalClient?: PaypalClient,
+  calls?: CallService,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
   const service = new AdminService(
     repository,
     config.UPLOAD_ROOT,
     paypalClient ? { config, client: paypalClient } : undefined,
+    database,
+    calls,
   );
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),

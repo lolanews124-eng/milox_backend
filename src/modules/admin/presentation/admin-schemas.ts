@@ -1,6 +1,35 @@
-import { AdPlacement, CmsPageStatus, EmailJobStatus, EmailJobType, MatchStatus, MediaKind, MediaVisibility, OutboxStatus, ReportStatus, SubscriptionStatus, UserRole, UserStatus, WalletTransactionType } from "@prisma/client";
+import {
+  AdPlacement,
+  CmsPageStatus,
+  EmailJobStatus,
+  EmailJobType,
+  MatchStatus,
+  MediaKind,
+  MediaVisibility,
+  OutboxStatus,
+  ReportStatus,
+  SubscriptionStatus,
+  UserRole,
+  UserStatus,
+  WalletTransactionType,
+} from "@prisma/client";
 import { PremiumTier } from "@prisma/client";
 import { z } from "zod";
+
+export const updateEconomyConfigSchema = z
+  .object({
+    videoCallEnabled: z.boolean().optional(),
+    videoCallPointsPerMinute: z.number().int().min(1).max(100_000).optional(),
+    videoCallRingTimeoutSec: z.number().int().min(5).max(300).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one setting is required",
+  });
+
+export const adminCallIdParamSchema = z.object({
+  callId: z.uuid(),
+});
 
 export const adminUserIdParamSchema = z.object({
   userId: z.uuid(),
@@ -62,7 +91,9 @@ export const adminPostQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  bucket: z.enum(["all", "reported", "pending", "hidden", "removed"]).optional(),
+  bucket: z
+    .enum(["all", "reported", "pending", "hidden", "removed"])
+    .optional(),
   mediaKind: z.enum(["image", "video", "text", "audio"]).optional(),
   createdFrom: z.coerce.date().optional(),
   createdTo: z.coerce.date().optional(),
@@ -136,7 +167,9 @@ export const adminCommentQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  bucket: z.enum(["all", "reported", "hidden", "removed", "replies"]).optional(),
+  bucket: z
+    .enum(["all", "reported", "hidden", "removed", "replies"])
+    .optional(),
   createdFrom: z.coerce.date().optional(),
   createdTo: z.coerce.date().optional(),
   ...offsetPageSchema,
@@ -178,11 +211,7 @@ export const updateInterestTagSchema = z
 
 export const changeStaffRoleSchema = z
   .object({
-    role: z.enum([
-      UserRole.USER,
-      UserRole.MODERATOR,
-      UserRole.ADMIN,
-    ]),
+    role: z.enum([UserRole.USER, UserRole.MODERATOR, UserRole.ADMIN]),
   })
   .strict();
 
@@ -209,7 +238,12 @@ export const premiumPlanPriceSchema = z
 
 export const createPremiumPlanSchema = z
   .object({
-    code: z.string().trim().min(2).max(64).regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+    code: z
+      .string()
+      .trim()
+      .min(2)
+      .max(64)
+      .regex(/^[A-Za-z][A-Za-z0-9_]*$/),
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(1000).optional(),
     tier: z.nativeEnum(PremiumTier).default("PLUS"),
@@ -342,7 +376,12 @@ export const updatePaypalSettingsSchema = z
 export const updateMobileAppConfigSchema = z
   .object({
     latestVersion: z.string().trim().min(1).max(32).optional(),
-    androidMinBuild: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
+    androidMinBuild: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .optional(),
     iosMinBuild: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     forceUpdate: z.boolean().optional(),
     androidStoreUrl: z.string().trim().max(500).optional(),
@@ -358,7 +397,12 @@ export const adminAdIdParamSchema = z.object({
 
 export const createCmsPageSchema = z
   .object({
-    slug: z.string().trim().min(1).max(120).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    slug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     title: z.string().trim().min(1).max(200),
     bodyMarkdown: z.string().trim().min(1).max(50_000),
     status: z.enum(CmsPageStatus).optional(),
@@ -384,7 +428,12 @@ export const adminBlogQuerySchema = z.object({
 
 export const createBlogPostSchema = z
   .object({
-    slug: z.string().trim().min(1).max(120).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    slug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     title: z.string().trim().min(1).max(200),
     excerpt: z.string().trim().max(500).nullable().optional(),
     bodyMarkdown: z.string().trim().min(1).max(100_000),

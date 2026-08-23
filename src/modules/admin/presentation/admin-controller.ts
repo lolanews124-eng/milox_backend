@@ -69,6 +69,8 @@ import {
   adminPointPurchaseRateIdParamSchema,
   createPointPurchaseRateSchema,
   updatePointPurchaseRateSchema,
+  updateEconomyConfigSchema,
+  adminCallIdParamSchema,
   updateVerifiedBadgeProductSchema,
   adminVerifiedBadgeOrderQuerySchema,
   adminVerifiedBadgeOrderIdParamSchema,
@@ -92,18 +94,64 @@ export class AdminController {
     private readonly verifiedBadge?: VerifiedBadgeService,
   ) {}
 
-  dashboard = async (
+  economyConfig = async (
     request: Request,
     response: Response,
   ): Promise<void> => {
+    response
+      .status(200)
+      .json(success(request, await this.admin.economyConfig()));
+  };
+
+  updateEconomyConfig = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updateEconomyConfigSchema.parse(request.body as unknown);
+    response.status(200).json(
+      success(
+        request,
+        await this.admin.updateEconomyConfig({
+          ...(input.videoCallEnabled !== undefined
+            ? { videoCallEnabled: input.videoCallEnabled }
+            : {}),
+          ...(input.videoCallPointsPerMinute !== undefined
+            ? {
+                videoCallPointsPerMinute: input.videoCallPointsPerMinute,
+              }
+            : {}),
+          ...(input.videoCallRingTimeoutSec !== undefined
+            ? { videoCallRingTimeoutSec: input.videoCallRingTimeoutSec }
+            : {}),
+        }),
+      ),
+    );
+  };
+
+  listLiveCalls = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    response
+      .status(200)
+      .json(success(request, await this.admin.listLiveCalls()));
+  };
+
+  forceEndCall = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { callId } = adminCallIdParamSchema.parse(request.params);
+    const data = await this.admin.forceEndCall(requireUser(request), callId);
+    response.status(200).json(success(request, data));
+  };
+
+  dashboard = async (request: Request, response: Response): Promise<void> => {
     const data = await this.admin.dashboard();
     response.status(200).json(success(request, data));
   };
 
-  listUsers = async (
-    request: Request,
-    response: Response,
-  ): Promise<void> => {
+  listUsers = async (request: Request, response: Response): Promise<void> => {
     const query = adminUserQuerySchema.parse(request.query);
     const data = await this.admin.listUsers(query);
     response.status(200).json(success(request, data));
@@ -132,10 +180,7 @@ export class AdminController {
     response.status(200).send(data.csv);
   };
 
-  usersStats = async (
-    request: Request,
-    response: Response,
-  ): Promise<void> => {
+  usersStats = async (request: Request, response: Response): Promise<void> => {
     const data = await this.admin.usersStats();
     response.status(200).json(success(request, data));
   };
@@ -178,10 +223,7 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  listReports = async (
-    request: Request,
-    response: Response,
-  ): Promise<void> => {
+  listReports = async (request: Request, response: Response): Promise<void> => {
     const query = adminReportQuerySchema.parse(request.query);
     const data = await this.admin.listReports(query);
     response.status(200).json(success(request, data));
@@ -243,7 +285,10 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  storiesStats = async (request: Request, response: Response): Promise<void> => {
+  storiesStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const data = await this.admin.storiesStats();
     response.status(200).json(success(request, data));
   };
@@ -259,13 +304,19 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  listComments = async (request: Request, response: Response): Promise<void> => {
+  listComments = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminCommentQuerySchema.parse(request.query);
     const data = await this.admin.listComments(query);
     response.status(200).json(success(request, data));
   };
 
-  commentsStats = async (request: Request, response: Response): Promise<void> => {
+  commentsStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const data = await this.admin.commentsStats();
     response.status(200).json(success(request, data));
   };
@@ -355,7 +406,10 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const input = createInterestTagSchema.parse(request.body as unknown);
-    const data = await this.admin.createInterestTag(requireUser(request), input);
+    const data = await this.admin.createInterestTag(
+      requireUser(request),
+      input,
+    );
     response.status(201).json(success(request, data));
   };
 
@@ -373,45 +427,81 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  getAnalytics = async (request: Request, response: Response): Promise<void> => {
+  getAnalytics = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const data = await this.admin.getAnalytics();
     response.status(200).json(success(request, data));
   };
 
-  listPremiumPlans = async (request: Request, response: Response): Promise<void> => {
+  listPremiumPlans = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminUserQuerySchema.parse(request.query);
     const data = await this.admin.listPremiumPlans(query);
     response.status(200).json(success(request, data));
   };
 
-  createPremiumPlan = async (request: Request, response: Response): Promise<void> => {
+  createPremiumPlan = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const input = createPremiumPlanSchema.parse(request.body as unknown);
-    const data = await this.admin.createPremiumPlan(requireUser(request), input);
+    const data = await this.admin.createPremiumPlan(
+      requireUser(request),
+      input,
+    );
     response.status(201).json(success(request, data));
   };
 
-  updatePremiumPlan = async (request: Request, response: Response): Promise<void> => {
+  updatePremiumPlan = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { planId } = adminPlanIdParamSchema.parse(request.params);
     const input = updatePremiumPlanSchema.parse(request.body as unknown);
-    const data = await this.admin.updatePremiumPlan(requireUser(request), planId, input);
+    const data = await this.admin.updatePremiumPlan(
+      requireUser(request),
+      planId,
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 
-  listSubscriptions = async (request: Request, response: Response): Promise<void> => {
+  listSubscriptions = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminSubscriptionQuerySchema.parse(request.query);
     const data = await this.admin.listSubscriptions(query);
     response.status(200).json(success(request, data));
   };
 
-  grantSubscription = async (request: Request, response: Response): Promise<void> => {
+  grantSubscription = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const input = grantSubscriptionSchema.parse(request.body as unknown);
-    const data = await this.admin.grantSubscription(requireUser(request), input);
+    const data = await this.admin.grantSubscription(
+      requireUser(request),
+      input,
+    );
     response.status(201).json(success(request, data));
   };
 
-  cancelSubscription = async (request: Request, response: Response): Promise<void> => {
-    const { subscriptionId } = adminSubscriptionIdParamSchema.parse(request.params);
-    const data = await this.admin.cancelSubscription(requireUser(request), subscriptionId);
+  cancelSubscription = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { subscriptionId } = adminSubscriptionIdParamSchema.parse(
+      request.params,
+    );
+    const data = await this.admin.cancelSubscription(
+      requireUser(request),
+      subscriptionId,
+    );
     response.status(200).json(success(request, data));
   };
 
@@ -420,46 +510,76 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  lookupWalletUser = async (request: Request, response: Response): Promise<void> => {
+  lookupWalletUser = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { q } = adminWalletLookupQuerySchema.parse(request.query);
     const data = await this.admin.lookupWalletUser(q);
     response.status(200).json(success(request, data));
   };
 
-  getWalletUser = async (request: Request, response: Response): Promise<void> => {
+  getWalletUser = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { userId } = adminUserIdParamSchema.parse(request.params);
     const data = await this.admin.getWalletUser(userId);
     response.status(200).json(success(request, data));
   };
 
-  adjustWallet = async (request: Request, response: Response): Promise<void> => {
+  adjustWallet = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const input = adminAdjustWalletSchema.parse(request.body as unknown);
     const data = await this.admin.adjustWallet(requireUser(request), input);
     response.status(200).json(success(request, data));
   };
 
-  listWalletTransactions = async (request: Request, response: Response): Promise<void> => {
+  listWalletTransactions = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminWalletTransactionQuerySchema.parse(request.query);
     const data = await this.admin.listWalletTransactions(query);
     response.status(200).json(success(request, data));
   };
 
-  listPointPurchaseRates = async (request: Request, response: Response): Promise<void> => {
+  listPointPurchaseRates = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminUserQuerySchema.parse(request.query);
     const data = await this.admin.listPointPurchaseRates(query);
     response.status(200).json(success(request, data));
   };
 
-  createPointPurchaseRate = async (request: Request, response: Response): Promise<void> => {
+  createPointPurchaseRate = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const input = createPointPurchaseRateSchema.parse(request.body as unknown);
-    const data = await this.admin.createPointPurchaseRate(requireUser(request), input);
+    const data = await this.admin.createPointPurchaseRate(
+      requireUser(request),
+      input,
+    );
     response.status(201).json(success(request, data));
   };
 
-  updatePointPurchaseRate = async (request: Request, response: Response): Promise<void> => {
-    const { rateId } = adminPointPurchaseRateIdParamSchema.parse(request.params);
+  updatePointPurchaseRate = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { rateId } = adminPointPurchaseRateIdParamSchema.parse(
+      request.params,
+    );
     const input = updatePointPurchaseRateSchema.parse(request.body as unknown);
-    const data = await this.admin.updatePointPurchaseRate(requireUser(request), rateId, input);
+    const data = await this.admin.updatePointPurchaseRate(
+      requireUser(request),
+      rateId,
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 
@@ -543,7 +663,10 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const input = updatePaypalSettingsSchema.parse(request.body as unknown);
-    const data = await this.admin.updatePaypalSettings(requireUser(request), input);
+    const data = await this.admin.updatePaypalSettings(
+      requireUser(request),
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 
@@ -563,45 +686,74 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  listCmsPages = async (request: Request, response: Response): Promise<void> => {
+  listCmsPages = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminUserQuerySchema.parse(request.query);
     const data = await this.admin.listCmsPages(query);
     response.status(200).json(success(request, data));
   };
 
-  createCmsPage = async (request: Request, response: Response): Promise<void> => {
+  createCmsPage = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const input = createCmsPageSchema.parse(request.body as unknown);
     const data = await this.admin.createCmsPage(requireUser(request), input);
     response.status(201).json(success(request, data));
   };
 
-  updateCmsPage = async (request: Request, response: Response): Promise<void> => {
+  updateCmsPage = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { pageId } = adminCmsPageIdParamSchema.parse(request.params);
     const input = updateCmsPageSchema.parse(request.body as unknown);
-    const data = await this.admin.updateCmsPage(requireUser(request), pageId, input);
+    const data = await this.admin.updateCmsPage(
+      requireUser(request),
+      pageId,
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 
-  listBlogPosts = async (request: Request, response: Response): Promise<void> => {
+  listBlogPosts = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminBlogQuerySchema.parse(request.query);
     const data = await this.admin.listBlogPosts(query);
     response.status(200).json(success(request, data));
   };
 
-  createBlogPost = async (request: Request, response: Response): Promise<void> => {
+  createBlogPost = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const input = createBlogPostSchema.parse(request.body as unknown);
     const data = await this.admin.createBlogPost(requireUser(request), input);
     response.status(201).json(success(request, data));
   };
 
-  updateBlogPost = async (request: Request, response: Response): Promise<void> => {
+  updateBlogPost = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { postId } = adminBlogPostIdParamSchema.parse(request.params);
     const input = updateBlogPostSchema.parse(request.body as unknown);
-    const data = await this.admin.updateBlogPost(requireUser(request), postId, input);
+    const data = await this.admin.updateBlogPost(
+      requireUser(request),
+      postId,
+      input,
+    );
     response.status(200).json(success(request, data));
   };
 
-  uploadBlogImage = async (request: Request, response: Response): Promise<void> => {
+  uploadBlogImage = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     if (!request.file) {
       throw new AppError("VALIDATION_ERROR", "Image file is required", 400, [
         { field: "file", issue: "required" },
@@ -612,9 +764,19 @@ export class AdminController {
       actor,
       MediaKind.POST_IMAGE,
       request.file.buffer,
-    )) as { id: string; url: string | null; mimeType: string; width: number | null; height: number | null };
+    )) as {
+      id: string;
+      url: string | null;
+      mimeType: string;
+      width: number | null;
+      height: number | null;
+    };
     if (!asset.url) {
-      throw new AppError("INTERNAL_ERROR", "Uploaded image has no public URL", 500);
+      throw new AppError(
+        "INTERNAL_ERROR",
+        "Uploaded image has no public URL",
+        500,
+      );
     }
     response.status(201).json(
       success(request, {
@@ -633,17 +795,26 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  matchesStats = async (request: Request, response: Response): Promise<void> => {
+  matchesStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const data = await this.admin.matchesStats();
     response.status(200).json(success(request, data));
   };
 
-  referralsStats = async (request: Request, response: Response): Promise<void> => {
+  referralsStats = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const data = await this.admin.referralsStats();
     response.status(200).json(success(request, data));
   };
 
-  listReferrals = async (request: Request, response: Response): Promise<void> => {
+  listReferrals = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminReferralQuerySchema.parse(request.query);
     const data = await this.admin.listReferrals(query);
     response.status(200).json(success(request, data));
@@ -703,7 +874,10 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  deleteMessage = async (request: Request, response: Response): Promise<void> => {
+  deleteMessage = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { messageId } = adminMessageIdParamSchema.parse(request.params);
     const input = deleteAdminMessageSchema.parse(request.body as unknown);
     const data = await this.admin.deleteMessageForEveryone(
@@ -720,7 +894,10 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  getMediaContent = async (request: Request, response: Response): Promise<void> => {
+  getMediaContent = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { mediaId } = adminMediaIdParamSchema.parse(request.params);
     const media = await this.admin.getMediaContent(mediaId);
     const root = path.resolve(this.uploadRoot);
@@ -754,39 +931,63 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  listOutboxEvents = async (request: Request, response: Response): Promise<void> => {
+  listOutboxEvents = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminOutboxQuerySchema.parse(request.query);
     const data = await this.admin.listOutboxEvents(query);
     response.status(200).json(success(request, data));
   };
 
-  retryOutboxEvent = async (request: Request, response: Response): Promise<void> => {
+  retryOutboxEvent = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { eventId } = adminOutboxEventIdParamSchema.parse(request.params);
-    const data = await this.admin.retryOutboxEvent(requireUser(request), eventId);
+    const data = await this.admin.retryOutboxEvent(
+      requireUser(request),
+      eventId,
+    );
     response.status(200).json(success(request, data));
   };
 
-  listEmailJobs = async (request: Request, response: Response): Promise<void> => {
+  listEmailJobs = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminEmailJobQuerySchema.parse(request.query);
     const data = await this.admin.listEmailJobs(query);
     response.status(200).json(success(request, data));
   };
 
-  retryEmailJob = async (request: Request, response: Response): Promise<void> => {
+  retryEmailJob = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { jobId } = adminEmailJobIdParamSchema.parse(request.params);
     const data = await this.admin.retryEmailJob(requireUser(request), jobId);
     response.status(200).json(success(request, data));
   };
 
-  listHashtags = async (request: Request, response: Response): Promise<void> => {
+  listHashtags = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const query = adminHashtagQuerySchema.parse(request.query);
     const data = await this.admin.listHashtags(query);
     response.status(200).json(success(request, data));
   };
 
-  deleteHashtag = async (request: Request, response: Response): Promise<void> => {
+  deleteHashtag = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
     const { hashtagId } = adminHashtagIdParamSchema.parse(request.params);
-    const data = await this.admin.deleteHashtag(requireUser(request), hashtagId);
+    const data = await this.admin.deleteHashtag(
+      requireUser(request),
+      hashtagId,
+    );
     response.status(200).json(success(request, data));
   };
 
@@ -802,15 +1003,13 @@ export class AdminController {
       );
     }
     const input = broadcastOfficialMessageSchema.parse(request.body);
-    const buttons = input.buttons?.map(
-      (button): OfficialMessageButton => ({
-        label: button.label,
-        action:
-          button.actionType === "OPEN_URL"
-            ? { type: "OPEN_URL", url: button.url! }
-            : { type: "NAVIGATE", route: button.route! },
-      }),
-    );
+    const buttons = input.buttons?.map((button): OfficialMessageButton => ({
+      label: button.label,
+      action:
+        button.actionType === "OPEN_URL"
+          ? { type: "OPEN_URL", url: button.url! }
+          : { type: "NAVIGATE", route: button.route! },
+    }));
     const payload = {
       body: input.body,
       ...(buttons?.length ? { buttons } : {}),
@@ -875,7 +1074,11 @@ export class AdminController {
     const { jobId } = officialBroadcastJobIdParamSchema.parse(request.params);
     const job = officialBroadcastJobStore.get(jobId);
     if (!job) {
-      throw new AppError("NOT_FOUND", "Broadcast job not found or expired", 404);
+      throw new AppError(
+        "NOT_FOUND",
+        "Broadcast job not found or expired",
+        404,
+      );
     }
     response.status(200).json(success(request, job));
   };
@@ -907,7 +1110,9 @@ export class AdminController {
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const input = updateVerifiedBadgeProductSchema.parse(request.body as unknown);
+    const input = updateVerifiedBadgeProductSchema.parse(
+      request.body as unknown,
+    );
     const data = await this.requireVerifiedBadge().updateProduct(input);
     response.status(200).json(success(request, data));
   };
@@ -930,7 +1135,9 @@ export class AdminController {
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const { orderId } = adminVerifiedBadgeOrderIdParamSchema.parse(request.params);
+    const { orderId } = adminVerifiedBadgeOrderIdParamSchema.parse(
+      request.params,
+    );
     const input = adminVerifiedBadgeOrderActionSchema.parse(
       request.body as unknown,
     );
@@ -946,7 +1153,9 @@ export class AdminController {
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const { orderId } = adminVerifiedBadgeOrderIdParamSchema.parse(request.params);
+    const { orderId } = adminVerifiedBadgeOrderIdParamSchema.parse(
+      request.params,
+    );
     const input = adminVerifiedBadgeOrderActionSchema.parse(
       request.body as unknown,
     );
@@ -960,7 +1169,11 @@ export class AdminController {
 
   private requireVerifiedBadge(): VerifiedBadgeService {
     if (!this.verifiedBadge) {
-      throw new AppError("INTERNAL", "Verified badge service is unavailable", 500);
+      throw new AppError(
+        "INTERNAL",
+        "Verified badge service is unavailable",
+        500,
+      );
     }
     return this.verifiedBadge;
   }

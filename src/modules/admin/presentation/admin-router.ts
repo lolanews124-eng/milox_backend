@@ -1,7 +1,4 @@
-import {
-  UserRole,
-  type PrismaClient,
-} from "@prisma/client";
+import { UserRole, type PrismaClient } from "@prisma/client";
 import {
   Router,
   type NextFunction,
@@ -13,7 +10,10 @@ import multer, { MulterError } from "multer";
 
 import { AppError } from "../../../shared/errors/app-error.js";
 import { asyncHandler } from "../../../shared/http/async-handler.js";
-import { createRateLimit, authenticatedRateLimitKey } from "../../../shared/http/rate-limit.js";
+import {
+  createRateLimit,
+  authenticatedRateLimitKey,
+} from "../../../shared/http/rate-limit.js";
 import { requireCurrentRole } from "./admin-authorization.js";
 import type { AdminController } from "./admin-controller.js";
 
@@ -319,6 +319,30 @@ export function createAdminRouter(
     asyncHandler(controller.walletStats),
   );
   router.get(
+    "/economy",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.economyConfig),
+  );
+  router.patch(
+    "/economy",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.updateEconomyConfig),
+  );
+  router.get(
+    "/calls/live",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.listLiveCalls),
+  );
+  router.post(
+    "/calls/:callId/force-end",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.forceEndCall),
+  );
+  router.get(
     "/wallet/lookup",
     readLimit,
     adminOnly,
@@ -360,12 +384,7 @@ export function createAdminRouter(
     adminOnly,
     asyncHandler(controller.updatePointPurchaseRate),
   );
-  router.get(
-    "/ads",
-    readLimit,
-    adminOnly,
-    asyncHandler(controller.listAds),
-  );
+  router.get("/ads", readLimit, adminOnly, asyncHandler(controller.listAds));
   router.post(
     "/ads",
     mutationLimit,

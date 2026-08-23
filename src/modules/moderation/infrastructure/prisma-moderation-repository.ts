@@ -1,6 +1,8 @@
 import {
+  ConversationStatus,
   FollowStatus,
   InterestStatus,
+  MatchStatus,
   Prisma,
   ReportStatus,
   ReportTargetType,
@@ -316,6 +318,53 @@ async function severSocialLinks(
     },
     data: { status: InterestStatus.CANCELLED },
   });
+
+  const activeMatches = await transaction.match.findMany({
+    where: {
+      status: MatchStatus.ACTIVE,
+      OR: [
+        { userAId: blockerId, userBId: blockedId },
+        { userAId: blockedId, userBId: blockerId },
+      ],
+    },
+    select: {
+      id: true,
+      userAId: true,
+      userBId: true,
+      conversation: { select: { id: true } },
+    },
+  });
+  const now = new Date();
+  for (const match of activeMatches) {
+    await transaction.match.updateMany({
+      where: { id: match.id, status: MatchStatus.ACTIVE },
+      data: { status: MatchStatus.UNMATCHED, unmatchedAt: now },
+    });
+    if (match.conversation) {
+      await transaction.conversation.update({
+        where: { id: match.conversation.id },
+        data: { status: ConversationStatus.CLOSED },
+      });
+      await transaction.conversationMember.updateMany({
+        where: { conversationId: match.conversation.id },
+        data: { leftAt: now, clearedAt: now },
+      });
+      await transaction.outboxEvent.create({
+        data: {
+          eventType: "chat.match.unmatched",
+          aggregateType: "match",
+          aggregateId: match.id,
+          payload: {
+            matchId: match.id,
+            conversationId: match.conversation.id,
+            actorId: blockerId,
+            userAId: match.userAId,
+            userBId: match.userBId,
+          },
+        },
+      });
+    }
+  }
 }
 
 function cursorWhere(

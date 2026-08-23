@@ -13,6 +13,7 @@ import type { PushDeviceRepository } from "../ports/push-device-repository.js";
 export interface PushSender {
   isEnabled(): boolean;
   sendForNotification(recipientId: string, notification: object): Promise<void>;
+  sendData(recipientId: string, data: Record<string, string>): Promise<void>;
 }
 
 const INVALID_TOKEN_CODES = new Set([
@@ -46,6 +47,23 @@ export class FcmPushSender implements PushSender {
       notification as Parameters<typeof buildPushNotificationMessage>[0],
     );
     await this.sendMulticast(messaging, tokens, message);
+  }
+
+  async sendData(
+    recipientId: string,
+    data: Record<string, string>,
+  ): Promise<void> {
+    const messaging = this.getMessaging();
+    if (!messaging) return;
+
+    const tokens = await this.devices.listTokensForUser(recipientId);
+    if (tokens.length === 0) return;
+
+    await this.sendMulticast(messaging, tokens, {
+      title: data.title ?? "Milox",
+      body: data.body ?? "",
+      data,
+    });
   }
 
   private getMessaging(): admin.messaging.Messaging | null {
@@ -104,11 +122,22 @@ export class FcmPushSender implements PushSender {
         payload: {
           aps: {
             contentAvailable: true,
+            ...(message.data.type === "INCOMING_CALL"
+              ? {
+                  alert: {
+                    title: message.data.title ?? "Incoming video call",
+                    body: message.data.body ?? "Someone is calling you on Milox",
+                  },
+                  sound: "default",
+                }
+              : {}),
           },
         },
         headers: {
-          "apns-push-type": "background",
-          "apns-priority": "5",
+          "apns-push-type":
+            message.data.type === "INCOMING_CALL" ? "alert" : "background",
+          "apns-priority":
+            message.data.type === "INCOMING_CALL" ? "10" : "5",
         },
       },
     });
@@ -133,6 +162,10 @@ export class NoOpPushSender implements PushSender {
   }
 
   sendForNotification(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  sendData(): Promise<void> {
     return Promise.resolve();
   }
 }

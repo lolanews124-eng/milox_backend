@@ -7,6 +7,7 @@ import {
 } from "../../../premium/application/entitlements.js";
 import type { RewardsRepository } from "../ports/rewards-repository.js";
 import { RewardedAdDailyLimitError } from "../ports/rewards-repository.js";
+import { ensureAppEconomyConfig } from "../../../economy/app-economy-config.js";
 
 export class RewardsService {
   constructor(
@@ -20,13 +21,18 @@ export class RewardsService {
     if (!wallet) {
       throw new AppError("WALLET_NOT_FOUND", "Milox Points not found", 404);
     }
-    const entitlements = await resolveUserEntitlements(
-      this.database,
-      userId,
-      this.config.INTEREST_DAILY_LIMIT,
-    );
+    const [entitlements, economy] = await Promise.all([
+      resolveUserEntitlements(
+        this.database,
+        userId,
+        this.config.INTEREST_DAILY_LIMIT,
+      ),
+      ensureAppEconomyConfig(this.database),
+    ]);
     return presentWallet({
       ...wallet,
+      videoCallEnabled: economy.videoCallEnabled,
+      videoCallPointsPerMinute: economy.videoCallPointsPerMinute,
       interestSendCost: interestSendCostForEntitlements(
         entitlements,
         wallet.interestSendCost,
@@ -45,7 +51,11 @@ export class RewardsService {
       this.repository.listReferrals(userId, 50),
     ]);
     if (!info) {
-      throw new AppError("REFERRAL_NOT_FOUND", "Referral profile not found", 404);
+      throw new AppError(
+        "REFERRAL_NOT_FOUND",
+        "Referral profile not found",
+        404,
+      );
     }
     return {
       ...info,
@@ -98,6 +108,8 @@ function presentWallet(wallet: {
   welcomeBonus: number;
   rewardedAdPoints: number;
   rewardedAdDailyLimit: number;
+  videoCallEnabled: boolean;
+  videoCallPointsPerMinute: number;
 }) {
   return {
     balance: wallet.balance,
@@ -109,6 +121,8 @@ function presentWallet(wallet: {
     welcomeBonus: wallet.welcomeBonus,
     rewardedAdPoints: wallet.rewardedAdPoints,
     rewardedAdDailyLimit: wallet.rewardedAdDailyLimit,
+    videoCallEnabled: wallet.videoCallEnabled,
+    videoCallPointsPerMinute: wallet.videoCallPointsPerMinute,
   };
 }
 

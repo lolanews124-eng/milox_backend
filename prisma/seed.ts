@@ -3,12 +3,14 @@ import { PrismaClient } from "@prisma/client";
 import { ensureDefaultInterestTags } from "../src/infrastructure/interest-tags.js";
 import { ensureLaunchBlogPost } from "../src/infrastructure/launch-blog-post.js";
 import { ensureMiloxOfficialUser } from "../src/infrastructure/milox-official-user.js";
+import { ensureAppEconomyConfig } from "../src/modules/economy/app-economy-config.js";
 
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
   await ensureDefaultInterestTags(prisma);
   await ensureMiloxOfficialUser(prisma);
+  await ensureAppEconomyConfig(prisma);
   const blog = await ensureLaunchBlogPost(prisma);
   console.log(`Launch blog: ${blog.slug} (${blog.created ? "created" : "updated"})`);
 }

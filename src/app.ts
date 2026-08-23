@@ -5,7 +5,11 @@ import helmet from "helmet";
 
 import type { PrismaClient } from "@prisma/client";
 
-import { getConfig, createCorsOriginChecker, type AppConfig } from "./config/env.js";
+import {
+  getConfig,
+  createCorsOriginChecker,
+  type AppConfig,
+} from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { createAdminModule } from "./modules/admin/index.js";
 import { createAuthModule } from "./modules/auth/index.js";
@@ -13,6 +17,7 @@ import type { SignupOfficialChatWriter } from "./modules/official-chat/infrastru
 import type { OfficialChatService } from "./modules/official-chat/application/official-chat-service.js";
 import { createBlogModule } from "./modules/blog/index.js";
 import { createChatModule } from "./modules/chat/index.js";
+import { createCallsModule, type CallService } from "./modules/calls/index.js";
 import { createCommentModule } from "./modules/comments/index.js";
 import { createFeedModule } from "./modules/feed/index.js";
 import { createFollowModule } from "./modules/follows/index.js";
@@ -33,10 +38,7 @@ import { createAppReleaseRouter } from "./modules/app-release/app-release-router
 import { createPremiumModule } from "./modules/premium/index.js";
 import { createUserModule } from "./modules/users/index.js";
 import { asyncHandler } from "./shared/http/async-handler.js";
-import {
-  errorHandler,
-  notFoundHandler,
-} from "./shared/http/error-handler.js";
+import { errorHandler, notFoundHandler } from "./shared/http/error-handler.js";
 import { requestId } from "./shared/http/request-id.js";
 
 export interface AppDependencies {
@@ -45,6 +47,7 @@ export interface AppDependencies {
   chatOutboxWake?: () => void;
   signupOfficialChat?: SignupOfficialChatWriter;
   officialChat?: OfficialChatService;
+  calls?: CallService;
 }
 
 export function createApp(dependencies: AppDependencies = {}): Express {
@@ -78,18 +81,30 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     auth.authenticate,
     dependencies.officialChat,
     paypalClient,
+    dependencies.calls,
   );
   const blog = createBlogModule(database);
-  const posts = createPostModule(config, database, {
-    authenticate: auth.authenticate,
-    optionalAuthenticate: auth.optionalAuthenticate,
-    requireVerified: auth.requireVerified,
-  }, rewardsRepository);
-  const users = createUserModule(config, database, auth.service, {
-    authenticate: auth.authenticate,
-    optionalAuthenticate: auth.optionalAuthenticate,
-    requireVerified: auth.requireVerified,
-  }, posts.service);
+  const posts = createPostModule(
+    config,
+    database,
+    {
+      authenticate: auth.authenticate,
+      optionalAuthenticate: auth.optionalAuthenticate,
+      requireVerified: auth.requireVerified,
+    },
+    rewardsRepository,
+  );
+  const users = createUserModule(
+    config,
+    database,
+    auth.service,
+    {
+      authenticate: auth.authenticate,
+      optionalAuthenticate: auth.optionalAuthenticate,
+      requireVerified: auth.requireVerified,
+    },
+    posts.service,
+  );
   const media = createMediaModule(
     config,
     database,
@@ -122,10 +137,15 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     optionalAuthenticate: auth.optionalAuthenticate,
     requireVerified: auth.requireVerified,
   });
-  const interests = createInterestModule(config, database, {
-    authenticate: auth.authenticate,
-    requireVerified: auth.requireVerified,
-  }, rewardsRepository);
+  const interests = createInterestModule(
+    config,
+    database,
+    {
+      authenticate: auth.authenticate,
+      requireVerified: auth.requireVerified,
+    },
+    rewardsRepository,
+  );
   const chat = createChatModule(
     config,
     database,
@@ -134,8 +154,17 @@ export function createApp(dependencies: AppDependencies = {}): Express {
       requireVerified: auth.requireVerified,
     },
     dependencies.chatOutboxWake
-        ? { wakeOutbox: dependencies.chatOutboxWake }
-        : undefined,
+      ? { wakeOutbox: dependencies.chatOutboxWake }
+      : undefined,
+  );
+  const calls = createCallsModule(
+    config,
+    database,
+    {
+      authenticate: auth.authenticate,
+      requireVerified: auth.requireVerified,
+    },
+    dependencies.calls,
   );
   const notifications = createNotificationModule(
     config,
@@ -203,6 +232,37 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     }),
   );
 
+  app.get("/health/ice", (_request, response) => {
+    const turnUrls = config.TURN_URLS.split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const stunUrls = config.STUN_URLS.split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const hasTurnSecret = config.TURN_SECRET.trim().length > 0;
+    const hasStaticTurn =
+      config.TURN_USERNAME.trim().length > 0 &&
+      config.TURN_PASSWORD.trim().length > 0;
+    const turnConfigured =
+      turnUrls.length > 0 && (hasTurnSecret || hasStaticTurn);
+    response.status(turnConfigured ? 200 : 503).json({
+      success: turnConfigured,
+      data: {
+        status: turnConfigured ? "ok" : "turn_missing",
+        stunCount: stunUrls.length > 0 ? stunUrls.length : 2,
+        turnCount: turnUrls.length,
+        auth: hasTurnSecret
+          ? "rest_secret"
+          : hasStaticTurn
+            ? "static"
+            : "none",
+        hint: turnConfigured
+          ? "TURN is configured for NAT traversal"
+          : "Set TURN_URLS and TURN_SECRET (or TURN_USERNAME/TURN_PASSWORD) before production video calls",
+      },
+    });
+  });
+
   app.use("/api/v1/auth", auth.router);
   app.use("/api/v1/users", moderation.userBlocksRouter);
   app.use("/api/v1/users", follows.userRouter);
@@ -224,6 +284,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/rewards", rewards.router);
   app.use("/api/v1/conversations", chat.router);
   app.use("/api/v1/messages", chat.messagesRouter);
+  app.use("/api/v1/calls", calls.router);
   app.use("/api/v1/notifications", notifications.router);
   app.use("/api/v1/push-devices", push.router);
   app.use("/api/v1/blocks", moderation.blocksRouter);

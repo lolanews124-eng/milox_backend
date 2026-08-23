@@ -11,6 +11,7 @@ import { ensureDefaultInterestTags } from "./infrastructure/interest-tags.js";
 import { ensureMiloxOfficialUser } from "./infrastructure/milox-official-user.js";
 import { notifyIndexNow } from "./infrastructure/indexnow.js";
 import { ensureLaunchBlogPost } from "./infrastructure/launch-blog-post.js";
+import { CallLifecycleWorker } from "./jobs/calls/call-lifecycle-worker.js";
 import { ChatOutboxWorker } from "./jobs/chat/chat-outbox-worker.js";
 import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
@@ -18,6 +19,7 @@ import { NotificationOutboxWorker } from "./jobs/notifications/notification-outb
 import { SubscriptionExpiryWorker } from "./jobs/premium/subscription-expiry-worker.js";
 import { CryptoService } from "./modules/auth/application/services/crypto-service.js";
 import { createChatService } from "./modules/chat/index.js";
+import { CallService } from "./modules/calls/index.js";
 import { createOfficialChatModule } from "./modules/official-chat/index.js";
 import {
   registerChatGateway,
@@ -34,6 +36,7 @@ const crypto = new CryptoService(config);
 const emailWorker = new EmailWorker(prisma, config);
 const feedScoreWorker = new FeedScoreWorker(prisma, config);
 const subscriptionExpiryWorker = new SubscriptionExpiryWorker(prisma, config);
+let callLifecycleWorker: CallLifecycleWorker;
 const port = config.PORT;
 const chatOutboxHooks = {
   wakeChat: () => {},
@@ -55,6 +58,8 @@ let notificationOutboxWorker: NotificationOutboxWorker;
 let httpServer: ReturnType<typeof createServer>;
 
 async function bootstrap(): Promise<void> {
+  const callService = new CallService(prisma, config);
+  callLifecycleWorker = new CallLifecycleWorker(callService);
   const officialChat = await createOfficialChatModule(prisma, {
     wakeOutbox: () => chatOutboxHooks.wakeAll(),
   });
@@ -62,6 +67,7 @@ async function bootstrap(): Promise<void> {
     chatOutboxWake: () => chatOutboxHooks.wakeChat(),
     signupOfficialChat: officialChat.signupWriter,
     officialChat: officialChat.service,
+    calls: callService,
   });
   httpServer = createServer(app);
 
@@ -71,8 +77,15 @@ async function bootstrap(): Promise<void> {
       credentials: true,
     },
   });
+  callService.attachIo(io);
   const chatService = createChatService(config, prisma);
-  chatOutboxWorker = new ChatOutboxWorker(prisma, chatService, io, config);
+  chatOutboxWorker = new ChatOutboxWorker(
+    prisma,
+    chatService,
+    io,
+    config,
+    callService,
+  );
   chatOutboxHooks.wakeChat = () => chatOutboxWorker.wake();
   chatOutboxHooks.wakeNotification = () => notificationOutboxWorker.wake();
   const notificationService = createNotificationService(config, prisma);
@@ -80,6 +93,18 @@ async function bootstrap(): Promise<void> {
     new PrismaPushDeviceRepository(prisma),
     config,
   );
+  callService.setIncomingCallHandler((userId, payload) => {
+    void pushSender.sendData(userId, {
+      type: "INCOMING_CALL",
+      callId: payload.callId,
+      conversationId: payload.conversationId,
+      callerId: payload.callerId,
+      actorUsername: payload.callerUsername,
+      title: "Incoming video call",
+      body: `${payload.callerDisplayName ?? payload.callerUsername} is calling`,
+      pointsPerMinute: String(payload.pointsPerMinute),
+    });
+  });
   notificationOutboxWorker = new NotificationOutboxWorker(
     prisma,
     notificationService,
@@ -104,7 +129,7 @@ async function bootstrap(): Promise<void> {
         next(unauthenticatedSocketError());
       });
   });
-  registerChatGateway(io, chatService);
+  registerChatGateway(io, chatService, callService);
 
   try {
     await ensureDefaultInterestTags(prisma);
@@ -133,6 +158,7 @@ async function bootstrap(): Promise<void> {
     void emailWorker.start();
     feedScoreWorker.start();
     subscriptionExpiryWorker.start();
+    callLifecycleWorker.start();
     void chatOutboxWorker.start();
     void notificationOutboxWorker.start();
   });
@@ -148,6 +174,7 @@ async function shutdown(signal: string): Promise<void> {
   emailWorker.stop();
   feedScoreWorker.stop();
   subscriptionExpiryWorker.stop();
+  callLifecycleWorker.stop();
   chatOutboxWorker.stop();
   notificationOutboxWorker.stop();
   await io.close();
