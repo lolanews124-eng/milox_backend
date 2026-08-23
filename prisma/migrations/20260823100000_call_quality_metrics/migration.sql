@@ -1,4 +1,4 @@
-﻿-- AlterTable
+-- AlterTable
 ALTER TABLE "call_sessions" ADD COLUMN IF NOT EXISTS "iceRestartCount" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "call_sessions" ADD COLUMN IF NOT EXISTS "poorNetworkEvents" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "call_sessions" ADD COLUMN IF NOT EXISTS "connectedSeconds" INTEGER NOT NULL DEFAULT 0;

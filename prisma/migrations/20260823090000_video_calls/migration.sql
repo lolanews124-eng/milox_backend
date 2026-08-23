@@ -1,4 +1,4 @@
-﻿-- Video calls (MATCH chat WebRTC) + app economy config
+-- Video calls (MATCH chat WebRTC) + app economy config
 
 CREATE TYPE "CallSessionStatus" AS ENUM ('RINGING', 'ACTIVE', 'ENDED');
 CREATE TYPE "CallEndReason" AS ENUM ('HANGUP', 'REJECT', 'TIMEOUT', 'BUSY', 'INSUFFICIENT_POINTS', 'UNMATCH', 'ERROR');
