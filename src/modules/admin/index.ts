@@ -10,6 +10,7 @@ import { VerifiedBadgeService } from "../premium/application/verified-badge-serv
 import { AdminController } from "./presentation/admin-controller.js";
 import { createAdminRouter } from "./presentation/admin-router.js";
 import type { PaypalClient } from "../payments/infrastructure/paypal-client.js";
+import type { CashfreeClient } from "../payments/infrastructure/cashfree-client.js";
 
 import type { OfficialChatService } from "../official-chat/application/official-chat-service.js";
 import type { CallService } from "../calls/application/call-service.js";
@@ -26,6 +27,7 @@ export function createAdminModule(
   officialChat?: OfficialChatService,
   paypalClient?: PaypalClient,
   calls?: CallService,
+  cashfreeClient?: CashfreeClient,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
   const service = new AdminService(
@@ -34,6 +36,7 @@ export function createAdminModule(
     paypalClient ? { config, client: paypalClient } : undefined,
     database,
     calls,
+    cashfreeClient ? { config, client: cashfreeClient } : undefined,
   );
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),

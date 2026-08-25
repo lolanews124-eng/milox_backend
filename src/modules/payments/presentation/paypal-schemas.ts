@@ -19,6 +19,12 @@ export const createPaypalCheckoutSchema = z.discriminatedUnion("kind", [
 
 export const capturePaypalCheckoutSchema = z
   .object({
-    paypalOrderId: z.string().trim().min(1).max(64),
+    paypalOrderId: z.string().trim().min(1).max(64).optional(),
+    providerOrderId: z.string().trim().min(1).max(64).optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Boolean(value.paypalOrderId || value.providerOrderId), {
+    message: "paypalOrderId or providerOrderId required",
+  });
+
+export const markCheckoutSchema = capturePaypalCheckoutSchema;

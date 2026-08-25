@@ -12,6 +12,20 @@ export function createPaypalRouter(
   const buyLimit = createRateLimit(20, 10 * 60 * 1000);
   const webhookLimit = createRateLimit(120, 10 * 60 * 1000);
 
+  router.get(
+    "/checkout-options",
+    authenticate,
+    asyncHandler(controller.getOptions),
+  );
+
+  // Gateway-agnostic create (routes India→Cashfree, else→PayPal).
+  router.post(
+    "/checkout",
+    authenticate,
+    buyLimit,
+    asyncHandler(controller.createCheckout),
+  );
+  // Keep legacy PayPal path for older app builds.
   router.post(
     "/paypal/orders",
     authenticate,
@@ -24,9 +38,25 @@ export function createPaypalRouter(
     asyncHandler(controller.captureCheckout),
   );
   router.post(
+    "/checkout/capture",
+    buyLimit,
+    asyncHandler(controller.captureCheckout),
+  );
+  router.post(
+    "/checkout/cancel",
+    authenticate,
+    buyLimit,
+    asyncHandler(controller.markCancelled),
+  );
+  router.post(
     "/paypal/webhook",
     webhookLimit,
     asyncHandler(controller.webhook),
+  );
+  router.post(
+    "/cashfree/webhook",
+    webhookLimit,
+    asyncHandler(controller.cashfreeWebhook),
   );
   return router;
 }

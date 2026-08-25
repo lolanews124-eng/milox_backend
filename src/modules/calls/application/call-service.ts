@@ -1304,6 +1304,42 @@ export class CallService {
     return this.present(session, economy.videoCallPointsPerMinute, userId);
   }
 
+  /**
+   * Mobile cold-start restore: the user's current RINGING/ACTIVE call, if any.
+   */
+  async getActiveCallForUser(userId: string): Promise<{
+    call: CallSessionView | null;
+    peerName: string | null;
+    incoming: boolean;
+  }> {
+    const session = await this.database.callSession.findFirst({
+      where: {
+        status: {
+          in: [CallSessionStatus.RINGING, CallSessionStatus.ACTIVE],
+        },
+        OR: [{ callerId: userId }, { calleeId: userId }],
+      },
+      orderBy: { ringingAt: "desc" },
+      include: {
+        caller: { select: { username: true, displayName: true } },
+        callee: { select: { username: true, displayName: true } },
+      },
+    });
+    if (!session) {
+      return { call: null, peerName: null, incoming: false };
+    }
+    const economy = await ensureAppEconomyConfig(this.database);
+    const incoming = session.calleeId === userId;
+    const peer = incoming ? session.caller : session.callee;
+    const peerName =
+      peer.displayName?.trim() || peer.username || "Milox match";
+    return {
+      call: this.present(session, economy.videoCallPointsPerMinute, userId),
+      peerName,
+      incoming,
+    };
+  }
+
   private present(
     session: CallSession,
     pointsPerMinute: number,

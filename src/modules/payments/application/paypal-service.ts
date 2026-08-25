@@ -1,4 +1,5 @@
 import {
+  PaymentGateway,
   PaypalCheckoutKind,
   PaypalCheckoutStatus,
   PremiumBillingCycle,
@@ -40,6 +41,7 @@ export class PaypalService {
       | { kind: "POINT_PACK"; packId: string }
       | { kind: "PREMIUM"; planId: string; billingCycle: PremiumBillingCycle }
       | { kind: "VERIFIED_BADGE" },
+    options?: { country?: string | null },
   ) {
     await this.paypal.requireConfigured();
     const prepared = await this.prepare(userId, input);
@@ -60,10 +62,12 @@ export class PaypalService {
         userId,
         kind: prepared.kind,
         status: PaypalCheckoutStatus.CREATED,
+        gateway: PaymentGateway.PAYPAL,
         paypalOrderId: created.id,
         amountMinor: prepared.amountMinor,
         currency: prepared.currency,
         description: prepared.description,
+        country: options?.country ?? null,
         packId: prepared.packId,
         planId: prepared.planId,
         planPriceId: prepared.planPriceId,
@@ -73,9 +77,13 @@ export class PaypalService {
 
     return {
       checkoutId,
+      gateway: "PAYPAL" as const,
       paypalOrderId: created.id,
+      providerOrderId: created.id,
       approvalUrl: created.approvalUrl,
       kind: prepared.kind,
+      currency: prepared.currency,
+      amountMinor: prepared.amountMinor,
     };
   }
 
@@ -90,22 +98,54 @@ export class PaypalService {
       return this.present(checkout);
     }
 
-    const paid = await this.paypal.capturePaidOrder(paypalOrderId);
-    if (!paid.paid || !paid.captureId) {
-      throw new AppError(
-        "PAYPAL_NOT_COMPLETED",
-        "PayPal payment is not completed yet",
-        409,
-      );
+    try {
+      const paid = await this.paypal.capturePaidOrder(paypalOrderId);
+      if (!paid.paid || !paid.captureId) {
+        await this.database.paypalCheckout.update({
+          where: { id: checkout.id },
+          data: {
+            status: PaypalCheckoutStatus.FAILED,
+            failureReason: "PayPal payment not completed",
+          },
+        });
+        throw new AppError(
+          "PAYPAL_NOT_COMPLETED",
+          "PayPal payment is not completed yet",
+          409,
+        );
+      }
+      if (!paypalPaymentMatchesCheckout(paid, checkout)) {
+        await this.database.paypalCheckout.update({
+          where: { id: checkout.id },
+          data: {
+            status: PaypalCheckoutStatus.FAILED,
+            failureReason: "Amount/currency mismatch",
+          },
+        });
+        throw new AppError(
+          "PAYPAL_AMOUNT_MISMATCH",
+          "PayPal payment does not match this order",
+          409,
+        );
+      }
+      const updated = await this.fulfill(checkout.id, paid.captureId);
+      return this.present(updated);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      await this.database.paypalCheckout.update({
+        where: { id: checkout.id },
+        data: {
+          status: PaypalCheckoutStatus.FAILED,
+          failureReason: error instanceof Error ? error.message.slice(0, 480) : "Capture failed",
+        },
+      });
+      throw error;
     }
-    if (!paypalPaymentMatchesCheckout(paid, checkout)) {
-      throw new AppError(
-        "PAYPAL_AMOUNT_MISMATCH",
-        "PayPal payment does not match this order",
-        409,
-      );
-    }
-    const updated = await this.fulfill(checkout.id, paid.captureId);
+  }
+
+  /** Shared fulfill path for Cashfree (and other gateways). */
+  async fulfillExternalCapture(checkoutId: string, captureId: string) {
+    const updated = await this.fulfill(checkoutId, captureId);
     return this.present(updated);
   }
 
@@ -255,8 +295,8 @@ export class PaypalService {
             userId: checkout.userId,
             amount: pack.points,
             type: WalletTransactionType.POINT_PURCHASE,
-            idempotencyKey: `paypal:${checkout.id}`,
-            referenceType: "paypal_checkout",
+            idempotencyKey: `checkout:${checkout.id}`,
+            referenceType: "payment_checkout",
             referenceId: checkout.id,
             description: pack.label ?? `${pack.points} Milox Points`,
           });

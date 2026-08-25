@@ -197,6 +197,11 @@ enum PaypalCheckoutStatus {
   CANCELLED
 }
 
+enum PaymentGateway {
+  PAYPAL
+  CASHFREE
+}
+
 enum ReferralStatus {
   QUALIFIED
   REJECTED
@@ -1415,11 +1420,15 @@ model PaypalCheckout {
   userId           String               @db.Uuid
   kind             PaypalCheckoutKind
   status           PaypalCheckoutStatus @default(CREATED)
+  gateway          PaymentGateway       @default(PAYPAL)
+  /// PayPal order id or Cashfree order id (provider reference).
   paypalOrderId    String               @unique @db.VarChar(64)
   paypalCaptureId  String?              @unique @db.VarChar(64)
   amountMinor      Int
   currency         String               @db.Char(3)
   description      String               @db.VarChar(255)
+  country          String?              @db.VarChar(80)
+  failureReason    String?              @db.VarChar(500)
   packId           String?              @db.Uuid
   planId           String?              @db.Uuid
   planPriceId      String?              @db.Uuid
@@ -1432,6 +1441,7 @@ model PaypalCheckout {
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([gateway, status, createdAt])
   @@map("paypal_checkouts")
 }
 
@@ -1463,6 +1473,17 @@ model PaypalSettings {
   updatedAt    DateTime @updatedAt
 
   @@map("paypal_settings")
+}
+
+/// Super-admin Cashfree PG keys (India). Secret stored encrypted.
+model CashfreeSettings {
+  id        String   @id @default("default") @db.VarChar(32)
+  appId     String   @default("") @db.VarChar(255)
+  secretKey String   @default("") @db.Text
+  mode      String   @default("sandbox") @db.VarChar(16)
+  updatedAt DateTime @updatedAt
+
+  @@map("cashfree_settings")
 }
 
 /// Singleton row (id = default) controlling mobile force-update from admin.

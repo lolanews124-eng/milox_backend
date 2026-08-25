@@ -60,7 +60,15 @@ import {
 import { presentMobileAppConfig } from "../../../app-release/mobile-app-config.js";
 import type { AppConfig } from "../../../../config/env.js";
 import { presentPaypalSettings } from "../../../payments/application/paypal-settings.js";
+import {
+  presentCashfreeSettings,
+  resolveCashfreeCredentials,
+  saveCashfreeSettings,
+  ensureCashfreeSettings,
+} from "../../../payments/application/cashfree-settings.js";
+import { paymentFunnelReport } from "../../../payments/application/paypal-settings.js";
 import type { PaypalClient } from "../../../payments/infrastructure/paypal-client.js";
+import type { CashfreeClient } from "../../../payments/infrastructure/cashfree-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 import {
@@ -80,6 +88,10 @@ export class AdminService {
     },
     private readonly database?: PrismaClient,
     private readonly calls?: CallService,
+    private readonly cashfree?: {
+      config: AppConfig;
+      client: CashfreeClient;
+    },
   ) {}
 
   async economyConfig(): Promise<object> {
@@ -1191,6 +1203,60 @@ export class AdminService {
     return this.repository.paypalIncomeReport();
   }
 
+  async paymentFunnelReport(days = 30): Promise<object> {
+    return paymentFunnelReport(this.requireDatabase(), days);
+  }
+
+  private requireCashfree() {
+    if (!this.cashfree) {
+      throw new AppError(
+        "CASHFREE_NOT_CONFIGURED",
+        "Cashfree is not available",
+        503,
+      );
+    }
+    return this.cashfree;
+  }
+
+  async getCashfreeSettings(): Promise<object> {
+    const cashfree = this.requireCashfree();
+    const row = await ensureCashfreeSettings(this.requireDatabase());
+    const runtime = await resolveCashfreeCredentials(
+      this.requireDatabase(),
+      cashfree.config,
+    );
+    return presentCashfreeSettings(row, cashfree.config, runtime);
+  }
+
+  async updateCashfreeSettings(
+    actorId: string,
+    input: {
+      appId?: string | undefined;
+      secretKey?: string | undefined;
+      mode?: "sandbox" | "production" | undefined;
+      clearSecret?: boolean | undefined;
+    },
+  ): Promise<object> {
+    const cashfree = this.requireCashfree();
+    void actorId;
+    const row = await saveCashfreeSettings(
+      this.requireDatabase(),
+      cashfree.config.JWT_ACCESS_SECRET,
+      input,
+    );
+    cashfree.client.invalidate();
+    const runtime = await resolveCashfreeCredentials(
+      this.requireDatabase(),
+      cashfree.config,
+    );
+    return presentCashfreeSettings(row, cashfree.config, runtime);
+  }
+
+  async testCashfreeSettings(): Promise<object> {
+    const cashfree = this.requireCashfree();
+    return cashfree.client.testConnection();
+  }
+
   async listCmsPages(options: {
     page: number;
     pageSize: number;
@@ -1782,7 +1848,7 @@ export class AdminService {
     try {
       const rate = await this.repository.createPointPurchaseRate({
         actorId,
-        currency: "USD",
+        currency: input.currency === "INR" ? "INR" : "USD",
         amountMinor: input.amountMinor,
         points: input.points,
         ...(input.label !== undefined ? { label: input.label } : {}),
@@ -1816,7 +1882,9 @@ export class AdminService {
       const rate = await this.repository.updatePointPurchaseRate({
         actorId,
         rateId,
-        currency: "USD",
+        ...(input.currency !== undefined
+          ? { currency: input.currency === "INR" ? "INR" : "USD" }
+          : {}),
         ...(input.amountMinor !== undefined
           ? { amountMinor: input.amountMinor }
           : {}),

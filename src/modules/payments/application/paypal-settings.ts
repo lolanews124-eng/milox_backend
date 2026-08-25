@@ -150,6 +150,70 @@ function moneyList(bucket: Record<string, { amountMinor: number; count: number }
     .sort((a, b) => b.amountMinor - a.amountMinor);
 }
 
+/** Funnel: started vs paid vs failed/cancelled — why PayPal "no income" is often abandoned checkouts. */
+export async function paymentFunnelReport(database: PrismaClient, days = 30) {
+  const since = addDays(dayStartUtc(new Date()), -(Math.min(90, Math.max(1, days)) - 1));
+  const rows = await database.paypalCheckout.findMany({
+    where: { createdAt: { gte: since } },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: {
+      id: true,
+      kind: true,
+      status: true,
+      gateway: true,
+      amountMinor: true,
+      currency: true,
+      description: true,
+      country: true,
+      failureReason: true,
+      createdAt: true,
+      fulfilledAt: true,
+      user: { select: { username: true } },
+    },
+  });
+
+  const summary = {
+    started: rows.length,
+    completed: 0,
+    created: 0,
+    failed: 0,
+    cancelled: 0,
+  };
+  for (const row of rows) {
+    if (row.status === PaypalCheckoutStatus.COMPLETED) summary.completed += 1;
+    else if (row.status === PaypalCheckoutStatus.CREATED) summary.created += 1;
+    else if (row.status === PaypalCheckoutStatus.FAILED) summary.failed += 1;
+    else if (row.status === PaypalCheckoutStatus.CANCELLED) summary.cancelled += 1;
+  }
+
+  return {
+    rangeDays: Math.min(90, Math.max(1, days)),
+    summary: {
+      ...summary,
+      abandonedOrUnpaid: summary.created + summary.failed + summary.cancelled,
+      conversionRate:
+        summary.started === 0
+          ? 0
+          : Math.round((summary.completed / summary.started) * 1000) / 10,
+    },
+    recent: rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      status: row.status,
+      gateway: row.gateway,
+      username: row.user.username,
+      amountMinor: row.amountMinor,
+      currency: row.currency,
+      description: row.description,
+      country: row.country,
+      failureReason: row.failureReason,
+      createdAt: row.createdAt.toISOString(),
+      paidAt: row.fulfilledAt?.toISOString() ?? null,
+    })),
+  };
+}
+
 export async function paypalIncomeReport(database: PrismaClient, now = new Date()) {
   const completed = { status: PaypalCheckoutStatus.COMPLETED } as const;
   const today = dayStartUtc(now);

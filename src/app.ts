@@ -82,6 +82,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     dependencies.officialChat,
     paypalClient,
     dependencies.calls,
+    payments.cashfreeClient,
   );
   const blog = createBlogModule(database);
   const posts = createPostModule(

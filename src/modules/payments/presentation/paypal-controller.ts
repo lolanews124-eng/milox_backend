@@ -2,14 +2,32 @@ import type { Request, Response } from "express";
 import { PremiumBillingCycle } from "@prisma/client";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import type { CheckoutService } from "../application/checkout-service.js";
 import type { PaypalService } from "../application/paypal-service.js";
 import {
   capturePaypalCheckoutSchema,
   createPaypalCheckoutSchema,
+  markCheckoutSchema,
 } from "./paypal-schemas.js";
 
 export class PaypalController {
-  constructor(private readonly paypal: PaypalService) {}
+  constructor(
+    private readonly paypal: PaypalService,
+    private readonly checkout: CheckoutService,
+  ) {}
+
+  getOptions = async (request: Request, response: Response): Promise<void> => {
+    const userId = request.auth?.userId;
+    if (!userId) {
+      throw new AppError("UNAUTHENTICATED", "Authentication required", 401);
+    }
+    const data = await this.checkout.getOptions(userId);
+    response.status(200).json({
+      success: true,
+      data,
+      meta: { requestId: request.requestId },
+    });
+  };
 
   createCheckout = async (request: Request, response: Response): Promise<void> => {
     const userId = request.auth?.userId;
@@ -19,17 +37,17 @@ export class PaypalController {
     const input = createPaypalCheckoutSchema.parse(request.body as unknown);
     const data =
       input.kind === "POINT_PACK"
-        ? await this.paypal.createCheckout(userId, {
+        ? await this.checkout.createCheckout(userId, {
             kind: "POINT_PACK",
             packId: input.packId,
           })
         : input.kind === "PREMIUM"
-          ? await this.paypal.createCheckout(userId, {
+          ? await this.checkout.createCheckout(userId, {
               kind: "PREMIUM",
               planId: input.planId,
               billingCycle: input.billingCycle as PremiumBillingCycle,
             })
-          : await this.paypal.createCheckout(userId, { kind: "VERIFIED_BADGE" });
+          : await this.checkout.createCheckout(userId, { kind: "VERIFIED_BADGE" });
     response.status(200).json({
       success: true,
       data,
@@ -39,7 +57,26 @@ export class PaypalController {
 
   captureCheckout = async (request: Request, response: Response): Promise<void> => {
     const input = capturePaypalCheckoutSchema.parse(request.body as unknown);
-    const data = await this.paypal.captureByPaypalOrderId(input.paypalOrderId);
+    const orderId = input.paypalOrderId || input.providerOrderId;
+    if (!orderId) {
+      throw new AppError("VALIDATION_ERROR", "Order id required", 400);
+    }
+    const data = await this.checkout.captureProviderOrder(orderId);
+    response.status(200).json({
+      success: true,
+      data,
+      meta: { requestId: request.requestId },
+    });
+  };
+
+  markCancelled = async (request: Request, response: Response): Promise<void> => {
+    const userId = request.auth?.userId;
+    const input = markCheckoutSchema.parse(request.body as unknown);
+    const orderId = input.paypalOrderId || input.providerOrderId;
+    if (!orderId) {
+      throw new AppError("VALIDATION_ERROR", "Order id required", 400);
+    }
+    const data = await this.checkout.markCancelled(orderId, userId);
     response.status(200).json({
       success: true,
       data,
@@ -62,6 +99,11 @@ export class PaypalController {
       transmissionSig: String(request.header("paypal-transmission-sig") ?? ""),
       transmissionTime: String(request.header("paypal-transmission-time") ?? ""),
     });
+    response.status(200).json({ success: true });
+  };
+
+  cashfreeWebhook = async (request: Request, response: Response): Promise<void> => {
+    await this.checkout.handleCashfreeWebhook(request.body);
     response.status(200).json({ success: true });
   };
 }

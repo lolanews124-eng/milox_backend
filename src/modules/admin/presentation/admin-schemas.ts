@@ -383,6 +383,19 @@ export const updatePaypalSettingsSchema = z
   })
   .strict();
 
+export const updateCashfreeSettingsSchema = z
+  .object({
+    appId: z.string().trim().max(255).optional(),
+    secretKey: z.string().trim().max(2000).optional(),
+    mode: z.enum(["sandbox", "production"]).optional(),
+    clearSecret: z.boolean().optional(),
+  })
+  .strict();
+
+export const adminPaymentFunnelQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30),
+});
+
 export const updateMobileAppConfigSchema = z
   .object({
     latestVersion: z.string().trim().min(1).max(32).optional(),
@@ -631,7 +644,7 @@ export const adminPointPurchaseRateIdParamSchema = z.object({
 
 export const createPointPurchaseRateSchema = z
   .object({
-    currency: z.enum(["USD"]).default("USD"),
+    currency: z.enum(["USD", "INR"]).default("USD"),
     amountMinor: z.coerce.number().int().min(1).max(100_000_000),
     points: z.coerce.number().int().min(1).max(10_000_000),
     label: z.string().trim().min(1).max(120).optional(),
@@ -642,7 +655,7 @@ export const createPointPurchaseRateSchema = z
 
 export const updatePointPurchaseRateSchema = z
   .object({
-    currency: z.enum(["USD"]).optional(),
+    currency: z.enum(["USD", "INR"]).optional(),
     amountMinor: z.coerce.number().int().min(1).max(100_000_000).optional(),
     points: z.coerce.number().int().min(1).max(10_000_000).optional(),
     label: z.string().trim().min(1).max(120).nullable().optional(),

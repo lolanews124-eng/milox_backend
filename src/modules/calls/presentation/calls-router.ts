@@ -55,6 +55,15 @@ export function createCallsRouter(
     }),
   );
 
+  // Must be registered before /:callId so "active" is not parsed as a UUID.
+  router.get(
+    "/active",
+    asyncHandler(async (request, response) => {
+      const data = await calls.getActiveCallForUser(requireUser(request));
+      response.status(200).json(ok(request, data));
+    }),
+  );
+
   router.get(
     "/:callId",
     asyncHandler(async (request, response) => {

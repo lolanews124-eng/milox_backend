@@ -56,6 +56,8 @@ import {
   updateAdPlacementConfigSchema,
   updateMobileAppConfigSchema,
   updatePaypalSettingsSchema,
+  updateCashfreeSettingsSchema,
+  adminPaymentFunnelQuerySchema,
   createCmsPageSchema,
   createInterestTagSchema,
   createPremiumPlanSchema,
@@ -712,6 +714,43 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const data = await this.admin.paypalIncomeReport();
+    response.status(200).json(success(request, data));
+  };
+
+  paymentFunnelReport = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = adminPaymentFunnelQuerySchema.parse(request.query);
+    const data = await this.admin.paymentFunnelReport(query.days);
+    response.status(200).json(success(request, data));
+  };
+
+  getCashfreeSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.getCashfreeSettings();
+    response.status(200).json(success(request, data));
+  };
+
+  updateCashfreeSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updateCashfreeSettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.updateCashfreeSettings(
+      requireUser(request),
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  testCashfreeSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.testCashfreeSettings();
     response.status(200).json(success(request, data));
   };
 

@@ -464,6 +464,30 @@ export function createAdminRouter(
     asyncHandler(controller.paypalIncomeReport),
   );
   router.get(
+    "/payments/funnel",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.paymentFunnelReport),
+  );
+  router.get(
+    "/cashfree",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.getCashfreeSettings),
+  );
+  router.patch(
+    "/cashfree",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.updateCashfreeSettings),
+  );
+  router.post(
+    "/cashfree/test",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.testCashfreeSettings),
+  );
+  router.get(
     "/cms-pages",
     readLimit,
     adminOnly,
