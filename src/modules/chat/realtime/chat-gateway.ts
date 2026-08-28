@@ -67,6 +67,10 @@ export interface ChatServerToClientEvents {
   }) => void;
   "message:edited": (message: object) => void;
   "match:ended": (payload: { matchId: string; conversationId: string }) => void;
+  "conversation:left": (payload: {
+    conversationId: string;
+    actorId: string;
+  }) => void;
   "typing:start": (payload: { conversationId: string; userId: string }) => void;
   "typing:stop": (payload: { conversationId: string; userId: string }) => void;
   "presence:update": (payload: {
