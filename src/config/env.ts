@@ -59,10 +59,36 @@ const envSchema = z
       .int()
       .positive()
       .default(300_000),
-    INTEREST_DAILY_LIMIT: z.coerce.number().int().positive().max(500).default(20),
+    INTEREST_DAILY_LIMIT: z.coerce.number().int().positive().max(500).default(30),
+    /** Free-tier users send this many interests per day at no point cost. */
+    FREE_DAILY_INTEREST_GRANTS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100)
+      .default(10),
     WALLET_WELCOME_BONUS: z.coerce.number().int().nonnegative().default(500),
     REFERRAL_REWARD_POINTS: z.coerce.number().int().nonnegative().default(100),
     POST_REWARD_POINTS: z.coerce.number().int().nonnegative().default(5),
+    /** Minimum seconds between standard posts from the same user. */
+    POST_COOLDOWN_SECONDS: z.coerce.number().int().positive().max(600).default(45),
+    /** Max standard posts allowed inside the burst window. */
+    POST_BURST_LIMIT: z.coerce.number().int().positive().max(20).default(3),
+    POST_BURST_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(3600)
+      .default(600),
+    /** Max standard posts per rolling hour (service-level; router limit is a backstop). */
+    POST_HOURLY_LIMIT: z.coerce.number().int().positive().max(60).default(12),
+    /** Block reposting the same text within this window (seconds). */
+    POST_DUPLICATE_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(86400)
+      .default(3600),
     INTEREST_SEND_COST: z.coerce
       .number()
       .int()

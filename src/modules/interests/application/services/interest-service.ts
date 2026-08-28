@@ -7,7 +7,10 @@ import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../../../config/env.js";
 import { INTEREST_SEND_COST_POINTS } from "../../../../config/wallet-economy.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
-import { resolveUserEntitlements, interestSendCostForEntitlements } from "../../../premium/application/entitlements.js";
+import {
+  hasUnlimitedInterests,
+  resolveUserEntitlements,
+} from "../../../premium/application/entitlements.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
 import type {
   InterestPageQuery,
@@ -54,10 +57,9 @@ export class InterestService {
       entitlements.features.dailyInterestLimit >= 9999
         ? 9999
         : entitlements.features.dailyInterestLimit;
-    const interestSendCost = interestSendCostForEntitlements(
-      entitlements,
-      INTEREST_SEND_COST_POINTS,
-    );
+    const waiveCost =
+      entitlements.isPremium ||
+      hasUnlimitedInterests(entitlements.features.dailyInterestLimit);
     try {
       const created = await this.repository.create({
         senderId,
@@ -69,7 +71,11 @@ export class InterestService {
           message,
         }),
         dailyLimit,
-        interestSendCost,
+        interestPricing: {
+          baseCost: INTEREST_SEND_COST_POINTS,
+          freeDailyGrants: this.config.FREE_DAILY_INTEREST_GRANTS,
+          waiveCost,
+        },
       });
       if (!created) throw new AppError("NOT_FOUND", "User not found", 404);
       return {
@@ -254,7 +260,7 @@ export class InterestService {
     if (error instanceof InterestDailyLimitError) {
       throw new AppError(
         "INTEREST_DAILY_LIMIT",
-        "Daily interest limit reached",
+        "Daily interest limit reached. Try again tomorrow or upgrade your plan.",
         429,
       );
     }

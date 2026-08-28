@@ -68,6 +68,7 @@ function postFixture(): PostViewRecord {
     commentCount: 0,
     shareCount: 0,
     saveCount: 0,
+    viewCount: 0,
     trendingScore: 0,
     createdAt: new Date("2026-07-17T00:00:00.000Z"),
     updatedAt: new Date("2026-07-17T00:00:00.000Z"),

@@ -4,7 +4,10 @@ import {
 } from "express";
 
 import { asyncHandler } from "../../../shared/http/async-handler.js";
-import { createRateLimit } from "../../../shared/http/rate-limit.js";
+import {
+  authenticatedRateLimitKey,
+  createRateLimit,
+} from "../../../shared/http/rate-limit.js";
 import type { PostController } from "./post-controller.js";
 
 export interface PostRouters {
@@ -22,9 +25,16 @@ export function createPostRouters(
   const posts = Router();
   const userPosts = Router();
   const hashtags = Router();
-  const writeLimit = createRateLimit(120, 10 * 60 * 1000);
-  const createPostLimit = createRateLimit(30, 60 * 60 * 1000);
+  const writeLimit = createRateLimit(120, 10 * 60 * 1000, {
+    keyGenerator: authenticatedRateLimitKey,
+  });
+  const createPostLimit = createRateLimit(15, 60 * 60 * 1000, {
+    keyGenerator: authenticatedRateLimitKey,
+  });
   const reportLimit = createRateLimit(10, 60 * 60 * 1000);
+  const viewLimit = createRateLimit(240, 10 * 60 * 1000, {
+    keyGenerator: authenticatedRateLimitKey,
+  });
   const verifiedWrite = [authenticate, requireVerified, writeLimit];
 
   posts.post(
@@ -71,6 +81,12 @@ export function createPostRouters(
     "/:postId/share",
     ...verifiedWrite,
     asyncHandler(controller.share),
+  );
+  posts.post(
+    "/:postId/view",
+    authenticate,
+    viewLimit,
+    asyncHandler(controller.view),
   );
   posts.post(
     "/:postId/report",

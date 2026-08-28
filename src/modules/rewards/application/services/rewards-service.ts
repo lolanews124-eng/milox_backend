@@ -2,7 +2,8 @@ import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import type { PrismaClient } from "@prisma/client";
 import {
-  interestSendCostForEntitlements,
+  freeInterestsRemaining,
+  resolveInterestSendCost,
   resolveUserEntitlements,
 } from "../../../premium/application/entitlements.js";
 import type { RewardsRepository } from "../ports/rewards-repository.js";
@@ -21,22 +22,44 @@ export class RewardsService {
     if (!wallet) {
       throw new AppError("WALLET_NOT_FOUND", "Milox Points not found", 404);
     }
-    const [entitlements, economy] = await Promise.all([
+    const [entitlements, economy, sentToday] = await Promise.all([
       resolveUserEntitlements(
         this.database,
         userId,
         this.config.INTEREST_DAILY_LIMIT,
       ),
       ensureAppEconomyConfig(this.database),
+      this.database.interest.count({
+        where: {
+          senderId: userId,
+          createdAt: { gte: startOfUtcDay() },
+        },
+      }),
     ]);
+    const baseInterestCost = wallet.interestSendCost;
+    const nextInterestCost = resolveInterestSendCost(
+      entitlements,
+      baseInterestCost,
+      sentToday,
+      this.config.FREE_DAILY_INTEREST_GRANTS,
+    );
     return presentWallet({
       ...wallet,
       videoCallEnabled: economy.videoCallEnabled,
       videoCallPointsPerMinute: economy.videoCallPointsPerMinute,
-      interestSendCost: interestSendCostForEntitlements(
+      interestSendCost: nextInterestCost,
+      paidInterestCost: baseInterestCost,
+      interestsSentToday: sentToday,
+      freeDailyInterestGrants: this.config.FREE_DAILY_INTEREST_GRANTS,
+      freeInterestsRemaining: freeInterestsRemaining(
         entitlements,
-        wallet.interestSendCost,
+        sentToday,
+        this.config.FREE_DAILY_INTEREST_GRANTS,
       ),
+      dailyInterestLimit:
+        entitlements.features.dailyInterestLimit >= 9999
+          ? null
+          : entitlements.features.dailyInterestLimit,
     });
   }
 
@@ -110,12 +133,22 @@ function presentWallet(wallet: {
   rewardedAdDailyLimit: number;
   videoCallEnabled: boolean;
   videoCallPointsPerMinute: number;
+  interestsSentToday: number;
+  freeDailyInterestGrants: number;
+  freeInterestsRemaining: number;
+  dailyInterestLimit: number | null;
+  paidInterestCost: number;
 }) {
   return {
     balance: wallet.balance,
     lifetimeEarned: wallet.lifetimeEarned,
     lifetimeSpent: wallet.lifetimeSpent,
     interestSendCost: wallet.interestSendCost,
+    interestsSentToday: wallet.interestsSentToday,
+    freeDailyInterestGrants: wallet.freeDailyInterestGrants,
+    freeInterestsRemaining: wallet.freeInterestsRemaining,
+    dailyInterestLimit: wallet.dailyInterestLimit,
+    paidInterestCost: wallet.paidInterestCost,
     referralRewardPoints: wallet.referralRewardPoints,
     postRewardPoints: wallet.postRewardPoints,
     welcomeBonus: wallet.welcomeBonus,
@@ -124,6 +157,13 @@ function presentWallet(wallet: {
     videoCallEnabled: wallet.videoCallEnabled,
     videoCallPointsPerMinute: wallet.videoCallPointsPerMinute,
   };
+}
+
+function startOfUtcDay(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 }
 
 function presentTransaction(row: {

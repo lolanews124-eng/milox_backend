@@ -24,11 +24,17 @@ const unmatchedPayloadSchema = z.object({
   matchId: z.uuid(),
   conversationId: z.uuid().nullable(),
 });
+const conversationLeftPayloadSchema = z.object({
+  conversationId: z.uuid(),
+  actorId: z.uuid(),
+  peerId: z.uuid().nullable(),
+});
 const CHAT_EVENTS = [
   "chat.message.created",
   "chat.message.deleted",
   "chat.message.edited",
   "chat.match.unmatched",
+  "chat.conversation.left",
 ];
 
 export class ChatOutboxWorker {
@@ -151,6 +157,18 @@ export class ChatOutboxWorker {
           conversationId: payload.conversationId,
         });
         this.io.in(room).socketsLeave(room);
+      }
+      return;
+    }
+    if (event.eventType === "chat.conversation.left") {
+      const payload = conversationLeftPayloadSchema.parse(event.payload);
+      const room = `conversation:${payload.conversationId}`;
+      this.io.in(`user:${payload.actorId}`).socketsLeave(room);
+      if (payload.peerId) {
+        this.io.to(`user:${payload.peerId}`).emit("conversation:left", {
+          conversationId: payload.conversationId,
+          actorId: payload.actorId,
+        });
       }
       return;
     }

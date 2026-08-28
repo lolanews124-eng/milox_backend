@@ -17,6 +17,7 @@ import type {
   HashtagRecord,
   PostPageQuery,
   PostRepository,
+  PostSpamSnapshotQuery,
   ReportRecord,
   SavedPageQuery,
   SavedPostRecord,
@@ -29,6 +30,7 @@ import {
 import type { PostViewRecord } from "../application/post-view.js";
 import type { RewardsRepository } from "../../rewards/application/ports/rewards-repository.js";
 import { extractHashtags } from "../../../shared/hashtags.js";
+import { normalizePostBodyForDuplicateCheck } from "../application/services/post-spam-guard.js";
 import {
   postViewSelect,
   visibleAuthorWhere,
@@ -137,6 +139,57 @@ export class PrismaPostRepository implements PostRepository {
       }
       throw error;
     }
+  }
+
+  async getPostingSpamSnapshot(
+    authorId: string,
+    query: PostSpamSnapshotQuery,
+  ) {
+    const baseWhere = {
+      authorId,
+      kind: PostKind.STANDARD,
+      deletedAt: null,
+    } satisfies Prisma.PostWhereInput;
+
+    const [last, burstCount, hourlyCount, duplicate] = await Promise.all([
+      this.database.post.findFirst({
+        where: baseWhere,
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }),
+      this.database.post.count({
+        where: { ...baseWhere, createdAt: { gte: query.burstSince } },
+      }),
+      this.database.post.count({
+        where: { ...baseWhere, createdAt: { gte: query.hourSince } },
+      }),
+      query.normalizedBody
+        ? this.database.post
+            .findMany({
+              where: {
+                ...baseWhere,
+                createdAt: { gte: query.duplicateSince },
+                body: { not: null },
+              },
+              select: { body: true },
+              take: 40,
+            })
+            .then((posts) =>
+              posts.some(
+                (post) =>
+                  normalizePostBodyForDuplicateCheck(post.body) ===
+                  query.normalizedBody,
+              ),
+            )
+        : Promise.resolve(false),
+    ]);
+
+    return {
+      lastCreatedAt: last?.createdAt ?? null,
+      burstCount,
+      hourlyCount,
+      hasDuplicateBody: duplicate,
+    };
   }
 
   async createProfileUpdatePost(
@@ -445,6 +498,43 @@ export class PrismaPostRepository implements PostRepository {
         where: { id: postId },
         select: postViewSelect(userId),
       });
+    });
+  }
+
+  async recordView(
+    postId: string,
+    viewerId: string,
+  ): Promise<{ viewCount: number } | null> {
+    return this.database.$transaction(async (transaction) => {
+      const post = await findVisibleForAction(transaction, postId, viewerId);
+      if (!post) return null;
+
+      if (post.authorId === viewerId) {
+        const own = await transaction.post.findUnique({
+          where: { id: postId },
+          select: { viewCount: true },
+        });
+        return own ? { viewCount: own.viewCount } : null;
+      }
+
+      const created = await transaction.postView.createMany({
+        data: [{ postId, viewerId }],
+        skipDuplicates: true,
+      });
+      if (created.count === 0) {
+        const existing = await transaction.post.findUnique({
+          where: { id: postId },
+          select: { viewCount: true },
+        });
+        return existing ? { viewCount: existing.viewCount } : null;
+      }
+
+      const updated = await transaction.post.update({
+        where: { id: postId },
+        data: { viewCount: { increment: 1 } },
+        select: { viewCount: true },
+      });
+      return { viewCount: updated.viewCount };
     });
   }
 

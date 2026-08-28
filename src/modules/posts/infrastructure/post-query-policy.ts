@@ -71,6 +71,7 @@ export function postViewSelect(viewerId?: string) {
     commentCount: true,
     shareCount: true,
     saveCount: true,
+    viewCount: true,
     trendingScore: true,
     createdAt: true,
     updatedAt: true,

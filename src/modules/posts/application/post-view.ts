@@ -41,6 +41,7 @@ export interface PostViewRecord {
   commentCount: number;
   shareCount: number;
   saveCount: number;
+  viewCount: number;
   trendingScore: number;
   createdAt: Date;
   updatedAt: Date;
@@ -82,6 +83,7 @@ export function presentPost(post: PostViewRecord, config: AppConfig): object {
     commentCount: post.commentCount,
     shareCount: post.shareCount,
     saveCount: post.saveCount,
+    viewCount: post.viewCount,
     viewerLiked: post.likes.length > 0,
     viewerSaved: post.saves.length > 0,
     createdAt: post.createdAt.toISOString(),

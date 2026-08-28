@@ -5,6 +5,12 @@ import type {
   MatchViewRecord,
 } from "../interest-view.js";
 
+export interface InterestPricingInput {
+  baseCost: number;
+  freeDailyGrants: number;
+  waiveCost: boolean;
+}
+
 export interface CreateInterestData {
   senderId: string;
   recipientId: string;
@@ -12,7 +18,7 @@ export interface CreateInterestData {
   idempotencyKey: string;
   requestHash: string;
   dailyLimit: number;
-  interestSendCost: number;
+  interestPricing: InterestPricingInput;
 }
 
 export interface InterestPageQuery {
@@ -35,6 +41,7 @@ export interface CreatedInterest {
 
 export interface InterestRepository {
   create(data: CreateInterestData): Promise<CreatedInterest | null>;
+  countInterestsSentToday(senderId: string): Promise<number>;
   listIncoming(query: InterestPageQuery): Promise<InterestViewRecord[]>;
   listOutgoing(query: InterestPageQuery): Promise<InterestViewRecord[]>;
   accept(interestId: string, recipientId: string): Promise<MatchViewRecord | null>;

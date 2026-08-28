@@ -16,6 +16,11 @@ import { FeedCursorCodec } from "../src/modules/feed/application/services/feed-c
 const config = {
   API_PUBLIC_URL: "http://localhost:3001",
   JWT_ACCESS_SECRET: "post-service-secret-at-least-32-bytes",
+  POST_COOLDOWN_SECONDS: 45,
+  POST_BURST_LIMIT: 3,
+  POST_BURST_WINDOW_SECONDS: 600,
+  POST_HOURLY_LIMIT: 12,
+  POST_DUPLICATE_WINDOW_SECONDS: 3600,
 } as AppConfig;
 const userId = "8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9";
 const postId = "b9e27322-a92d-4b13-8ddc-3849a3b09a5a";
@@ -43,6 +48,25 @@ describe("PostService", () => {
       idempotencyKey: "4c960e9a-592a-41e0-9942-2589f5dd0894",
       requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
+  });
+
+  it("blocks posting during cooldown", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.getPostingSpamSnapshot).mockResolvedValue({
+      lastCreatedAt: new Date(Date.now() - 10_000),
+      burstCount: 0,
+      hourlyCount: 0,
+      hasDuplicateBody: false,
+    });
+    const service = createService(repository);
+
+    await expect(
+      service.create(userId, { body: "spam", mediaIds: [] }),
+    ).rejects.toMatchObject({
+      code: "POST_COOLDOWN",
+      statusCode: 429,
+    });
+    expect(repository.create).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate media and media not owned by the author", async () => {
@@ -133,6 +157,12 @@ function createService(repository: PostRepository): PostService {
 function createRepository(): PostRepository {
   return {
     create: vi.fn(),
+    getPostingSpamSnapshot: vi.fn().mockResolvedValue({
+      lastCreatedAt: null,
+      burstCount: 0,
+      hourlyCount: 0,
+      hasDuplicateBody: false,
+    }),
     createProfileUpdatePost: vi.fn(),
     findVisible: vi.fn(),
     listByUsername: vi.fn(),
@@ -148,6 +178,7 @@ function createRepository(): PostRepository {
     save: vi.fn(),
     unsave: vi.fn(),
     share: vi.fn(),
+    recordView: vi.fn(),
     report: vi.fn(),
   };
 }
@@ -167,6 +198,7 @@ function postFixture(
     commentCount: 0,
     shareCount: 0,
     saveCount: 0,
+    viewCount: 0,
     trendingScore: 0,
     createdAt: new Date("2026-07-17T00:00:00.000Z"),
     updatedAt: new Date("2026-07-17T00:00:00.000Z"),

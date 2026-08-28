@@ -28,6 +28,10 @@ describe("PrismaModerationRepository", () => {
       interest: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      match: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
     };
     const database = {
       user: {

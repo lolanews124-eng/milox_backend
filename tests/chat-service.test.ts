@@ -174,6 +174,7 @@ function createRepository(): ChatRepository {
     resolveChatMedia: vi.fn(),
     findMessageForRealtime: vi.fn(),
     findOrCreateDirectConversation: vi.fn(),
+    leaveConversation: vi.fn(),
   };
 }
 

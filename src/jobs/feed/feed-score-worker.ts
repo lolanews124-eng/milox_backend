@@ -35,13 +35,41 @@ export class FeedScoreWorker {
         UPDATE posts
         SET "trendingScore" = GREATEST(
           (
-            "likeCount"
-            + ("commentCount" * 2.0)
-            + ("shareCount" * 3.0)
-            + ("saveCount" * 2.5)
+            (
+              "likeCount"
+              + ("commentCount" * 2.0)
+              + ("shareCount" * 3.0)
+              + ("saveCount" * 2.5)
+              + LEAST(LN("viewCount" + 1.0) * 8.0, "viewCount" * 0.08)
+            )
+            * (
+              CASE
+                WHEN "viewCount" >= 100
+                  AND "createdAt" >= NOW() - INTERVAL '24 hours'
+                  THEN 1.28
+                WHEN "viewCount" >= 50
+                  AND "createdAt" >= NOW() - INTERVAL '12 hours'
+                  THEN 1.18
+                WHEN "viewCount" >= 20
+                  AND "createdAt" >= NOW() - INTERVAL '6 hours'
+                  THEN 1.1
+                ELSE 1.0
+              END
+            )
+            * (
+              CASE
+                WHEN "viewCount" >= 10
+                  AND (
+                    ("likeCount" + ("commentCount" * 2.0))::float
+                    / GREATEST("viewCount", 1)::float
+                  ) >= 0.08
+                  THEN 1.15
+                ELSE 1.0
+              END
+            )
           ) / POWER(
               (EXTRACT(EPOCH FROM (NOW() - "createdAt")) / 3600.0) + 2.0,
-              1.35
+              1.32
             ),
           CASE
             WHEN "createdAt" >= NOW() - INTERVAL '12 hours' THEN 0.35

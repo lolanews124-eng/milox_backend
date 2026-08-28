@@ -104,13 +104,19 @@ export class PrismaInterestRepository implements InterestRepository {
           throw new InterestDailyLimitError();
         }
 
+        const interestSendCost = data.interestPricing.waiveCost
+          ? 0
+          : sentToday < data.interestPricing.freeDailyGrants
+            ? 0
+            : data.interestPricing.baseCost;
+
         const wallet = await transaction.wallet.findUnique({
           where: { userId: data.senderId },
           select: { balance: true },
         });
         if (
-          data.interestSendCost > 0 &&
-          (!wallet || wallet.balance < data.interestSendCost)
+          interestSendCost > 0 &&
+          (!wallet || wallet.balance < interestSendCost)
         ) {
           throw new InsufficientWalletBalanceError();
         }
@@ -124,11 +130,11 @@ export class PrismaInterestRepository implements InterestRepository {
           select: interestViewSelect(),
         });
 
-        if (data.interestSendCost > 0 && this.rewards) {
+        if (interestSendCost > 0 && this.rewards) {
           await this.rewards.debitForInterest(transaction, {
             userId: data.senderId,
             interestId: created.id,
-            cost: data.interestSendCost,
+            cost: interestSendCost,
             idempotencyKey: `interest:${created.id}`,
           });
         }
@@ -178,6 +184,15 @@ export class PrismaInterestRepository implements InterestRepository {
       }
       throw error;
     }
+  }
+
+  countInterestsSentToday(senderId: string): Promise<number> {
+    return this.database.interest.count({
+      where: {
+        senderId,
+        createdAt: { gte: startOfUtcDay() },
+      },
+    });
   }
 
   listIncoming(query: InterestPageQuery): Promise<InterestViewRecord[]> {

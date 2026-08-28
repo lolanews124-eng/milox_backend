@@ -32,10 +32,50 @@ export function hasUnlimitedInterests(dailyInterestLimit: number): boolean {
 export function interestSendCostForEntitlements(
   entitlements: UserEntitlements,
   baseCost: number,
+  sentToday = 0,
+  freeDailyGrants = 0,
 ): number {
-  return hasUnlimitedInterests(entitlements.features.dailyInterestLimit)
-    ? 0
-    : baseCost;
+  return resolveInterestSendCost(
+    entitlements,
+    baseCost,
+    sentToday,
+    freeDailyGrants,
+  );
+}
+
+export function resolveInterestSendCost(
+  entitlements: UserEntitlements,
+  baseCost: number,
+  sentToday: number,
+  freeDailyGrants: number,
+): number {
+  if (hasUnlimitedInterests(entitlements.features.dailyInterestLimit)) {
+    return 0;
+  }
+  if (entitlements.isPremium) {
+    return 0;
+  }
+  if (sentToday < freeDailyGrants) {
+    return 0;
+  }
+  return baseCost;
+}
+
+export function freeInterestsRemaining(
+  entitlements: UserEntitlements,
+  sentToday: number,
+  freeDailyGrants: number,
+): number {
+  if (hasUnlimitedInterests(entitlements.features.dailyInterestLimit)) {
+    return 9999;
+  }
+  if (entitlements.isPremium) {
+    return Math.max(
+      0,
+      entitlements.features.dailyInterestLimit - sentToday,
+    );
+  }
+  return Math.max(0, freeDailyGrants - sentToday);
 }
 
 function activeSubscriptionWhere(now: Date) {
@@ -152,13 +192,13 @@ export const FREE_ENTITLEMENTS: UserEntitlements = {
     premiumBadge: false,
     badgeLabel: null,
     grantVerifiedBadge: false,
-    dailyInterestLimit: 20,
+    dailyInterestLimit: 30,
     interstitialAdsFree: false,
     directMessageEnabled: false,
   },
 };
 
-export function normalizeInterestLimit(limit: number, fallback = 20): number {
+export function normalizeInterestLimit(limit: number, fallback = 30): number {
   if (limit >= UNLIMITED_INTERESTS) return UNLIMITED_INTERESTS;
   if (limit <= 0) return fallback;
   return limit;
@@ -202,7 +242,7 @@ export function entitlementsFromPlan(plan: {
 export async function resolveUserEntitlements(
   database: PrismaClient,
   userId: string,
-  freeDailyInterestLimit = 20,
+  freeDailyInterestLimit = 30,
 ): Promise<UserEntitlements> {
   const now = new Date();
   const subscription = await database.userSubscription.findFirst({

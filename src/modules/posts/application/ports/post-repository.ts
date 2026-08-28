@@ -59,6 +59,10 @@ export interface CreateProfileUpdatePostData {
 
 export interface PostRepository {
   create(data: CreatePostData): Promise<CreatedPost>;
+  getPostingSpamSnapshot(
+    authorId: string,
+    query: PostSpamSnapshotQuery,
+  ): Promise<PostSpamSnapshot>;
   createProfileUpdatePost(data: CreateProfileUpdatePostData): Promise<void>;
   findVisible(postId: string, viewerId?: string): Promise<PostViewRecord | null>;
   listByUsername(query: PostPageQuery): Promise<PostViewRecord[] | null>;
@@ -78,6 +82,10 @@ export interface PostRepository {
   save(postId: string, userId: string): Promise<PostViewRecord | null>;
   unsave(postId: string, userId: string): Promise<PostViewRecord | null>;
   share(postId: string, userId: string): Promise<PostViewRecord | null>;
+  recordView(
+    postId: string,
+    viewerId: string,
+  ): Promise<{ viewCount: number } | null>;
   report(
     postId: string,
     reporterId: string,
@@ -89,3 +97,25 @@ export interface PostRepository {
 export class PostMediaOwnershipError extends Error {}
 export class IdempotencyConflictError extends Error {}
 export class PostActionConflictError extends Error {}
+export class PostCooldownError extends Error {
+  constructor(public readonly retryAfterSeconds: number) {
+    super("cooldown");
+  }
+}
+export class PostBurstLimitError extends Error {}
+export class PostHourlyLimitError extends Error {}
+export class PostDuplicateError extends Error {}
+
+export interface PostSpamSnapshot {
+  lastCreatedAt: Date | null;
+  burstCount: number;
+  hourlyCount: number;
+  hasDuplicateBody: boolean;
+}
+
+export interface PostSpamSnapshotQuery {
+  burstSince: Date;
+  hourSince: Date;
+  duplicateSince: Date;
+  normalizedBody: string | null;
+}

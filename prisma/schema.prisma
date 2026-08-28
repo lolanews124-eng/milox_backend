@@ -351,6 +351,7 @@ model User {
   posts               Post[]
   stories             Story[]
   storyViews          StoryView[]
+  postViews           PostView[]
   postLikes           PostLike[]
   postSaves           PostSave[]
   postShares          PostShare[]
@@ -572,6 +573,7 @@ model Post {
   commentCount  Int       @default(0)
   shareCount    Int       @default(0)
   saveCount     Int       @default(0)
+  viewCount     Int       @default(0)
   /// Engagement score used by trending feed (recomputed by jobs).
   trendingScore Float     @default(0)
   isHidden      Boolean   @default(false)
@@ -584,15 +586,31 @@ model Post {
   likes    PostLike[]
   saves    PostSave[]
   shares   PostShare[]
+  views    PostView[]
   comments Comment[]
   reports  Report[]
   hashtags PostHashtag[]
 
   @@index([authorId, createdAt])
+  @@index([authorId, kind, deletedAt, createdAt])
   @@index([createdAt])
   @@index([trendingScore, createdAt])
   @@index([deletedAt, isHidden, createdAt])
   @@map("posts")
+}
+
+model PostView {
+  postId    String   @db.Uuid
+  viewerId  String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  viewer User @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@id([postId, viewerId])
+  @@index([viewerId])
+  @@index([postId, createdAt])
+  @@map("post_views")
 }
 
 model Hashtag {
@@ -765,6 +783,7 @@ model Interest {
 
   @@index([recipientId, status, createdAt])
   @@index([senderId, status, createdAt])
+  @@index([senderId, createdAt])
   @@index([senderId, recipientId, status])
   /// Partial unique index for PENDING pairs is added in SQL migration
   /// (interests_one_pending_per_pair) — Prisma cannot express WHERE clauses.

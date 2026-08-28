@@ -122,6 +122,7 @@ export interface ChatRepository {
     senderId: string,
     recipientId: string,
   ): Promise<ConversationViewRecord | null>;
+  leaveConversation(conversationId: string, userId: string): Promise<boolean>;
 }
 
 export class ChatMediaOwnershipError extends Error {}

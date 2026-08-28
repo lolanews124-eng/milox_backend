@@ -82,10 +82,15 @@ describe("interest HTTP contract", () => {
 });
 
 function createTestApp(repository: InterestRepository) {
+  const database = {
+    userSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
+    interest: { count: vi.fn().mockResolvedValue(0) },
+  } as never;
   const service = new InterestService(
     repository,
     new FeedCursorCodec(config.JWT_ACCESS_SECRET),
     config,
+    database,
   );
   const controller = new InterestController(service);
   const authenticate: RequestHandler = (req, _res, next) => {

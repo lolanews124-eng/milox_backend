@@ -51,6 +51,11 @@ export function createChatRouters(
     actionLimit,
     asyncHandler(controller.updateSettings),
   );
+  conversations.delete(
+    "/:conversationId",
+    actionLimit,
+    asyncHandler(controller.leaveConversation),
+  );
   conversations.get(
     "/:conversationId",
     asyncHandler(controller.getConversation),

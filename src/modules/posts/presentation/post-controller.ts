@@ -31,7 +31,14 @@ export class PostController {
     response
       .status(201)
       .set("Idempotency-Replayed", String(result.replayed))
-      .json(success(request, result.item));
+      .json({
+        success: true,
+        data: result.item,
+        meta: {
+          requestId: request.requestId,
+          ...(result.warning ? { warning: result.warning } : {}),
+        },
+      });
   };
 
   get = async (request: Request, response: Response): Promise<void> => {
@@ -156,6 +163,12 @@ export class PostController {
 
   share = (request: Request, response: Response): Promise<void> =>
     this.action("share", request, response);
+
+  view = async (request: Request, response: Response): Promise<void> => {
+    const { postId } = postIdParamSchema.parse(request.params);
+    const data = await this.posts.markViewed(postId, requireUser(request));
+    response.status(200).json(success(request, data));
+  };
 
   report = async (request: Request, response: Response): Promise<void> => {
     const { postId } = postIdParamSchema.parse(request.params);

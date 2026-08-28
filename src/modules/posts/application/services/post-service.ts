@@ -15,11 +15,22 @@ import {
 import { presentPost } from "../post-view.js";
 import type { ProfileUpdatePostWriter } from "../profile-update-post-writer.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
+import {
+  assertPostingAllowed,
+  normalizePostBodyForDuplicateCheck,
+  postSpamLimitsFromConfig,
+} from "./post-spam-guard.js";
 
 export interface PostPage {
   items: object[];
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+export interface CreatePostResult {
+  item: object;
+  replayed: boolean;
+  warning?: string;
 }
 
 export class PostService implements ProfileUpdatePostWriter {
@@ -33,7 +44,7 @@ export class PostService implements ProfileUpdatePostWriter {
     authorId: string,
     input: { body?: string | undefined; mediaIds: string[] },
     idempotencyKey?: string,
-  ): Promise<{ item: object; replayed: boolean }> {
+  ): Promise<CreatePostResult> {
     const body = normalizeBody(input.body);
     if (!body && input.mediaIds.length === 0) {
       throw new AppError(
@@ -48,6 +59,30 @@ export class PostService implements ProfileUpdatePostWriter {
         "VALIDATION_ERROR",
         "Media IDs must be unique",
         400,
+      );
+    }
+
+    const spamLimits = postSpamLimitsFromConfig(this.config);
+    const now = new Date();
+    const duplicateBody = normalizePostBodyForDuplicateCheck(body);
+    const snapshot = await this.repository.getPostingSpamSnapshot(authorId, {
+      burstSince: new Date(now.getTime() - spamLimits.burstWindowMs),
+      hourSince: new Date(now.getTime() - 60 * 60 * 1000),
+      duplicateSince: new Date(now.getTime() - spamLimits.duplicateWindowMs),
+      normalizedBody: duplicateBody,
+    });
+    const spamCheck = assertPostingAllowed(snapshot, {
+      cooldownSeconds: spamLimits.cooldownSeconds,
+      burstLimit: spamLimits.burstLimit,
+      hourlyLimit: spamLimits.hourlyLimit,
+      duplicateBlocked: snapshot.hasDuplicateBody,
+    });
+    if (!spamCheck.ok) {
+      throw new AppError(
+        spamCheck.code,
+        spamCheck.message,
+        spamCheck.statusCode,
+        spamCheck.details ?? [],
       );
     }
 
@@ -66,6 +101,7 @@ export class PostService implements ProfileUpdatePostWriter {
       return {
         item: presentPost(created.post, this.config),
         replayed: created.replayed,
+        ...(spamCheck.warning ? { warning: spamCheck.warning } : {}),
       };
     } catch (error) {
       if (error instanceof PostMediaOwnershipError) {
@@ -321,6 +357,12 @@ export class PostService implements ProfileUpdatePostWriter {
 
   share(postId: string, userId: string): Promise<object> {
     return this.mutate(postId, userId, "share");
+  }
+
+  async markViewed(postId: string, viewerId: string): Promise<object> {
+    const result = await this.repository.recordView(postId, viewerId);
+    if (!result) throw postNotFound();
+    return { viewCount: result.viewCount };
   }
 
   async report(

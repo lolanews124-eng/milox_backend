@@ -15,6 +15,11 @@ import { requestId } from "../src/shared/http/request-id.js";
 const config = {
   API_PUBLIC_URL: "http://localhost:3001",
   JWT_ACCESS_SECRET: "post-router-secret-at-least-32-bytes",
+  POST_COOLDOWN_SECONDS: 45,
+  POST_BURST_LIMIT: 3,
+  POST_BURST_WINDOW_SECONDS: 600,
+  POST_HOURLY_LIMIT: 12,
+  POST_DUPLICATE_WINDOW_SECONDS: 3600,
 } as AppConfig;
 const userId = "8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9";
 const postId = "b9e27322-a92d-4b13-8ddc-3849a3b09a5a";
@@ -79,6 +84,22 @@ describe("post HTTP contract", () => {
       },
     });
   });
+
+  it("records a unique post view for authenticated users", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.recordView).mockResolvedValue({ viewCount: 12 });
+
+    const response = await request(createTestApp(repository)).post(
+      `/api/v1/posts/${postId}/view`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: { viewCount: 12 },
+    });
+    expect(repository.recordView).toHaveBeenCalledWith(postId, userId);
+  });
 });
 
 function createTestApp(repository: PostRepository) {
@@ -116,6 +137,12 @@ function createTestApp(repository: PostRepository) {
 function createRepository(): PostRepository {
   return {
     create: vi.fn(),
+    getPostingSpamSnapshot: vi.fn().mockResolvedValue({
+      lastCreatedAt: null,
+      burstCount: 0,
+      hourlyCount: 0,
+      hasDuplicateBody: false,
+    }),
     createProfileUpdatePost: vi.fn(),
     findVisible: vi.fn(),
     listByUsername: vi.fn(),
@@ -131,6 +158,7 @@ function createRepository(): PostRepository {
     save: vi.fn(),
     unsave: vi.fn(),
     share: vi.fn(),
+    recordView: vi.fn(),
     report: vi.fn(),
   };
 }
@@ -144,6 +172,7 @@ function postFixture(): PostViewRecord {
     commentCount: 0,
     shareCount: 0,
     saveCount: 0,
+    viewCount: 0,
     trendingScore: 0,
     createdAt: new Date("2026-07-17T00:00:00.000Z"),
     updatedAt: new Date("2026-07-17T00:00:00.000Z"),

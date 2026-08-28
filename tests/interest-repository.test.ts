@@ -31,7 +31,11 @@ describe("PrismaInterestRepository", () => {
       idempotencyKey: key,
       requestHash: "a".repeat(64),
       dailyLimit: 20,
-      interestSendCost: 0,
+      interestPricing: {
+        baseCost: 0,
+        freeDailyGrants: 10,
+        waiveCost: false,
+      },
     });
 
     expect(result).toEqual({ interest, replayed: true });
@@ -68,7 +72,11 @@ describe("PrismaInterestRepository", () => {
         idempotencyKey: key,
         requestHash: "a".repeat(64),
         dailyLimit: 20,
-        interestSendCost: 0,
+        interestPricing: {
+        baseCost: 0,
+        freeDailyGrants: 10,
+        waiveCost: false,
+      },
       }),
     ).rejects.toBeInstanceOf(InterestDailyLimitError);
     expect(transaction.interest.create).not.toHaveBeenCalled();

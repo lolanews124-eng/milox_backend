@@ -17,7 +17,8 @@ import { InterestService } from "../src/modules/interests/application/services/i
 const config = {
   API_PUBLIC_URL: "http://localhost:3001",
   JWT_ACCESS_SECRET: "interest-service-secret-at-least-32",
-  INTEREST_DAILY_LIMIT: 20,
+  INTEREST_DAILY_LIMIT: 30,
+  FREE_DAILY_INTEREST_GRANTS: 10,
   INTEREST_SEND_COST: 40,
 } as AppConfig;
 const senderId = "8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9";
@@ -29,6 +30,7 @@ const key = "4c960e9a-592a-41e0-9942-2589f5dd0894";
 describe("InterestService", () => {
   it("normalizes an idempotent send and applies the configured daily limit", async () => {
     const repository = createRepository();
+    vi.mocked(repository.countInterestsSentToday).mockResolvedValue(0);
     vi.mocked(repository.create).mockResolvedValue({
       interest: interestFixture(),
       replayed: false,
@@ -47,9 +49,34 @@ describe("InterestService", () => {
       message: "hello anonymously",
       idempotencyKey: key,
       requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      dailyLimit: 20,
-      interestSendCost: 40,
+      dailyLimit: 30,
+      interestPricing: {
+        baseCost: 40,
+        freeDailyGrants: 10,
+        waiveCost: false,
+      },
     });
+  });
+
+  it("charges points after the free daily interest grants are used", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.countInterestsSentToday).mockResolvedValue(10);
+    vi.mocked(repository.create).mockResolvedValue({
+      interest: interestFixture(),
+      replayed: false,
+    });
+
+    await createService(repository).create(senderId, { recipientId }, key);
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interestPricing: expect.objectContaining({
+          baseCost: 40,
+          freeDailyGrants: 10,
+          waiveCost: false,
+        }),
+      }),
+    );
   });
 
   it("maps self-interest and daily abuse limits", async () => {
@@ -171,6 +198,7 @@ function createService(repository: InterestRepository): InterestService {
 function createRepository(): InterestRepository {
   return {
     create: vi.fn(),
+    countInterestsSentToday: vi.fn().mockResolvedValue(0),
     listIncoming: vi.fn(),
     listOutgoing: vi.fn(),
     accept: vi.fn(),

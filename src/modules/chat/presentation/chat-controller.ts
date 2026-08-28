@@ -59,6 +59,15 @@ export class ChatController {
     response.status(200).json(success(request, conversation));
   };
 
+  leaveConversation = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { conversationId } = conversationIdParamSchema.parse(request.params);
+    await this.chat.leaveConversation(conversationId, requireUser(request));
+    response.status(204).send();
+  };
+
   updateSettings = async (
     request: Request,
     response: Response,

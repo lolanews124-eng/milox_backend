@@ -494,6 +494,8 @@ export class PrismaChatRepository implements ChatRepository {
   async activeConversationIds(userId: string): Promise<string[]> {
     const rows = await this.database.conversation.findMany({
       where: activeConversationWhere(userId),
+      orderBy: { updatedAt: "desc" },
+      take: 100,
       select: { id: true },
     });
     return rows.map(({ id }) => id);
@@ -681,6 +683,14 @@ export class PrismaChatRepository implements ChatRepository {
       select: { id: true },
     });
     if (existing) {
+      await this.database.conversationMember.updateMany({
+        where: {
+          conversationId: existing.id,
+          userId: senderId,
+          leftAt: { not: null },
+        },
+        data: { leftAt: null, clearedAt: null, isArchived: false },
+      });
       return this.findConversation(existing.id, senderId);
     }
 
@@ -696,6 +706,58 @@ export class PrismaChatRepository implements ChatRepository {
       select: { id: true },
     });
     return this.findConversation(created.id, senderId);
+  }
+
+  async leaveConversation(
+    conversationId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const conversation = await this.database.conversation.findFirst({
+      where: { id: conversationId },
+      select: { id: true, kind: true, status: true },
+    });
+    if (!conversation || conversation.status !== ConversationStatus.ACTIVE) {
+      return false;
+    }
+    if (conversation.kind === ConversationKind.OFFICIAL) {
+      throw new ChatActionConflictError("read_only");
+    }
+    if (conversation.kind === ConversationKind.MATCH) {
+      throw new ChatActionConflictError("match_use_unmatch");
+    }
+
+    const now = new Date();
+    return this.database.$transaction(async (transaction) => {
+      const members = await transaction.conversationMember.findMany({
+        where: { conversationId, leftAt: null },
+        select: { userId: true },
+      });
+      const updated = await transaction.conversationMember.updateMany({
+        where: {
+          conversationId,
+          userId,
+          leftAt: null,
+        },
+        data: { leftAt: now, clearedAt: now, isArchived: false },
+      });
+      if (updated.count === 0) return false;
+
+      const peerId =
+        members.find((member) => member.userId !== userId)?.userId ?? null;
+      await transaction.outboxEvent.create({
+        data: {
+          eventType: "chat.conversation.left",
+          aggregateType: "conversation",
+          aggregateId: conversationId,
+          payload: {
+            conversationId,
+            actorId: userId,
+            peerId,
+          },
+        },
+      });
+      return true;
+    });
   }
 
   private async findReplay(

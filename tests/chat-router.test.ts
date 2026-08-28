@@ -84,6 +84,20 @@ describe("chat HTTP contract", () => {
       messageId,
     );
   });
+
+  it("leaves a direct conversation through DELETE", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.leaveConversation).mockResolvedValue(true);
+    const response = await request(createTestApp(repository)).delete(
+      `/api/v1/conversations/${conversationId}`,
+    );
+
+    expect(response.status).toBe(204);
+    expect(repository.leaveConversation).toHaveBeenCalledWith(
+      conversationId,
+      userId,
+    );
+  });
 });
 
 function createTestApp(repository: ChatRepository) {
@@ -129,6 +143,7 @@ function createRepository(): ChatRepository {
     resolveChatMedia: vi.fn(),
     findMessageForRealtime: vi.fn(),
     findOrCreateDirectConversation: vi.fn(),
+    leaveConversation: vi.fn(),
   };
 }
 

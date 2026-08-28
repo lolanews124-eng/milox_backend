@@ -148,6 +148,41 @@ export class ChatService {
     return presentConversation(conversation, this.config);
   }
 
+  async leaveConversation(
+    conversationId: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const left = await this.repository.leaveConversation(
+        conversationId,
+        userId,
+      );
+      if (!left) throw conversationNotFound();
+    } catch (error) {
+      if (
+        error instanceof ChatActionConflictError &&
+        error.message === "read_only"
+      ) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Official conversations cannot be deleted",
+          403,
+        );
+      }
+      if (
+        error instanceof ChatActionConflictError &&
+        error.message === "match_use_unmatch"
+      ) {
+        throw new AppError(
+          "INVALID_ACTION",
+          "Use unmatch to delete match conversations",
+          409,
+        );
+      }
+      throw error;
+    }
+  }
+
   async listMessages(
     conversationId: string,
     userId: string,
