@@ -87,6 +87,10 @@ export class PaypalService {
     };
   }
 
+  async isConfigured(): Promise<boolean> {
+    return this.paypal.isConfigured();
+  }
+
   async captureByPaypalOrderId(paypalOrderId: string) {
     const checkout = await this.database.paypalCheckout.findUnique({
       where: { paypalOrderId },

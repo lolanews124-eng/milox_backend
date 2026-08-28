@@ -126,7 +126,6 @@ function presentWallet(wallet: {
   lifetimeEarned: number;
   lifetimeSpent: number;
   interestSendCost: number;
-  referralRewardPoints: number;
   postRewardPoints: number;
   welcomeBonus: number;
   rewardedAdPoints: number;
@@ -149,7 +148,6 @@ function presentWallet(wallet: {
     freeInterestsRemaining: wallet.freeInterestsRemaining,
     dailyInterestLimit: wallet.dailyInterestLimit,
     paidInterestCost: wallet.paidInterestCost,
-    referralRewardPoints: wallet.referralRewardPoints,
     postRewardPoints: wallet.postRewardPoints,
     welcomeBonus: wallet.welcomeBonus,
     rewardedAdPoints: wallet.rewardedAdPoints,

@@ -24,13 +24,6 @@ export const signupSchema = z
       "PREFER_NOT_TO_SAY",
     ]),
     displayName: z.string().trim().min(1).max(80),
-    referralCode: z
-      .string()
-      .trim()
-      .min(4)
-      .max(16)
-      .regex(/^[a-zA-Z0-9]+$/)
-      .optional(),
   })
   .strict();
 

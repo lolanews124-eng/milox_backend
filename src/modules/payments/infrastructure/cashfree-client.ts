@@ -41,6 +41,15 @@ export class CashfreeClient {
     return creds;
   }
 
+  async isConfigured(): Promise<boolean> {
+    try {
+      const creds = await this.creds();
+      return Boolean(creds.appId && creds.secretKey);
+    } catch {
+      return false;
+    }
+  }
+
   async testConnection(): Promise<{ ok: boolean; mode: string }> {
     const creds = await this.requireConfigured();
     // Lightweight authenticated call — list nothing / hit orders with invalid id returns 404 with auth ok.

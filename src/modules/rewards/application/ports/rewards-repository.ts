@@ -15,7 +15,6 @@ export interface WalletSummary {
   lifetimeEarned: number;
   lifetimeSpent: number;
   interestSendCost: number;
-  referralRewardPoints: number;
   postRewardPoints: number;
   welcomeBonus: number;
   rewardedAdPoints: number;
@@ -51,7 +50,6 @@ export interface ReferralInviteRecord {
 export interface SignupRewardsInput {
   userId: string;
   username: string;
-  referralCode?: string | undefined;
 }
 
 export interface SignupRewardsWriter {

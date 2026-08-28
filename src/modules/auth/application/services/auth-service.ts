@@ -3,7 +3,6 @@ import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { isStaffRole } from "../../../../shared/user-visibility.js";
-import { InvalidReferralCodeError } from "../../../rewards/application/ports/rewards-repository.js";
 import { DuplicateAccountError } from "../ports/auth-repository.js";
 import type {
   AuthRepository,
@@ -27,7 +26,6 @@ export interface SignupInput {
   ageRange: AgeRange;
   country: string;
   gender: Gender;
-  referralCode?: string | undefined;
 }
 
 export interface AuthSession {
@@ -84,22 +82,12 @@ export class AuthService {
           new Date(),
           this.config.EMAIL_VERIFICATION_TTL_HOURS,
         ),
-        ...(input.referralCode
-          ? { referralCode: input.referralCode.trim().toUpperCase() }
-          : {}),
       });
     } catch (error: unknown) {
       if (error instanceof DuplicateAccountError) {
         const code =
           error.field === "email" ? "EMAIL_ALREADY_REGISTERED" : "USERNAME_TAKEN";
         throw new AppError(code, `${capitalize(error.field)} is already in use`, 409);
-      }
-      if (error instanceof InvalidReferralCodeError) {
-        throw new AppError(
-          "INVALID_REFERRAL_CODE",
-          "This invite code is not valid",
-          400,
-        );
       }
       throw error;
     }

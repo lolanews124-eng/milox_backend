@@ -38,17 +38,6 @@ export class PrismaRewardsRepository implements RewardsRepository {
     transaction: Prisma.TransactionClient,
     input: SignupRewardsInput,
   ): Promise<void> {
-    let referrerId: string | null = null;
-    if (input.referralCode) {
-      referrerId = await this.resolveReferrerInTransaction(
-        transaction,
-        input.referralCode,
-      );
-      if (!referrerId) {
-        throw new InvalidReferralCodeError();
-      }
-    }
-
     await transaction.wallet.create({
       data: {
         userId: input.userId,
@@ -67,47 +56,6 @@ export class PrismaRewardsRepository implements RewardsRepository {
         description: "Welcome Milox Points",
       },
     });
-
-    await this.createReferralCode(transaction, input.userId, input.username);
-
-    if (referrerId && referrerId !== input.userId) {
-      await transaction.user.update({
-        where: { id: input.userId },
-        data: { referredByUserId: referrerId },
-      });
-
-      const referral = await transaction.referral.create({
-        data: {
-          referrerUserId: referrerId,
-          referredUserId: input.userId,
-          rewardPoints: this.config.REFERRAL_REWARD_POINTS,
-        },
-      });
-
-      await creditWallet(transaction, {
-        userId: referrerId,
-        amount: this.config.REFERRAL_REWARD_POINTS,
-        type: WalletTransactionType.REFERRAL_REWARD,
-        idempotencyKey: `referral:${referral.id}`,
-        referenceType: "referral",
-        referenceId: referral.id,
-          description: "Referral Milox Points",
-      });
-
-      await transaction.outboxEvent.create({
-        data: {
-          eventType: "referral.rewarded",
-          aggregateType: "referral",
-          aggregateId: referral.id,
-          payload: {
-            referralId: referral.id,
-            referrerUserId: referrerId,
-            referredUserId: input.userId,
-            rewardPoints: this.config.REFERRAL_REWARD_POINTS,
-          },
-        },
-      });
-    }
   }
 
   async getWalletSummary(userId: string): Promise<WalletSummary | null> {
@@ -125,7 +73,6 @@ export class PrismaRewardsRepository implements RewardsRepository {
       lifetimeEarned: wallet.lifetimeEarned,
       lifetimeSpent: wallet.lifetimeSpent,
       interestSendCost: INTEREST_SEND_COST_POINTS,
-      referralRewardPoints: this.config.REFERRAL_REWARD_POINTS,
       postRewardPoints: this.config.POST_REWARD_POINTS,
       welcomeBonus: this.config.WALLET_WELCOME_BONUS,
       rewardedAdPoints: this.config.REWARDED_AD_POINTS,

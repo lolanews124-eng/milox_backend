@@ -51,10 +51,17 @@ export class CheckoutService {
       },
     });
 
-    /** India → Cashfree only works with INR packs. If none are published yet, fall
-     *  back to PayPal USD packs so Buy Points does not disappear for India users. */
+    /** India → Cashfree only works with INR packs and a configured Cashfree account.
+     *  Otherwise fall back to PayPal USD packs so checkout still works. */
     let usingUsdFallback = false;
-    if (packs.length === 0 && resolved.currency === "INR") {
+    const cashfreeConfigured =
+      resolved.gateway === "CASHFREE"
+        ? await this.cashfree.isConfigured()
+        : false;
+    if (
+      resolved.currency === "INR" &&
+      (packs.length === 0 || !cashfreeConfigured)
+    ) {
       usingUsdFallback = true;
       resolved = {
         gateway: "PAYPAL",
@@ -78,6 +85,8 @@ export class CheckoutService {
       });
     }
 
+    const paypalConfigured = await this.paypal.isConfigured();
+
     return {
       gateway: resolved.gateway,
       country: resolved.country,
@@ -85,19 +94,20 @@ export class CheckoutService {
       currency: resolved.currency,
       gatewayLabel: resolved.label,
       payingAsMessage: usingUsdFallback
-        ? `Paying as ${resolved.country} · PayPal (USD) — INR packs not published yet`
+        ? cashfreeConfigured
+          ? `Paying as ${resolved.country} · PayPal (USD) — INR packs not published yet`
+          : `Paying as ${resolved.country} · PayPal (USD) — Cashfree not configured in admin`
         : `Paying as ${resolved.country} · ${resolved.label}`,
       changeCountryHint: usingUsdFallback
-        ? "Admin has not published India (₹) packs yet, so USD PayPal packs are shown. Add INR packs in admin to enable Cashfree."
-        : "Wrong country? Update it in Profile so the correct payment method appears.",
+        ? cashfreeConfigured
+          ? "Admin has not published India (₹) packs yet, so USD PayPal packs are shown. Add INR packs in admin to enable Cashfree."
+          : "Cashfree is not set up yet, so USD PayPal packs are shown. Configure Cashfree in admin Payments or use PayPal."
+        : resolved.gateway === "PAYPAL" && !paypalConfigured
+          ? "PayPal is not configured on the server yet. Ask admin to add keys in Payments."
+          : "Wrong country? Update it in Profile so the correct payment method appears.",
       packs,
-      cashfreeConfigured:
-        resolved.gateway === "CASHFREE"
-          ? await this.cashfree
-              .requireConfigured()
-              .then(() => true)
-              .catch(() => false)
-          : false,
+      paypalConfigured,
+      cashfreeConfigured,
     };
   }
 
@@ -109,6 +119,7 @@ export class CheckoutService {
     const resolved = resolveCheckoutGateway(user?.country);
 
     if (resolved.gateway === "CASHFREE") {
+      const cashfreeReady = await this.cashfree.isConfigured();
       if (input.kind === "POINT_PACK") {
         const inrPack = await this.database.pointPurchaseRate.findFirst({
           where: {
@@ -117,12 +128,16 @@ export class CheckoutService {
             currency: "INR",
           },
         });
-        if (!inrPack) {
-          // USD pack selected while India has no INR packs — charge via PayPal.
+        if (!inrPack || !cashfreeReady) {
+          // USD pack or Cashfree unavailable — charge via PayPal.
           return this.paypal.createCheckout(userId, input, {
             country: user?.country ?? "India",
           });
         }
+      } else if (!cashfreeReady) {
+        return this.paypal.createCheckout(userId, input, {
+          country: user?.country ?? "India",
+        });
       }
       return this.createCashfreeCheckout(userId, input, {
         country: resolved.country,

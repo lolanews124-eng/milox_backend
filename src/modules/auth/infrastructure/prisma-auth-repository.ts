@@ -99,7 +99,6 @@ export class PrismaAuthRepository implements AuthRepository {
           await this.signupRewards.bootstrapInTransaction(transaction, {
             userId: user.id,
             username: user.username,
-            ...(data.referralCode ? { referralCode: data.referralCode } : {}),
           });
         }
 
