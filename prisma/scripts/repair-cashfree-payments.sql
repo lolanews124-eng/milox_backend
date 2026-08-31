@@ -1,5 +1,5 @@
--- Cashfree + PayPal gateway tracking.
--- Idempotent: production may already have PaymentGateway from an earlier manual SQL apply.
+-- Repair Cashfree / PayPal gateway objects when 20260831120000 failed
+-- because "PaymentGateway" already existed. Safe to run multiple times.
 
 DO $$ BEGIN
     CREATE TYPE "PaymentGateway" AS ENUM ('PAYPAL', 'CASHFREE');
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS "cashfree_settings" (
     "appId" VARCHAR(255) NOT NULL DEFAULT '',
     "secretKey" TEXT NOT NULL DEFAULT '',
     "mode" VARCHAR(16) NOT NULL DEFAULT 'sandbox',
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "cashfree_settings_pkey" PRIMARY KEY ("id")
 );
