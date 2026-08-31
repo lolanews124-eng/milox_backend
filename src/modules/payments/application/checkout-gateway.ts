@@ -1,6 +1,14 @@
 /** India → Cashfree; every other profile country → PayPal. */
 export type CheckoutGateway = "CASHFREE" | "PAYPAL";
 
+export const INDIA_GATEWAY_UNAVAILABLE_MESSAGE =
+  "Coming soon. Payment gateway is not set up for Indian users yet.";
+
+export function isIndiaCountry(country: string | null | undefined): boolean {
+  const normalized = (country ?? "").trim().toLowerCase();
+  return normalized === "india" || normalized === "in";
+}
+
 export function resolveCheckoutGateway(country: string | null | undefined): {
   gateway: CheckoutGateway;
   country: string;
@@ -8,7 +16,7 @@ export function resolveCheckoutGateway(country: string | null | undefined): {
   label: string;
 } {
   const normalized = (country ?? "").trim() || "Unknown";
-  if (normalized.toLowerCase() === "india") {
+  if (isIndiaCountry(normalized)) {
     return {
       gateway: "CASHFREE",
       country: "India",

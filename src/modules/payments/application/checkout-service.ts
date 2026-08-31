@@ -10,7 +10,10 @@ import { randomUUID } from "node:crypto";
 import type { AppConfig } from "../../../config/env.js";
 import { AppError } from "../../../shared/errors/app-error.js";
 import { cashfreeWebhookUrl } from "./cashfree-settings.js";
-import { resolveCheckoutGateway } from "./checkout-gateway.js";
+import {
+  INDIA_GATEWAY_UNAVAILABLE_MESSAGE,
+  resolveCheckoutGateway,
+} from "./checkout-gateway.js";
 import { PaypalService } from "./paypal-service.js";
 import type { CashfreeClient } from "../infrastructure/cashfree-client.js";
 
@@ -35,8 +38,8 @@ export class CheckoutService {
       where: { id: userId },
       select: { country: true },
     });
-    let resolved = resolveCheckoutGateway(user?.country);
-    let packs = await this.database.pointPurchaseRate.findMany({
+    const resolved = resolveCheckoutGateway(user?.country);
+    const packs = await this.database.pointPurchaseRate.findMany({
       where: {
         isActive: true,
         currency: resolved.currency,
@@ -51,41 +54,21 @@ export class CheckoutService {
       },
     });
 
-    /** India → Cashfree only works with INR packs and a configured Cashfree account.
-     *  Otherwise fall back to PayPal USD packs so checkout still works. */
-    let usingUsdFallback = false;
     const cashfreeConfigured =
       resolved.gateway === "CASHFREE"
         ? await this.cashfree.isConfigured()
         : false;
-    if (
-      resolved.currency === "INR" &&
-      (packs.length === 0 || !cashfreeConfigured)
-    ) {
-      usingUsdFallback = true;
-      resolved = {
-        gateway: "PAYPAL",
-        country: (user?.country ?? "").trim() || "India",
-        currency: "USD",
-        label: "PayPal",
-      };
-      packs = await this.database.pointPurchaseRate.findMany({
-        where: {
-          isActive: true,
-          currency: "USD",
-        },
-        orderBy: [{ sortOrder: "asc" }, { amountMinor: "asc" }],
-        select: {
-          id: true,
-          currency: true,
-          amountMinor: true,
-          points: true,
-          label: true,
-        },
-      });
-    }
-
     const paypalConfigured = await this.paypal.isConfigured();
+    const indiaGatewayDown =
+      resolved.gateway === "CASHFREE" && !cashfreeConfigured;
+    const paypalGatewayDown =
+      resolved.gateway === "PAYPAL" && !paypalConfigured;
+    const checkoutAvailable = !indiaGatewayDown && !paypalGatewayDown;
+    const unavailableReason = indiaGatewayDown
+      ? INDIA_GATEWAY_UNAVAILABLE_MESSAGE
+      : paypalGatewayDown
+        ? "PayPal is not configured on the server yet. Ask admin to add keys in Payments."
+        : null;
 
     return {
       gateway: resolved.gateway,
@@ -93,19 +76,13 @@ export class CheckoutService {
       profileCountry: user?.country ?? null,
       currency: resolved.currency,
       gatewayLabel: resolved.label,
-      payingAsMessage: usingUsdFallback
-        ? cashfreeConfigured
-          ? `Paying as ${resolved.country} · PayPal (USD) — INR packs not published yet`
-          : `Paying as ${resolved.country} · PayPal (USD) — Cashfree not configured in admin`
-        : `Paying as ${resolved.country} · ${resolved.label}`,
-      changeCountryHint: usingUsdFallback
-        ? cashfreeConfigured
-          ? "Admin has not published India (₹) packs yet, so USD PayPal packs are shown. Add INR packs in admin to enable Cashfree."
-          : "Cashfree is not set up yet, so USD PayPal packs are shown. Configure Cashfree in admin Payments or use PayPal."
-        : resolved.gateway === "PAYPAL" && !paypalConfigured
-          ? "PayPal is not configured on the server yet. Ask admin to add keys in Payments."
-          : "Wrong country? Update it in Profile so the correct payment method appears.",
-      packs,
+      payingAsMessage: `Paying as ${resolved.country} · ${resolved.label}`,
+      changeCountryHint: unavailableReason
+        ? unavailableReason
+        : "Wrong country? Update it in Profile so the correct payment method appears.",
+      checkoutAvailable,
+      unavailableReason,
+      packs: indiaGatewayDown ? [] : packs,
       paypalConfigured,
       cashfreeConfigured,
     };
@@ -120,24 +97,12 @@ export class CheckoutService {
 
     if (resolved.gateway === "CASHFREE") {
       const cashfreeReady = await this.cashfree.isConfigured();
-      if (input.kind === "POINT_PACK") {
-        const inrPack = await this.database.pointPurchaseRate.findFirst({
-          where: {
-            id: input.packId,
-            isActive: true,
-            currency: "INR",
-          },
-        });
-        if (!inrPack || !cashfreeReady) {
-          // USD pack or Cashfree unavailable — charge via PayPal.
-          return this.paypal.createCheckout(userId, input, {
-            country: user?.country ?? "India",
-          });
-        }
-      } else if (!cashfreeReady) {
-        return this.paypal.createCheckout(userId, input, {
-          country: user?.country ?? "India",
-        });
+      if (!cashfreeReady) {
+        throw new AppError(
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          INDIA_GATEWAY_UNAVAILABLE_MESSAGE,
+          503,
+        );
       }
       return this.createCashfreeCheckout(userId, input, {
         country: resolved.country,
