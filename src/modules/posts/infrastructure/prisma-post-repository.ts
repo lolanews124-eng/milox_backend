@@ -1,4 +1,5 @@
 import {
+  AuditActorType,
   MediaKind,
   OutboxStatus,
   PostKind,
@@ -563,7 +564,7 @@ export class PrismaPostRepository implements PostRepository {
         });
         if (existing) throw new PostActionConflictError("already_reported");
 
-        return transaction.report.create({
+        const report = await transaction.report.create({
           data: {
             reporterId,
             reportedUserId: post.authorId,
@@ -574,6 +575,38 @@ export class PrismaPostRepository implements PostRepository {
           },
           select: { id: true, status: true, createdAt: true },
         });
+
+        // Any report immediately removes the post from public feed/profile.
+        await transaction.post.update({
+          where: { id: postId },
+          data: { isHidden: true },
+        });
+        await transaction.moderationAction.create({
+          data: {
+            actorId: reporterId,
+            targetUserId: post.authorId,
+            reportId: report.id,
+            actionCode: "POST_AUTO_HIDDEN",
+            note: "Auto-hidden after user report",
+            metadata: { postId, reasonCode, source: "post_report" },
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorType: AuditActorType.USER,
+            actorUserId: reporterId,
+            action: "moderation.post.auto_hidden",
+            resourceType: "post",
+            resourceId: postId,
+            metadata: {
+              reportId: report.id,
+              reasonCode,
+              isHidden: true,
+            },
+          },
+        });
+
+        return report;
       });
     } catch (error) {
       if (

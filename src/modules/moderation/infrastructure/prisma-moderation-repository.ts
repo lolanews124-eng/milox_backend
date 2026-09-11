@@ -1,4 +1,5 @@
 import {
+  AuditActorType,
   ConversationStatus,
   FollowStatus,
   InterestStatus,
@@ -162,7 +163,7 @@ export class PrismaModerationRepository implements ModerationRepository {
         });
         if (existing) throw new ReportConflictError("already_reported");
 
-        return transaction.report.create({
+        const report = await transaction.report.create({
           data: {
             reporterId: data.reporterId,
             targetType: data.targetType,
@@ -179,6 +180,48 @@ export class PrismaModerationRepository implements ModerationRepository {
             createdAt: true,
           },
         });
+
+        // Any post report immediately removes it from the public feed.
+        if (
+          data.targetType === ReportTargetType.POST &&
+          resolved.postId &&
+          resolved.reportedUserId
+        ) {
+          await transaction.post.update({
+            where: { id: resolved.postId },
+            data: { isHidden: true },
+          });
+          await transaction.moderationAction.create({
+            data: {
+              actorId: data.reporterId,
+              targetUserId: resolved.reportedUserId,
+              reportId: report.id,
+              actionCode: "POST_AUTO_HIDDEN",
+              note: "Auto-hidden after user report",
+              metadata: {
+                postId: resolved.postId,
+                reasonCode: data.reasonCode,
+                source: "reports_api",
+              },
+            },
+          });
+          await transaction.auditLog.create({
+            data: {
+              actorType: AuditActorType.USER,
+              actorUserId: data.reporterId,
+              action: "moderation.post.auto_hidden",
+              resourceType: "post",
+              resourceId: resolved.postId,
+              metadata: {
+                reportId: report.id,
+                reasonCode: data.reasonCode,
+                isHidden: true,
+              },
+            },
+          });
+        }
+
+        return report;
       });
     } catch (error) {
       if (
