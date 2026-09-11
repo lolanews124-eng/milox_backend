@@ -1199,12 +1199,18 @@ export class AdminService {
     return paypal.client.verifyCredentials();
   }
 
-  paypalIncomeReport(): Promise<object> {
-    return this.repository.paypalIncomeReport();
+  paypalIncomeReport(options?: {
+    page?: number;
+    limit?: number;
+  }): Promise<object> {
+    return this.repository.paypalIncomeReport(options);
   }
 
-  async paymentFunnelReport(days = 30): Promise<object> {
-    return paymentFunnelReport(this.requireDatabase(), days);
+  async paymentFunnelReport(
+    days = 30,
+    options?: { page?: number; limit?: number },
+  ): Promise<object> {
+    return paymentFunnelReport(this.requireDatabase(), days, options);
   }
 
   private requireCashfree() {

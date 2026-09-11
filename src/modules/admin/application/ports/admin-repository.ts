@@ -583,7 +583,10 @@ export interface AdminRepository {
   updatePaypalSettings(
     data: UpdatePaypalSettingsData,
   ): Promise<PaypalSettings>;
-  paypalIncomeReport(): Promise<AdminPaypalIncomeRecord>;
+  paypalIncomeReport(options?: {
+    page?: number;
+    limit?: number;
+  }): Promise<AdminPaypalIncomeRecord>;
 }
 
 export interface UpdatePaypalSettingsData {
@@ -611,6 +614,12 @@ export interface AdminPaypalIncomeRecord {
     date: string;
     totals: Array<{ currency: string; amountMinor: number; count: number }>;
   }>;
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pages: number;
+  };
   recent: Array<{
     id: string;
     kind: string;

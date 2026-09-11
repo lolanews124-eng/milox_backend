@@ -58,6 +58,7 @@ import {
   updatePaypalSettingsSchema,
   updateCashfreeSettingsSchema,
   adminPaymentFunnelQuerySchema,
+  adminIncomeQuerySchema,
   createCmsPageSchema,
   createInterestTagSchema,
   createPremiumPlanSchema,
@@ -713,7 +714,11 @@ export class AdminController {
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const data = await this.admin.paypalIncomeReport();
+    const query = adminIncomeQuerySchema.parse(request.query);
+    const data = await this.admin.paypalIncomeReport({
+      page: query.page,
+      limit: query.limit,
+    });
     response.status(200).json(success(request, data));
   };
 
@@ -722,7 +727,10 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const query = adminPaymentFunnelQuerySchema.parse(request.query);
-    const data = await this.admin.paymentFunnelReport(query.days);
+    const data = await this.admin.paymentFunnelReport(query.days, {
+      page: query.page,
+      limit: query.limit,
+    });
     response.status(200).json(success(request, data));
   };
 

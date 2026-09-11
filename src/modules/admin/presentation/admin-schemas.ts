@@ -394,6 +394,13 @@ export const updateCashfreeSettingsSchema = z
 
 export const adminPaymentFunnelQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+
+export const adminIncomeQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 export const updateMobileAppConfigSchema = z

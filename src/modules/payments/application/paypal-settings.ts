@@ -150,45 +150,79 @@ function moneyList(bucket: Record<string, { amountMinor: number; count: number }
     .sort((a, b) => b.amountMinor - a.amountMinor);
 }
 
-/** Funnel: started vs paid vs failed/cancelled — why PayPal "no income" is often abandoned checkouts. */
-export async function paymentFunnelReport(database: PrismaClient, days = 30) {
-  const since = addDays(dayStartUtc(new Date()), -(Math.min(90, Math.max(1, days)) - 1));
-  const rows = await database.paypalCheckout.findMany({
-    where: { createdAt: { gte: since } },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: {
-      id: true,
-      kind: true,
-      status: true,
-      gateway: true,
-      amountMinor: true,
-      currency: true,
-      description: true,
-      country: true,
-      failureReason: true,
-      createdAt: true,
-      fulfilledAt: true,
-      user: { select: { username: true } },
-    },
-  });
+/** Funnel: started vs paid vs failed/cancelled — summary uses full counts (not a take cap). */
+export async function paymentFunnelReport(
+  database: PrismaClient,
+  days = 30,
+  options: { page?: number; limit?: number } = {},
+) {
+  const rangeDays = Math.min(90, Math.max(1, days));
+  const since = addDays(dayStartUtc(new Date()), -(rangeDays - 1));
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(200, Math.max(1, options.limit ?? 100));
+  const where = { createdAt: { gte: since } };
+  const unpaidStatuses: PaypalCheckoutStatus[] = [
+    PaypalCheckoutStatus.CREATED,
+    PaypalCheckoutStatus.FAILED,
+    PaypalCheckoutStatus.CANCELLED,
+  ];
+  const unpaidWhere = {
+    ...where,
+    status: { in: unpaidStatuses },
+  };
+
+  const [statusGroups, unpaidTotal, unpaidRows] = await Promise.all([
+    database.paypalCheckout.groupBy({
+      by: ["status"],
+      where,
+      _count: { _all: true },
+    }),
+    database.paypalCheckout.count({ where: unpaidWhere }),
+    database.paypalCheckout.findMany({
+      where: unpaidWhere,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true,
+        kind: true,
+        status: true,
+        gateway: true,
+        amountMinor: true,
+        currency: true,
+        description: true,
+        country: true,
+        failureReason: true,
+        createdAt: true,
+        fulfilledAt: true,
+        user: { select: { username: true } },
+      },
+    }),
+  ]);
 
   const summary = {
-    started: rows.length,
+    started: 0,
     completed: 0,
     created: 0,
     failed: 0,
     cancelled: 0,
   };
-  for (const row of rows) {
-    if (row.status === PaypalCheckoutStatus.COMPLETED) summary.completed += 1;
-    else if (row.status === PaypalCheckoutStatus.CREATED) summary.created += 1;
-    else if (row.status === PaypalCheckoutStatus.FAILED) summary.failed += 1;
-    else if (row.status === PaypalCheckoutStatus.CANCELLED) summary.cancelled += 1;
+  for (const row of statusGroups) {
+    const count = row._count._all;
+    summary.started += count;
+    if (row.status === PaypalCheckoutStatus.COMPLETED) summary.completed += count;
+    else if (row.status === PaypalCheckoutStatus.CREATED) summary.created += count;
+    else if (row.status === PaypalCheckoutStatus.FAILED) summary.failed += count;
+    else if (row.status === PaypalCheckoutStatus.CANCELLED) {
+      summary.cancelled += count;
+    }
   }
 
+  const pages = Math.max(1, Math.ceil(unpaidTotal / limit));
+  const safePage = Math.min(page, pages);
+
   return {
-    rangeDays: Math.min(90, Math.max(1, days)),
+    rangeDays,
     summary: {
       ...summary,
       abandonedOrUnpaid: summary.created + summary.failed + summary.cancelled,
@@ -197,7 +231,13 @@ export async function paymentFunnelReport(database: PrismaClient, days = 30) {
           ? 0
           : Math.round((summary.completed / summary.started) * 1000) / 10,
     },
-    recent: rows.map((row) => ({
+    pagination: {
+      page: safePage,
+      pageSize: limit,
+      total: unpaidTotal,
+      pages,
+    },
+    recent: unpaidRows.map((row) => ({
       id: row.id,
       kind: row.kind,
       status: row.status,
@@ -214,23 +254,31 @@ export async function paymentFunnelReport(database: PrismaClient, days = 30) {
   };
 }
 
-export async function paypalIncomeReport(database: PrismaClient, now = new Date()) {
+export async function paypalIncomeReport(
+  database: PrismaClient,
+  now = new Date(),
+  options: { page?: number; limit?: number } = {},
+) {
   const completed = { status: PaypalCheckoutStatus.COMPLETED } as const;
   const today = dayStartUtc(now);
   const week = addDays(today, -6);
   const month = addDays(today, -29);
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(200, Math.max(1, options.limit ?? 50));
 
-  const [grouped, recent, windowRows] = await Promise.all([
+  const [grouped, recentTotal, recent, windowRows] = await Promise.all([
     database.paypalCheckout.groupBy({
       by: ["kind", "currency"],
       where: completed,
       _sum: { amountMinor: true },
       _count: { _all: true },
     }),
+    database.paypalCheckout.count({ where: completed }),
     database.paypalCheckout.findMany({
       where: completed,
       orderBy: [{ fulfilledAt: "desc" }, { createdAt: "desc" }],
-      take: 30,
+      skip: (page - 1) * limit,
+      take: limit,
       select: {
         id: true,
         kind: true,
@@ -302,6 +350,9 @@ export async function paypalIncomeReport(database: PrismaClient, now = new Date(
     });
   }
 
+  const pages = Math.max(1, Math.ceil(recentTotal / limit));
+  const safePage = Math.min(page, pages);
+
   return {
     allTime: moneyList(allTime),
     today: moneyList(todayBucket),
@@ -309,6 +360,12 @@ export async function paypalIncomeReport(database: PrismaClient, now = new Date(
     last30Days: moneyList(monthBucket),
     byKind: byKind.sort((a, b) => b.amountMinor - a.amountMinor),
     series,
+    pagination: {
+      page: safePage,
+      pageSize: limit,
+      total: recentTotal,
+      pages,
+    },
     recent: recent.map((row) => ({
       id: row.id,
       kind: row.kind,

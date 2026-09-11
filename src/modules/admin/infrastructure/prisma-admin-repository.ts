@@ -2233,8 +2233,11 @@ export class PrismaAdminRepository implements AdminRepository {
     });
   }
 
-  paypalIncomeReport(): Promise<AdminPaypalIncomeRecord> {
-    return paypalIncomeReport(this.database);
+  paypalIncomeReport(options?: {
+    page?: number;
+    limit?: number;
+  }): Promise<AdminPaypalIncomeRecord> {
+    return paypalIncomeReport(this.database, new Date(), options);
   }
 
   async listCmsPages(
