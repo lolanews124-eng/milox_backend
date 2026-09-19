@@ -188,6 +188,7 @@ function postFixture(): PostViewRecord {
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: false,
       hideAge: false,
       hideCountry: false,

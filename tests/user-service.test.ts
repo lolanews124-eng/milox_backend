@@ -278,6 +278,8 @@ function profileFixture(
     websiteUrl: null,
     instagramHandle: null,
     isVerifiedBadge: false,
+    premiumTier: "FREE",
+    premiumExpiresAt: null,
     isSystemAccount: false,
     isPrivateAccount: false,
     hideAge: false,
@@ -294,7 +296,7 @@ function profileFixture(
     interests: [{ tag: { slug: "music", label: "Music" } }],
     wallet: { balance: 500 },
     ...overrides,
-  };
+  } as UserProfileRecord;
 }
 
 function relationFixture(

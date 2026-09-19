@@ -9,8 +9,7 @@ import { PrismaAdminRepository } from "./infrastructure/prisma-admin-repository.
 import { VerifiedBadgeService } from "../premium/application/verified-badge-service.js";
 import { AdminController } from "./presentation/admin-controller.js";
 import { createAdminRouter } from "./presentation/admin-router.js";
-import type { PaypalClient } from "../payments/infrastructure/paypal-client.js";
-import type { CashfreeClient } from "../payments/infrastructure/cashfree-client.js";
+import type { RazorpayClient } from "../payments/infrastructure/razorpay-client.js";
 
 import type { OfficialChatService } from "../official-chat/application/official-chat-service.js";
 import type { CallService } from "../calls/application/call-service.js";
@@ -25,18 +24,16 @@ export function createAdminModule(
   database: PrismaClient,
   authenticate: RequestHandler,
   officialChat?: OfficialChatService,
-  paypalClient?: PaypalClient,
+  razorpayClient?: RazorpayClient,
   calls?: CallService,
-  cashfreeClient?: CashfreeClient,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
   const service = new AdminService(
     repository,
     config.UPLOAD_ROOT,
-    paypalClient ? { config, client: paypalClient } : undefined,
+    razorpayClient ? { config, client: razorpayClient } : undefined,
     database,
     calls,
-    cashfreeClient ? { config, client: cashfreeClient } : undefined,
   );
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),

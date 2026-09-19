@@ -19,6 +19,11 @@ import { creditWallet } from "../../rewards/infrastructure/prisma-rewards-reposi
 import {
   paypalPaymentMatchesCheckout,
 } from "./paypal-capture.js";
+import {
+  convertAmountMinor,
+  normalizeMoneyCurrency,
+  type MoneyCurrency,
+} from "./payment-money.js";
 import { PaypalClient } from "../infrastructure/paypal-client.js";
 
 export const createPaypalOrderSchemaKind = [
@@ -147,7 +152,22 @@ export class PaypalService {
     }
   }
 
-  /** Shared fulfill path for Cashfree (and other gateways). */
+  /** Shared product prep for Razorpay (and other gateways). */
+  prepareCheckout(
+    userId: string,
+    input:
+      | { kind: "POINT_PACK"; packId: string }
+      | { kind: "PREMIUM"; planId: string; billingCycle: PremiumBillingCycle }
+      | { kind: "VERIFIED_BADGE" },
+    money?: {
+      chargeCurrency?: "INR" | "USD" | undefined;
+      usdInrRate?: number | undefined;
+    },
+  ) {
+    return this.prepare(userId, input, money);
+  }
+
+  /** Shared fulfill path for Razorpay (and other gateways). */
   async fulfillExternalCapture(checkoutId: string, captureId: string) {
     const updated = await this.fulfill(checkoutId, captureId);
     return this.present(updated);
@@ -195,7 +215,34 @@ export class PaypalService {
       | { kind: "POINT_PACK"; packId: string }
       | { kind: "PREMIUM"; planId: string; billingCycle: PremiumBillingCycle }
       | { kind: "VERIFIED_BADGE" },
+    money?: {
+      chargeCurrency?: MoneyCurrency | undefined;
+      usdInrRate?: number | undefined;
+    },
   ) {
+    const chargeAs = money?.chargeCurrency
+      ? normalizeMoneyCurrency(money.chargeCurrency)
+      : null;
+    const rate = money?.usdInrRate;
+
+    const toCharge = (amountMinor: number, baseCurrency: string) => {
+      if (!chargeAs || rate == null) {
+        return {
+          amountMinor,
+          currency: normalizeMoneyCurrency(baseCurrency),
+        };
+      }
+      return {
+        amountMinor: convertAmountMinor(
+          amountMinor,
+          baseCurrency,
+          chargeAs,
+          rate,
+        ),
+        currency: chargeAs,
+      };
+    };
+
     if (input.kind === "POINT_PACK") {
       const pack = await this.database.pointPurchaseRate.findFirst({
         where: { id: input.packId, isActive: true },
@@ -203,10 +250,11 @@ export class PaypalService {
       if (!pack || pack.amountMinor <= 0) {
         throw new AppError("NOT_FOUND", "Point pack not found", 404);
       }
+      const charged = toCharge(pack.amountMinor, pack.currency);
       return {
         kind: PaypalCheckoutKind.POINT_PACK,
-        amountMinor: pack.amountMinor,
-        currency: pack.currency,
+        amountMinor: charged.amountMinor,
+        currency: charged.currency,
         description: pack.label?.trim() || `${pack.points} Milox Points`,
         packId: pack.id,
         planId: null as string | null,
@@ -229,10 +277,11 @@ export class PaypalService {
       if (!plan || !price || price.priceCents <= 0) {
         throw new AppError("NOT_FOUND", "Premium plan not available", 404);
       }
+      const charged = toCharge(price.priceCents, plan.currency);
       return {
         kind: PaypalCheckoutKind.PREMIUM,
-        amountMinor: price.priceCents,
-        currency: plan.currency,
+        amountMinor: charged.amountMinor,
+        currency: charged.currency,
         description: `${plan.name} (${input.billingCycle.toLowerCase()})`,
         packId: null,
         planId: plan.id,
@@ -245,7 +294,7 @@ export class PaypalService {
     if (!product.isActive || product.priceCents <= 0) {
       throw new AppError(
         "VERIFIED_BADGE_UNAVAILABLE",
-        "Verified badge PayPal checkout is not available",
+        "Verified badge checkout is not available",
         409,
       );
     }
@@ -260,10 +309,11 @@ export class PaypalService {
         409,
       );
     }
+    const charged = toCharge(product.priceCents, product.currency);
     return {
       kind: PaypalCheckoutKind.VERIFIED_BADGE,
-      amountMinor: product.priceCents,
-      currency: product.currency,
+      amountMinor: charged.amountMinor,
+      currency: charged.currency,
       description: product.title,
       packId: null,
       planId: null,
@@ -363,6 +413,10 @@ export class PaypalService {
             currency: checkout.currency,
             durationDays: product.durationDays,
             checkoutId: checkout.id,
+            paymentMethod:
+              checkout.gateway === PaymentGateway.RAZORPAY
+                ? VerifiedBadgePaymentMethod.RAZORPAY
+                : VerifiedBadgePaymentMethod.PAYPAL,
           },
           tx,
         );
@@ -397,6 +451,7 @@ export class PaypalService {
       kind: checkout.kind,
       status: checkout.status,
       paypalOrderId: checkout.paypalOrderId,
+      providerOrderId: checkout.paypalOrderId,
     };
   }
 }

@@ -21,6 +21,9 @@ export const updateEconomyConfigSchema = z
     videoCallEnabled: z.boolean().optional(),
     videoCallPointsPerMinute: z.number().int().min(1).max(100_000).optional(),
     videoCallRingTimeoutSec: z.number().int().min(5).max(300).optional(),
+    usdInrRate: z.number().min(1).max(1000).optional(),
+    /** 0 = no free daily interests; max 100. */
+    freeDailyInterestGrants: z.number().int().min(0).max(100).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
@@ -373,22 +376,14 @@ export const updateAdPlacementConfigSchema = z
   })
   .strict();
 
-export const updatePaypalSettingsSchema = z
+export const updateRazorpaySettingsSchema = z
   .object({
-    clientId: z.string().trim().max(255).optional(),
-    clientSecret: z.string().trim().max(2000).optional(),
-    mode: z.enum(["sandbox", "live"]).optional(),
-    webhookId: z.string().trim().max(255).optional(),
+    keyId: z.string().trim().max(255).optional(),
+    keySecret: z.string().trim().max(2000).optional(),
+    webhookSecret: z.string().trim().max(2000).optional(),
+    mode: z.enum(["test", "live"]).optional(),
     clearSecret: z.boolean().optional(),
-  })
-  .strict();
-
-export const updateCashfreeSettingsSchema = z
-  .object({
-    appId: z.string().trim().max(255).optional(),
-    secretKey: z.string().trim().max(2000).optional(),
-    mode: z.enum(["sandbox", "production"]).optional(),
-    clearSecret: z.boolean().optional(),
+    clearWebhookSecret: z.boolean().optional(),
   })
   .strict();
 

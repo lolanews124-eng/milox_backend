@@ -113,6 +113,7 @@ function createTestApp(repository: InterestRepository) {
 function createRepository(): InterestRepository {
   return {
     create: vi.fn(),
+    countInterestsSentToday: vi.fn(),
     listIncoming: vi.fn(),
     listOutgoing: vi.fn(),
     accept: vi.fn(),
@@ -129,13 +130,14 @@ function interestFixture(): InterestViewRecord {
     username,
     displayName: null,
     bio: null,
-    ageRange: "AGE_25_28",
+    ageRange: "AGE_25_28" as const,
     gender: "OTHER" as const,
     country: "India",
     relationshipGoal: null,
     websiteUrl: null,
     instagramHandle: null,
     isVerifiedBadge: false,
+    premiumTier: "FREE" as const,
     isPrivateAccount: false,
     hideAge: true,
     hideCountry: true,

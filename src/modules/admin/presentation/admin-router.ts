@@ -440,22 +440,22 @@ export function createAdminRouter(
     asyncHandler(controller.updateMobileAppConfig),
   );
   router.get(
-    "/paypal",
+    "/razorpay",
     readLimit,
     superAdminOnly,
-    asyncHandler(controller.getPaypalSettings),
+    asyncHandler(controller.getRazorpaySettings),
   );
   router.patch(
-    "/paypal",
+    "/razorpay",
     mutationLimit,
     superAdminOnly,
-    asyncHandler(controller.updatePaypalSettings),
+    asyncHandler(controller.updateRazorpaySettings),
   );
   router.post(
-    "/paypal/test",
+    "/razorpay/test",
     mutationLimit,
     superAdminOnly,
-    asyncHandler(controller.testPaypalSettings),
+    asyncHandler(controller.testRazorpaySettings),
   );
   router.get(
     "/income",
@@ -468,24 +468,6 @@ export function createAdminRouter(
     readLimit,
     adminOnly,
     asyncHandler(controller.paymentFunnelReport),
-  );
-  router.get(
-    "/cashfree",
-    readLimit,
-    superAdminOnly,
-    asyncHandler(controller.getCashfreeSettings),
-  );
-  router.patch(
-    "/cashfree",
-    mutationLimit,
-    superAdminOnly,
-    asyncHandler(controller.updateCashfreeSettings),
-  );
-  router.post(
-    "/cashfree/test",
-    mutationLimit,
-    superAdminOnly,
-    asyncHandler(controller.testCashfreeSettings),
   );
   router.get(
     "/cms-pages",

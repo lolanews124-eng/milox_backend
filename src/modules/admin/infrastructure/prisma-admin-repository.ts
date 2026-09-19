@@ -31,6 +31,10 @@ import {
   paypalIncomeReport,
   savePaypalSettings,
 } from "../../payments/application/paypal-settings.js";
+import {
+  ensureRazorpaySettings,
+  saveRazorpaySettings,
+} from "../../payments/application/razorpay-settings.js";
 import { consumerPlatformUserWhere, recentPresenceWhere, stalePresenceWhere } from "../../../shared/user-visibility.js";
 import {
   creditWallet,
@@ -93,6 +97,7 @@ import type {
   AdminMediaUpdateResult,
   UpdateMobileAppConfigData,
   UpdatePaypalSettingsData,
+  UpdateRazorpaySettingsData,
   AdminPaypalIncomeRecord,
 } from "../application/ports/admin-repository.js";
 import {
@@ -2227,6 +2232,42 @@ export class PrismaAdminRepository implements AdminRepository {
           hasClientId: Boolean(updated.clientId),
           hasSecret: Boolean(updated.clientSecret),
           hasWebhookId: Boolean(updated.webhookId),
+        },
+      );
+      return updated;
+    });
+  }
+
+  getRazorpaySettings() {
+    return ensureRazorpaySettings(this.database);
+  }
+
+  updateRazorpaySettings(data: UpdateRazorpaySettingsData) {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const updated = await saveRazorpaySettings(
+        transaction,
+        data.encryptionSecret,
+        {
+          keyId: data.keyId,
+          keySecret: data.keySecret,
+          webhookSecret: data.webhookSecret,
+          mode: data.mode,
+          clearSecret: data.clearSecret,
+          clearWebhookSecret: data.clearWebhookSecret,
+        },
+      );
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.razorpay_settings.updated",
+        "razorpay_settings",
+        updated.id,
+        {
+          mode: updated.mode,
+          hasKeyId: Boolean(updated.keyId),
+          hasSecret: Boolean(updated.keySecret),
+          hasWebhookSecret: Boolean(updated.webhookSecret),
         },
       );
       return updated;

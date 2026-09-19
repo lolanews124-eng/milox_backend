@@ -139,6 +139,9 @@ function profileFixture(
     websiteUrl: null,
     instagramHandle: null,
     isVerifiedBadge: false,
+    premiumTier: "FREE",
+    premiumExpiresAt: null,
+    isSystemAccount: false,
     isPrivateAccount: false,
     hideAge: false,
     hideCountry: false,
@@ -152,6 +155,7 @@ function profileFixture(
     profilePhoto: null,
     coverPhoto: null,
     interests: [],
+    wallet: null,
     ...overrides,
-  };
+  } as UserProfileRecord;
 }

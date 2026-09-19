@@ -63,6 +63,7 @@ describe("PrismaPostRepository idempotency", () => {
 function postFixture(): PostViewRecord {
   return {
     id: postId,
+    kind: "THOUGHT",
     body: "thought",
     likeCount: 0,
     commentCount: 0,
@@ -84,6 +85,7 @@ function postFixture(): PostViewRecord {
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: false,
       hideAge: true,
       hideCountry: true,

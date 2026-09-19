@@ -9,7 +9,7 @@ import {
 } from "../src/modules/auth/application/services/auth-service.js";
 import { CryptoService } from "../src/modules/auth/application/services/crypto-service.js";
 
-const config: AppConfig = {
+const config = {
   NODE_ENV: "test",
   PORT: 3001,
   DATABASE_URL: "postgresql://test:test@localhost:5432/test",
@@ -37,7 +37,7 @@ const config: AppConfig = {
   INTEREST_DAILY_LIMIT: 20,
   CHAT_OUTBOX_POLL_MS: 500,
   NOTIFICATION_OUTBOX_POLL_MS: 500,
-};
+} as unknown as AppConfig;
 
 describe("auth utilities", () => {
   it("normalizes identity fields consistently", () => {

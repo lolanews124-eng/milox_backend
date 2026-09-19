@@ -18,14 +18,13 @@ export function createPaypalRouter(
     asyncHandler(controller.getOptions),
   );
 
-  // Gateway-agnostic create (routes India→Cashfree, else→PayPal).
   router.post(
     "/checkout",
     authenticate,
     buyLimit,
     asyncHandler(controller.createCheckout),
   );
-  // Keep legacy PayPal path for older app builds.
+  // Legacy create paths (older app builds).
   router.post(
     "/paypal/orders",
     authenticate,
@@ -33,30 +32,50 @@ export function createPaypalRouter(
     asyncHandler(controller.createCheckout),
   );
   router.post(
-    "/paypal/capture",
+    "/razorpay/orders",
+    authenticate,
     buyLimit,
-    asyncHandler(controller.captureCheckout),
+    asyncHandler(controller.createCheckout),
+  );
+
+  router.post(
+    "/razorpay/verify",
+    authenticate,
+    buyLimit,
+    asyncHandler(controller.verifyRazorpay),
   );
   router.post(
-    "/checkout/capture",
+    "/checkout/verify",
+    authenticate,
     buyLimit,
-    asyncHandler(controller.captureCheckout),
+    asyncHandler(controller.verifyRazorpay),
   );
+  // Old capture path → verify (expects Razorpay fields).
+  router.post(
+    "/checkout/capture",
+    authenticate,
+    buyLimit,
+    asyncHandler(controller.verifyRazorpay),
+  );
+  router.post(
+    "/paypal/capture",
+    authenticate,
+    buyLimit,
+    asyncHandler(controller.verifyRazorpay),
+  );
+
   router.post(
     "/checkout/cancel",
     authenticate,
     buyLimit,
     asyncHandler(controller.markCancelled),
   );
+
   router.post(
-    "/paypal/webhook",
+    "/razorpay/webhook",
     webhookLimit,
-    asyncHandler(controller.webhook),
+    asyncHandler(controller.razorpayWebhook),
   );
-  router.post(
-    "/cashfree/webhook",
-    webhookLimit,
-    asyncHandler(controller.cashfreeWebhook),
-  );
+
   return router;
 }

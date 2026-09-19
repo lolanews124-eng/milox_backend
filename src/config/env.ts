@@ -60,11 +60,11 @@ const envSchema = z
       .positive()
       .default(300_000),
     INTEREST_DAILY_LIMIT: z.coerce.number().int().positive().max(500).default(30),
-    /** Free-tier users send this many interests per day at no point cost. */
+    /** Free-tier users send this many interests per day at no point cost (env fallback). */
     FREE_DAILY_INTEREST_GRANTS: z.coerce
       .number()
       .int()
-      .positive()
+      .nonnegative()
       .max(100)
       .default(10),
     WALLET_WELCOME_BONUS: z.coerce.number().int().nonnegative().default(500),

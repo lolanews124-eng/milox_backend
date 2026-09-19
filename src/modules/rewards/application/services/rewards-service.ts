@@ -36,12 +36,16 @@ export class RewardsService {
         },
       }),
     ]);
+    const freeDailyInterestGrants =
+      typeof economy.freeDailyInterestGrants === "number"
+        ? Math.max(0, Math.min(100, Math.trunc(economy.freeDailyInterestGrants)))
+        : this.config.FREE_DAILY_INTEREST_GRANTS;
     const baseInterestCost = wallet.interestSendCost;
     const nextInterestCost = resolveInterestSendCost(
       entitlements,
       baseInterestCost,
       sentToday,
-      this.config.FREE_DAILY_INTEREST_GRANTS,
+      freeDailyInterestGrants,
     );
     return presentWallet({
       ...wallet,
@@ -50,11 +54,11 @@ export class RewardsService {
       interestSendCost: nextInterestCost,
       paidInterestCost: baseInterestCost,
       interestsSentToday: sentToday,
-      freeDailyInterestGrants: this.config.FREE_DAILY_INTEREST_GRANTS,
+      freeDailyInterestGrants,
       freeInterestsRemaining: freeInterestsRemaining(
         entitlements,
         sentToday,
-        this.config.FREE_DAILY_INTEREST_GRANTS,
+        freeDailyInterestGrants,
       ),
       dailyInterestLimit:
         entitlements.features.dailyInterestLimit >= 9999

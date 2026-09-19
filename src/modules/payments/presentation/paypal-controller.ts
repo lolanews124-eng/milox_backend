@@ -3,18 +3,14 @@ import { PremiumBillingCycle } from "@prisma/client";
 
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { CheckoutService } from "../application/checkout-service.js";
-import type { PaypalService } from "../application/paypal-service.js";
 import {
-  capturePaypalCheckoutSchema,
   createPaypalCheckoutSchema,
   markCheckoutSchema,
+  verifyRazorpaySchema,
 } from "./paypal-schemas.js";
 
 export class PaypalController {
-  constructor(
-    private readonly paypal: PaypalService,
-    private readonly checkout: CheckoutService,
-  ) {}
+  constructor(private readonly checkout: CheckoutService) {}
 
   getOptions = async (request: Request, response: Response): Promise<void> => {
     const userId = request.auth?.userId;
@@ -55,13 +51,15 @@ export class PaypalController {
     });
   };
 
-  captureCheckout = async (request: Request, response: Response): Promise<void> => {
-    const input = capturePaypalCheckoutSchema.parse(request.body as unknown);
-    const orderId = input.paypalOrderId || input.providerOrderId;
-    if (!orderId) {
-      throw new AppError("VALIDATION_ERROR", "Order id required", 400);
-    }
-    const data = await this.checkout.captureProviderOrder(orderId);
+  verifyRazorpay = async (request: Request, response: Response): Promise<void> => {
+    const userId = request.auth?.userId;
+    const input = verifyRazorpaySchema.parse(request.body as unknown);
+    const data = await this.checkout.verifyRazorpayPayment({
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      signature: input.signature,
+      ...(userId ? { userId } : {}),
+    });
     response.status(200).json({
       success: true,
       data,
@@ -72,7 +70,8 @@ export class PaypalController {
   markCancelled = async (request: Request, response: Response): Promise<void> => {
     const userId = request.auth?.userId;
     const input = markCheckoutSchema.parse(request.body as unknown);
-    const orderId = input.paypalOrderId || input.providerOrderId;
+    const orderId =
+      input.paypalOrderId || input.providerOrderId || input.razorpay_order_id;
     if (!orderId) {
       throw new AppError("VALIDATION_ERROR", "Order id required", 400);
     }
@@ -84,7 +83,7 @@ export class PaypalController {
     });
   };
 
-  webhook = async (request: Request, response: Response): Promise<void> => {
+  razorpayWebhook = async (request: Request, response: Response): Promise<void> => {
     const raw =
       (request as Request & { rawBody?: string }).rawBody ??
       (typeof request.body === "string"
@@ -92,18 +91,8 @@ export class PaypalController {
         : Buffer.isBuffer(request.body)
           ? request.body.toString("utf8")
           : JSON.stringify(request.body ?? {}));
-    await this.paypal.handleWebhook(raw, {
-      authAlgo: String(request.header("paypal-auth-algo") ?? ""),
-      certUrl: String(request.header("paypal-cert-url") ?? ""),
-      transmissionId: String(request.header("paypal-transmission-id") ?? ""),
-      transmissionSig: String(request.header("paypal-transmission-sig") ?? ""),
-      transmissionTime: String(request.header("paypal-transmission-time") ?? ""),
-    });
-    response.status(200).json({ success: true });
-  };
-
-  cashfreeWebhook = async (request: Request, response: Response): Promise<void> => {
-    await this.checkout.handleCashfreeWebhook(request.body);
+    const signature = String(request.header("x-razorpay-signature") ?? "");
+    await this.checkout.handleRazorpayWebhook(raw, signature);
     response.status(200).json({ success: true });
   };
 }

@@ -15,7 +15,7 @@ import { createAuthRouter } from "../src/modules/auth/presentation/auth-router.j
 import { errorHandler } from "../src/shared/http/error-handler.js";
 import { requestId } from "../src/shared/http/request-id.js";
 
-const config: AppConfig = {
+const config = {
   NODE_ENV: "test",
   PORT: 3001,
   DATABASE_URL: "postgresql://test:test@localhost:5432/test",
@@ -43,7 +43,7 @@ const config: AppConfig = {
   INTEREST_DAILY_LIMIT: 20,
   CHAT_OUTBOX_POLL_MS: 500,
   NOTIFICATION_OUTBOX_POLL_MS: 500,
-};
+} as unknown as AppConfig;
 
 describe("auth HTTP contract", () => {
   it("returns a web session with refresh token only in an httpOnly cookie", async () => {

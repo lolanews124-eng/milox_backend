@@ -27,8 +27,8 @@ import { createModerationModule } from "./modules/moderation/index.js";
 import { createNotificationModule } from "./modules/notifications/index.js";
 import { createPushModule } from "./modules/push/index.js";
 import { createPaymentsModule } from "./modules/payments/index.js";
-import { PaypalClient } from "./modules/payments/infrastructure/paypal-client.js";
-import { resolvePaypalCredentials } from "./modules/payments/application/paypal-settings.js";
+import { RazorpayClient } from "./modules/payments/infrastructure/razorpay-client.js";
+import { resolveRazorpayCredentials } from "./modules/payments/application/razorpay-settings.js";
 import { createPostModule } from "./modules/posts/index.js";
 import { createRewardsModule } from "./modules/rewards/index.js";
 import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
@@ -66,23 +66,22 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     auth.authenticate,
     rewardsRepository,
   );
-  const paypalClient = new PaypalClient(() =>
-    resolvePaypalCredentials(database, config),
+  const razorpayClient = new RazorpayClient(() =>
+    resolveRazorpayCredentials(database, config),
   );
   const payments = createPaymentsModule(
     config,
     database,
     auth.authenticate,
-    paypalClient,
+    razorpayClient,
   );
   const admin = createAdminModule(
     config,
     database,
     auth.authenticate,
     dependencies.officialChat,
-    paypalClient,
+    razorpayClient,
     dependencies.calls,
-    payments.cashfreeClient,
   );
   const blog = createBlogModule(database);
   const posts = createPostModule(
@@ -204,7 +203,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     express.json({
       limit: "1mb",
       verify: (request, _response, buffer) => {
-        if (request.url?.includes("/payments/paypal/webhook")) {
+        if (request.url?.includes("/payments/razorpay/webhook")) {
           (request as typeof request & { rawBody?: string }).rawBody =
             buffer.toString("utf8");
         }

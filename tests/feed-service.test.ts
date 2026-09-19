@@ -114,11 +114,13 @@ function postFixture(
   const id = `00000000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`;
   return {
     id,
+    kind: "THOUGHT",
     body: `Post ${sequence}`,
     likeCount: 1,
     commentCount: 2,
     shareCount: 3,
     saveCount: 4,
+    viewCount: 0,
     trendingScore: 10 - sequence,
     createdAt: new Date(`2026-07-${17 - sequence}T00:00:00.000Z`),
     updatedAt: new Date(`2026-07-${17 - sequence}T00:00:00.000Z`),
@@ -134,6 +136,7 @@ function postFixture(
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: false,
       hideAge: false,
       hideCountry: false,

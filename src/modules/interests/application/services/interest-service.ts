@@ -7,6 +7,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../../../config/env.js";
 import { INTEREST_SEND_COST_POINTS } from "../../../../config/wallet-economy.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { getFreeDailyInterestGrants } from "../../../economy/app-economy-config.js";
 import {
   hasUnlimitedInterests,
   resolveUserEntitlements,
@@ -60,6 +61,7 @@ export class InterestService {
     const waiveCost =
       entitlements.isPremium ||
       hasUnlimitedInterests(entitlements.features.dailyInterestLimit);
+    const freeDailyGrants = await getFreeDailyInterestGrants(this.database);
     try {
       const created = await this.repository.create({
         senderId,
@@ -73,7 +75,7 @@ export class InterestService {
         dailyLimit,
         interestPricing: {
           baseCost: INTEREST_SEND_COST_POINTS,
-          freeDailyGrants: this.config.FREE_DAILY_INTEREST_GRANTS,
+          freeDailyGrants,
           waiveCost,
         },
       });

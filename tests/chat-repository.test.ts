@@ -97,6 +97,7 @@ function messageFixture(): MessageViewRecord {
     replyToId: null,
     type: "TEXT",
     body: "hello",
+    metadata: null,
     deliveryStatus: "SENT",
     editedAt: null,
     deletedForEveryoneAt: null,

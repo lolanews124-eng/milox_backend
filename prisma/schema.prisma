@@ -182,6 +182,7 @@ enum VerifiedBadgePaymentMethod {
   POINTS
   MANUAL
   PAYPAL
+  RAZORPAY
 }
 
 enum PaypalCheckoutKind {
@@ -200,6 +201,7 @@ enum PaypalCheckoutStatus {
 enum PaymentGateway {
   PAYPAL
   CASHFREE
+  RAZORPAY
 }
 
 enum ReferralStatus {
@@ -887,6 +889,10 @@ model AppEconomyConfig {
   videoCallEnabled           Boolean  @default(true)
   videoCallPointsPerMinute   Int      @default(40)
   videoCallRingTimeoutSec    Int      @default(45)
+  /// How many INR equal 1 USD — used to show one admin price as INR (India) or USD (international).
+  usdInrRate                 Float    @default(85)
+  /// Free-tier users may send this many interests per UTC day at 0 points. 0 = no free interests.
+  freeDailyInterestGrants    Int      @default(10)
   updatedAt                  DateTime @updatedAt
 
   @@map("app_economy_configs")
@@ -1439,8 +1445,8 @@ model PaypalCheckout {
   userId           String               @db.Uuid
   kind             PaypalCheckoutKind
   status           PaypalCheckoutStatus @default(CREATED)
-  gateway          PaymentGateway       @default(PAYPAL)
-  /// PayPal order id or Cashfree order id (provider reference).
+  gateway          PaymentGateway       @default(RAZORPAY)
+  /// Provider order id (Razorpay / legacy PayPal / Cashfree).
   paypalOrderId    String               @unique @db.VarChar(64)
   paypalCaptureId  String?              @unique @db.VarChar(64)
   amountMinor      Int
@@ -1503,6 +1509,18 @@ model CashfreeSettings {
   updatedAt DateTime @updatedAt
 
   @@map("cashfree_settings")
+}
+
+/// Super-admin Razorpay keys. Secret + webhook secret stored encrypted.
+model RazorpaySettings {
+  id            String   @id @default("default") @db.VarChar(32)
+  keyId         String   @default("") @db.VarChar(255)
+  keySecret     String   @default("") @db.Text
+  webhookSecret String   @default("") @db.Text
+  mode          String   @default("test") @db.VarChar(16)
+  updatedAt     DateTime @updatedAt
+
+  @@map("razorpay_settings")
 }
 
 /// Singleton row (id = default) controlling mobile force-update from admin.

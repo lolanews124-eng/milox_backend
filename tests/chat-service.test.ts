@@ -219,6 +219,7 @@ function conversationFixture(hidePrivateFields: boolean): ConversationViewRecord
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: true,
       hideAge: hidePrivateFields,
       hideCountry: hidePrivateFields,

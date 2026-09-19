@@ -24,9 +24,6 @@ import {
   adminReferralCodeParamSchema,
   adminReferralQuerySchema,
   adminMatchQuerySchema,
-  adminConversationQuerySchema,
-  adminConversationIdParamSchema,
-  adminMessageIdParamSchema,
   adminMediaIdParamSchema,
   adminMediaQuerySchema,
   adminOutboxEventIdParamSchema,
@@ -55,8 +52,7 @@ import {
   adminAdPlacementParamSchema,
   updateAdPlacementConfigSchema,
   updateMobileAppConfigSchema,
-  updatePaypalSettingsSchema,
-  updateCashfreeSettingsSchema,
+  updateRazorpaySettingsSchema,
   adminPaymentFunnelQuerySchema,
   adminIncomeQuerySchema,
   createCmsPageSchema,
@@ -64,7 +60,6 @@ import {
   createPremiumPlanSchema,
   deletePostSchema,
   deleteStorySchema,
-  deleteAdminMessageSchema,
   grantSubscriptionSchema,
   adminAdjustWalletSchema,
   adminWalletLookupQuerySchema,
@@ -127,6 +122,12 @@ export class AdminController {
             : {}),
           ...(input.videoCallRingTimeoutSec !== undefined
             ? { videoCallRingTimeoutSec: input.videoCallRingTimeoutSec }
+            : {}),
+          ...(input.usdInrRate !== undefined
+            ? { usdInrRate: input.usdInrRate }
+            : {}),
+          ...(input.freeDailyInterestGrants !== undefined
+            ? { freeDailyInterestGrants: input.freeDailyInterestGrants }
             : {}),
         }),
       ),
@@ -682,31 +683,31 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
-  getPaypalSettings = async (
+  getRazorpaySettings = async (
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const data = await this.admin.getPaypalSettings();
+    const data = await this.admin.getRazorpaySettings();
     response.status(200).json(success(request, data));
   };
 
-  updatePaypalSettings = async (
+  updateRazorpaySettings = async (
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const input = updatePaypalSettingsSchema.parse(request.body as unknown);
-    const data = await this.admin.updatePaypalSettings(
+    const input = updateRazorpaySettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.updateRazorpaySettings(
       requireUser(request),
       input,
     );
     response.status(200).json(success(request, data));
   };
 
-  testPaypalSettings = async (
+  testRazorpaySettings = async (
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const data = await this.admin.testPaypalSettings();
+    const data = await this.admin.testRazorpaySettings();
     response.status(200).json(success(request, data));
   };
 
@@ -731,34 +732,6 @@ export class AdminController {
       page: query.page,
       limit: query.limit,
     });
-    response.status(200).json(success(request, data));
-  };
-
-  getCashfreeSettings = async (
-    request: Request,
-    response: Response,
-  ): Promise<void> => {
-    const data = await this.admin.getCashfreeSettings();
-    response.status(200).json(success(request, data));
-  };
-
-  updateCashfreeSettings = async (
-    request: Request,
-    response: Response,
-  ): Promise<void> => {
-    const input = updateCashfreeSettingsSchema.parse(request.body as unknown);
-    const data = await this.admin.updateCashfreeSettings(
-      requireUser(request),
-      input,
-    );
-    response.status(200).json(success(request, data));
-  };
-
-  testCashfreeSettings = async (
-    request: Request,
-    response: Response,
-  ): Promise<void> => {
-    const data = await this.admin.testCashfreeSettings();
     response.status(200).json(success(request, data));
   };
 
@@ -917,51 +890,47 @@ export class AdminController {
   };
 
   listConversations = async (
-    request: Request,
-    response: Response,
+    _request: Request,
+    _response: Response,
   ): Promise<void> => {
-    const query = adminConversationQuerySchema.parse(request.query);
-    const data = await this.admin.listConversations(query);
-    response.status(200).json(success(request, data));
+    throw new AppError(
+      "FORBIDDEN",
+      "Admin cannot read private user chats",
+      403,
+    );
   };
 
   conversationsStats = async (
-    request: Request,
-    response: Response,
+    _request: Request,
+    _response: Response,
   ): Promise<void> => {
-    const data = await this.admin.conversationsStats();
-    response.status(200).json(success(request, data));
+    throw new AppError(
+      "FORBIDDEN",
+      "Admin cannot read private user chats",
+      403,
+    );
   };
 
   listConversationMessages = async (
-    request: Request,
-    response: Response,
+    _request: Request,
+    _response: Response,
   ): Promise<void> => {
-    const { conversationId } = adminConversationIdParamSchema.parse(
-      request.params,
+    throw new AppError(
+      "FORBIDDEN",
+      "Admin cannot read private user chats",
+      403,
     );
-    const query = adminConversationQuerySchema
-      .pick({ page: true, pageSize: true })
-      .parse(request.query);
-    const data = await this.admin.listConversationMessages(
-      conversationId,
-      query,
-    );
-    response.status(200).json(success(request, data));
   };
 
   deleteMessage = async (
-    request: Request,
-    response: Response,
+    _request: Request,
+    _response: Response,
   ): Promise<void> => {
-    const { messageId } = adminMessageIdParamSchema.parse(request.params);
-    const input = deleteAdminMessageSchema.parse(request.body as unknown);
-    const data = await this.admin.deleteMessageForEveryone(
-      requireUser(request),
-      messageId,
-      input,
+    throw new AppError(
+      "FORBIDDEN",
+      "Admin cannot read or delete private user chats",
+      403,
     );
-    response.status(200).json(success(request, data));
   };
 
   listMedia = async (request: Request, response: Response): Promise<void> => {

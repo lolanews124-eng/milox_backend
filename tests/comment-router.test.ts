@@ -141,6 +141,7 @@ function commentFixture(): CommentViewRecord {
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: false,
       hideAge: true,
       hideCountry: true,

@@ -133,6 +133,7 @@ function notificationFixture(hidden: boolean): NotificationViewRecord {
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: false,
       hideAge: hidden,
       hideCountry: hidden,

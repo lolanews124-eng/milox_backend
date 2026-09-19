@@ -4,6 +4,9 @@ import { VerifiedBadgePaymentMethod } from "@prisma/client";
 import { z } from "zod";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import { getUsdInrRate } from "../../economy/app-economy-config.js";
+import { resolveCheckoutCurrency } from "../../payments/application/checkout-gateway.js";
+import { convertAmountMinor } from "../../payments/application/payment-money.js";
 import { resolveUserEntitlements, presentEntitlements } from "../application/entitlements.js";
 import type { VerifiedBadgeService } from "../application/verified-badge-service.js";
 
@@ -19,7 +22,7 @@ export class PremiumController {
     private readonly verifiedBadge: VerifiedBadgeService,
   ) {}
 
-  listPlans = async (_request: Request, response: Response): Promise<void> => {
+  listPlans = async (request: Request, response: Response): Promise<void> => {
     const plans = await this.database.premiumPlan.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { priceCents: "asc" }],
@@ -54,19 +57,66 @@ export class PremiumController {
       },
     });
 
+    let chargeCurrency: "INR" | "USD" | null = null;
+    let usdInrRate = 85;
+    const userId = request.auth?.userId;
+    if (userId) {
+      const user = await this.database.user.findUnique({
+        where: { id: userId },
+        select: { country: true },
+      });
+      chargeCurrency = resolveCheckoutCurrency(user?.country).currency;
+      usdInrRate = await getUsdInrRate(this.database);
+    }
+
+    // If old INR+USD plan duplicates exist, keep one plan per code for the user.
+    const ranked = [...plans].sort((a, b) => {
+      if (!chargeCurrency) return 0;
+      const aMatch = a.currency.toUpperCase() === chargeCurrency ? 0 : 1;
+      const bMatch = b.currency.toUpperCase() === chargeCurrency ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      const aInr = a.currency.toUpperCase() === "INR" ? 0 : 1;
+      const bInr = b.currency.toUpperCase() === "INR" ? 0 : 1;
+      return aInr - bInr;
+    });
+    const seenCodes = new Set<string>();
+    const uniquePlans = ranked.filter((plan) => {
+      if (seenCodes.has(plan.code)) return false;
+      seenCodes.add(plan.code);
+      return true;
+    });
+
     response.status(200).json({
       success: true,
       data: {
-        items: plans.map((plan) => ({
-          ...plan,
-          dailyInterestLimit:
-            plan.dailyInterestLimit >= 9999 ? "unlimited" : plan.dailyInterestLimit,
-          prices: plan.prices.map((price) => ({
-            billingCycle: price.billingCycle,
-            priceCents: price.priceCents,
-            durationDays: price.durationDays,
-          })),
-        })),
+        items: uniquePlans.map((plan) => {
+          const currency = chargeCurrency ?? plan.currency;
+          const convert = (cents: number) =>
+            chargeCurrency
+              ? convertAmountMinor(
+                  cents,
+                  plan.currency,
+                  chargeCurrency,
+                  usdInrRate,
+                )
+              : cents;
+          return {
+            ...plan,
+            currency,
+            priceCents: convert(plan.priceCents),
+            baseCurrency: plan.currency,
+            basePriceCents: plan.priceCents,
+            dailyInterestLimit:
+              plan.dailyInterestLimit >= 9999
+                ? "unlimited"
+                : plan.dailyInterestLimit,
+            prices: plan.prices.map((price) => ({
+              billingCycle: price.billingCycle,
+              priceCents: convert(price.priceCents),
+              durationDays: price.durationDays,
+            })),
+          };
+        }),
       },
     });
   };
@@ -103,17 +153,17 @@ export class PremiumController {
       meta: { requestId: request.requestId },
     });
   };
-}
 
-export async function getEntitlementsHandler(
-  database: PrismaClient,
-  userId: string,
-  freeDailyInterestLimit: number,
-): Promise<object> {
-  const entitlements = await resolveUserEntitlements(
-    database,
-    userId,
-    freeDailyInterestLimit,
-  );
-  return presentEntitlements(entitlements);
+  getEntitlements = async (request: Request, response: Response): Promise<void> => {
+    const userId = request.auth?.userId;
+    if (!userId) {
+      throw new AppError("UNAUTHENTICATED", "Authentication required", 401);
+    }
+    const entitlements = await resolveUserEntitlements(this.database, userId);
+    response.status(200).json({
+      success: true,
+      data: presentEntitlements(entitlements),
+      meta: { requestId: request.requestId },
+    });
+  };
 }

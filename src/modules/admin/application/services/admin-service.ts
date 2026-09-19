@@ -59,16 +59,11 @@ import {
 } from "../admin-view.js";
 import { presentMobileAppConfig } from "../../../app-release/mobile-app-config.js";
 import type { AppConfig } from "../../../../config/env.js";
-import { presentPaypalSettings } from "../../../payments/application/paypal-settings.js";
-import {
-  presentCashfreeSettings,
-  resolveCashfreeCredentials,
-  saveCashfreeSettings,
-  ensureCashfreeSettings,
-} from "../../../payments/application/cashfree-settings.js";
 import { paymentFunnelReport } from "../../../payments/application/paypal-settings.js";
-import type { PaypalClient } from "../../../payments/infrastructure/paypal-client.js";
-import type { CashfreeClient } from "../../../payments/infrastructure/cashfree-client.js";
+import {
+  presentRazorpaySettings,
+} from "../../../payments/application/razorpay-settings.js";
+import type { RazorpayClient } from "../../../payments/infrastructure/razorpay-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 import {
@@ -82,16 +77,12 @@ export class AdminService {
   constructor(
     private readonly repository: AdminRepository,
     private readonly uploadRoot: string,
-    private readonly paypal?: {
+    private readonly razorpay?: {
       config: AppConfig;
-      client: PaypalClient;
+      client: RazorpayClient;
     },
     private readonly database?: PrismaClient,
     private readonly calls?: CallService,
-    private readonly cashfree?: {
-      config: AppConfig;
-      client: CashfreeClient;
-    },
   ) {}
 
   async economyConfig(): Promise<object> {
@@ -104,6 +95,8 @@ export class AdminService {
     videoCallEnabled?: boolean;
     videoCallPointsPerMinute?: number;
     videoCallRingTimeoutSec?: number;
+    usdInrRate?: number;
+    freeDailyInterestGrants?: number;
   }): Promise<object> {
     return presentEconomyConfig(
       await updateAppEconomyConfig(this.requireDatabase(), input),
@@ -1146,46 +1139,47 @@ export class AdminService {
     }
   }
 
-  private requirePaypal() {
-    if (!this.paypal) {
+  private requireRazorpay() {
+    if (!this.razorpay) {
       throw new AppError(
-        "PAYPAL_NOT_CONFIGURED",
-        "PayPal is not available",
+        "RAZORPAY_NOT_CONFIGURED",
+        "Razorpay is not available",
         503,
       );
     }
-    return this.paypal;
+    return this.razorpay;
   }
 
-  async getPaypalSettings(): Promise<object> {
-    const paypal = this.requirePaypal();
+  async getRazorpaySettings(): Promise<object> {
+    const razorpay = this.requireRazorpay();
     const [row, runtime] = await Promise.all([
-      this.repository.getPaypalSettings(),
-      paypal.client.runtime(),
+      this.repository.getRazorpaySettings(),
+      razorpay.client.runtime(),
     ]);
-    return presentPaypalSettings(row, paypal.config, runtime);
+    return presentRazorpaySettings(row, razorpay.config, runtime);
   }
 
-  async updatePaypalSettings(
+  async updateRazorpaySettings(
     actorId: string,
     input: {
-      clientId?: string | undefined;
-      clientSecret?: string | undefined;
-      mode?: "sandbox" | "live" | undefined;
-      webhookId?: string | undefined;
+      keyId?: string | undefined;
+      keySecret?: string | undefined;
+      webhookSecret?: string | undefined;
+      mode?: "test" | "live" | undefined;
       clearSecret?: boolean | undefined;
+      clearWebhookSecret?: boolean | undefined;
     },
   ): Promise<object> {
-    const paypal = this.requirePaypal();
+    const razorpay = this.requireRazorpay();
     try {
-      const row = await this.repository.updatePaypalSettings({
+      const row = await this.repository.updateRazorpaySettings({
         actorId,
-        encryptionSecret: paypal.config.JWT_ACCESS_SECRET,
+        encryptionSecret: razorpay.config.JWT_ACCESS_SECRET,
         ...input,
       });
-      paypal.client.invalidate();
-      const runtime = await paypal.client.runtime();
-      return presentPaypalSettings(row, paypal.config, runtime);
+      razorpay.client.invalidate();
+      const runtime = await razorpay.client.runtime();
+      return presentRazorpaySettings(row, razorpay.config, runtime);
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);
@@ -1194,9 +1188,9 @@ export class AdminService {
     }
   }
 
-  async testPaypalSettings(): Promise<object> {
-    const paypal = this.requirePaypal();
-    return paypal.client.verifyCredentials();
+  async testRazorpaySettings(): Promise<object> {
+    const razorpay = this.requireRazorpay();
+    return razorpay.client.verifyCredentials();
   }
 
   paypalIncomeReport(options?: {
@@ -1211,56 +1205,6 @@ export class AdminService {
     options?: { page?: number; limit?: number },
   ): Promise<object> {
     return paymentFunnelReport(this.requireDatabase(), days, options);
-  }
-
-  private requireCashfree() {
-    if (!this.cashfree) {
-      throw new AppError(
-        "CASHFREE_NOT_CONFIGURED",
-        "Cashfree is not available",
-        503,
-      );
-    }
-    return this.cashfree;
-  }
-
-  async getCashfreeSettings(): Promise<object> {
-    const cashfree = this.requireCashfree();
-    const row = await ensureCashfreeSettings(this.requireDatabase());
-    const runtime = await resolveCashfreeCredentials(
-      this.requireDatabase(),
-      cashfree.config,
-    );
-    return presentCashfreeSettings(row, cashfree.config, runtime);
-  }
-
-  async updateCashfreeSettings(
-    actorId: string,
-    input: {
-      appId?: string | undefined;
-      secretKey?: string | undefined;
-      mode?: "sandbox" | "production" | undefined;
-      clearSecret?: boolean | undefined;
-    },
-  ): Promise<object> {
-    const cashfree = this.requireCashfree();
-    void actorId;
-    const row = await saveCashfreeSettings(
-      this.requireDatabase(),
-      cashfree.config.JWT_ACCESS_SECRET,
-      input,
-    );
-    cashfree.client.invalidate();
-    const runtime = await resolveCashfreeCredentials(
-      this.requireDatabase(),
-      cashfree.config,
-    );
-    return presentCashfreeSettings(row, cashfree.config, runtime);
-  }
-
-  async testCashfreeSettings(): Promise<object> {
-    const cashfree = this.requireCashfree();
-    return cashfree.client.testConnection();
   }
 
   async listCmsPages(options: {

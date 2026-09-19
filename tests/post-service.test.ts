@@ -214,6 +214,7 @@ function postFixture(
       websiteUrl: null,
       instagramHandle: null,
       isVerifiedBadge: false,
+      premiumTier: "FREE",
       isPrivateAccount: false,
       hideAge: overrides.hideAge ?? false,
       hideCountry: overrides.hideCountry ?? false,

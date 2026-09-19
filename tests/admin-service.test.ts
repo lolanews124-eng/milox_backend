@@ -165,7 +165,7 @@ function createRepository(): AdminRepository {
     updatePointPurchaseRate: vi.fn(),
     listAdPlacementConfigs: vi.fn(),
     updateAdPlacementConfig: vi.fn(),
-  };
+  } as unknown as AdminRepository;
 }
 
 function userFixture(): AdminUserRecord {
@@ -179,12 +179,15 @@ function userFixture(): AdminUserRecord {
     status: "ACTIVE",
     isVerifiedBadge: false,
     country: null,
+    profilePhotoMediaId: null,
+    lastSeenAt: null,
     followerCount: 1,
     followingCount: 2,
     postCount: 3,
     lastLoginAt: null,
     bannedAt: null,
     banReason: null,
+    deletedAt: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };

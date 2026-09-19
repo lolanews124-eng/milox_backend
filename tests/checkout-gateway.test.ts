@@ -1,30 +1,30 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  INDIA_GATEWAY_UNAVAILABLE_MESSAGE,
   isIndiaCountry,
-  resolveCheckoutGateway,
+  resolveCheckoutCurrency,
 } from "../src/modules/payments/application/checkout-gateway.js";
 
-describe("checkout gateway routing", () => {
-  it("sends India profiles to Cashfree INR", () => {
-    expect(resolveCheckoutGateway("India")).toEqual({
-      gateway: "CASHFREE",
+describe("checkout currency by country", () => {
+  it("shows INR for India profiles", () => {
+    expect(resolveCheckoutCurrency("India")).toEqual({
+      gateway: "RAZORPAY",
       country: "India",
       currency: "INR",
-      label: "Cashfree (UPI / Cards / Netbanking)",
+      label: "Razorpay",
     });
     expect(isIndiaCountry("IN")).toBe(true);
-    expect(resolveCheckoutGateway("in").gateway).toBe("CASHFREE");
+    expect(resolveCheckoutCurrency("in").currency).toBe("INR");
   });
 
-  it("sends every other country to PayPal USD", () => {
-    expect(resolveCheckoutGateway("United States").gateway).toBe("PAYPAL");
-    expect(resolveCheckoutGateway("United States").currency).toBe("USD");
-    expect(resolveCheckoutGateway(null).gateway).toBe("PAYPAL");
+  it("shows USD for every other country", () => {
+    expect(resolveCheckoutCurrency("United States").currency).toBe("USD");
+    expect(resolveCheckoutCurrency("United States").gateway).toBe("RAZORPAY");
   });
 
-  it("keeps the India unavailable copy stable", () => {
-    expect(INDIA_GATEWAY_UNAVAILABLE_MESSAGE).toMatch(/coming soon/i);
+  it("defaults blank country to INR (India-first)", () => {
+    expect(resolveCheckoutCurrency(null).currency).toBe("INR");
+    expect(resolveCheckoutCurrency("").country).toBe("India");
+    expect(isIndiaCountry(null)).toBe(true);
   });
 });

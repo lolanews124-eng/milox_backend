@@ -6,6 +6,9 @@ import {
 } from "@prisma/client";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import { getUsdInrRate } from "../../economy/app-economy-config.js";
+import { resolveCheckoutCurrency } from "../../payments/application/checkout-gateway.js";
+import { presentMoneyForCountry } from "../../payments/application/payment-money.js";
 import { InsufficientWalletBalanceError } from "../../rewards/application/ports/rewards-repository.js";
 import { debitWallet } from "../../rewards/infrastructure/prisma-rewards-repository.js";
 
@@ -122,6 +125,7 @@ export class VerifiedBadgeService {
         select: {
           isVerifiedBadge: true,
           verifiedBadgeExpiresAt: true,
+          country: true,
         },
       }),
       this.database.verifiedBadgeOrder.findFirst({
@@ -139,14 +143,32 @@ export class VerifiedBadgeService {
     const verifiedNow = Boolean(
       user?.isVerifiedBadge && (!expiresAt || expiresAt > now),
     );
+    const resolved = resolveCheckoutCurrency(user?.country);
+    const usdInrRate = await getUsdInrRate(this.database);
+    const money = presentMoneyForCountry({
+      amountMinor: product.priceCents,
+      currency: product.currency,
+      country: user?.country,
+      usdInrRate,
+    });
+    const presented = presentProduct(product);
 
     return {
       available: product.isActive && (product.priceCents > 0 || product.pricePoints > 0),
-      product: presentProduct(product),
+      product: {
+        ...presented,
+        currency: money.currency,
+        priceCents: money.amountMinor,
+        cashEnabled: presented.cashEnabled,
+        baseCurrency: product.currency,
+        basePriceCents: product.priceCents,
+      },
       isVerified: verifiedNow,
       expiresAt: expiresAt?.toISOString() ?? null,
       pendingOrder: pending ? presentOrder(pending) : null,
       walletBalance: wallet?.balance ?? 0,
+      checkoutCurrency: resolved.currency,
+      usdInrRate,
     };
   }
 
@@ -380,6 +402,7 @@ export class VerifiedBadgeService {
       currency: string;
       durationDays: number;
       checkoutId: string;
+      paymentMethod?: VerifiedBadgePaymentMethod;
     },
     database: Prisma.TransactionClient | PrismaClient = this.database,
   ) {
@@ -390,6 +413,8 @@ export class VerifiedBadgeService {
     if (existing?.status === VerifiedBadgeOrderStatus.COMPLETED) {
       return existing;
     }
+    const paymentMethod =
+      input.paymentMethod ?? VerifiedBadgePaymentMethod.PAYPAL;
     const run = async (tx: Prisma.TransactionClient) => {
       const expiresAt = this.computeExpiry(
         input.durationDays,
@@ -400,7 +425,7 @@ export class VerifiedBadgeService {
         data: {
           userId: input.userId,
           status: VerifiedBadgeOrderStatus.COMPLETED,
-          paymentMethod: VerifiedBadgePaymentMethod.PAYPAL,
+          paymentMethod,
           amountCents: input.amountCents,
           pointsSpent: 0,
           currency: input.currency,
