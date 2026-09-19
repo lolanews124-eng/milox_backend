@@ -1774,17 +1774,22 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   async listPremiumPlans(
-    query: { page: number; pageSize: number },
+    query: { page: number; pageSize: number; unlimitedMessaging?: boolean },
   ): Promise<AdminPage<AdminPremiumPlanRecord>> {
     const now = new Date();
+    const where =
+      query.unlimitedMessaging === undefined
+        ? {}
+        : { unlimitedMessaging: query.unlimitedMessaging };
     const [rows, total] = await this.database.$transaction([
       this.database.premiumPlan.findMany({
+        where,
         orderBy: [{ sortOrder: "asc" }, { isActive: "desc" }, { priceCents: "asc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         select: premiumPlanSelect(),
       }),
-      this.database.premiumPlan.count(),
+      this.database.premiumPlan.count({ where }),
     ]);
     const planIds = rows.map((plan) => plan.id);
     const subscriberCounts =

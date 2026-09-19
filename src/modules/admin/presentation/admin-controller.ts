@@ -32,6 +32,7 @@ import {
   adminCommentQuerySchema,
   adminInterestTagIdParamSchema,
   adminPlanIdParamSchema,
+  adminPremiumPlanQuerySchema,
   adminPostIdParamSchema,
   adminPostQuerySchema,
   adminStoryIdParamSchema,
@@ -475,8 +476,14 @@ export class AdminController {
     request: Request,
     response: Response,
   ): Promise<void> => {
-    const query = adminUserQuerySchema.parse(request.query);
-    const data = await this.admin.listPremiumPlans(query);
+    const query = adminPremiumPlanQuerySchema.parse(request.query);
+    const data = await this.admin.listPremiumPlans({
+      page: query.page,
+      pageSize: query.pageSize,
+      ...(query.unlimitedMessaging !== undefined
+        ? { unlimitedMessaging: query.unlimitedMessaging }
+        : {}),
+    });
     response.status(200).json(success(request, data));
   };
 

@@ -303,6 +303,18 @@ export const updatePremiumPlanSchema = z
   })
   .strict();
 
+export const adminPremiumPlanQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  /** true = messaging plans only; false = exclude messaging plans. */
+  unlimitedMessaging: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) =>
+      value === undefined ? undefined : value === "true",
+    ),
+});
+
 export const adminPlanIdParamSchema = z.object({
   planId: z.uuid(),
 });

@@ -494,7 +494,9 @@ export interface AdminRepository {
   updateInterestTag(
     data: UpdateInterestTagData,
   ): Promise<AdminInterestTagRecord | null>;
-  listPremiumPlans(query: OffsetPage): Promise<AdminPage<AdminPremiumPlanRecord>>;
+  listPremiumPlans(query: OffsetPage & {
+    unlimitedMessaging?: boolean;
+  }): Promise<AdminPage<AdminPremiumPlanRecord>>;
   createPremiumPlan(data: CreatePremiumPlanData): Promise<AdminPremiumPlanRecord>;
   updatePremiumPlan(
     data: UpdatePremiumPlanData,

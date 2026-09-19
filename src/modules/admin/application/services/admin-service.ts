@@ -819,6 +819,7 @@ export class AdminService {
   async listPremiumPlans(options: {
     page: number;
     pageSize: number;
+    unlimitedMessaging?: boolean;
   }): Promise<object> {
     const result = await this.repository.listPremiumPlans(options);
     return paginate(result, options, presentAdminPremiumPlan);
