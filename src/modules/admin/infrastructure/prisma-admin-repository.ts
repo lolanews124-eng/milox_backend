@@ -1837,6 +1837,7 @@ export class PrismaAdminRepository implements AdminRepository {
           dailyInterestLimit: data.dailyInterestLimit ?? 30,
           interstitialAdsFree: data.interstitialAdsFree ?? true,
           directMessageEnabled: data.directMessageEnabled ?? false,
+          unlimitedMessaging: data.unlimitedMessaging ?? false,
         },
         select: { id: true },
       });
@@ -1881,6 +1882,7 @@ export class PrismaAdminRepository implements AdminRepository {
           ...(data.dailyInterestLimit !== undefined ? { dailyInterestLimit: data.dailyInterestLimit } : {}),
           ...(data.interstitialAdsFree !== undefined ? { interstitialAdsFree: data.interstitialAdsFree } : {}),
           ...(data.directMessageEnabled !== undefined ? { directMessageEnabled: data.directMessageEnabled } : {}),
+          ...(data.unlimitedMessaging !== undefined ? { unlimitedMessaging: data.unlimitedMessaging } : {}),
         },
       });
       if (data.prices?.length) {
@@ -4153,6 +4155,7 @@ function premiumPlanSelect() {
     dailyInterestLimit: true,
     interstitialAdsFree: true,
     directMessageEnabled: true,
+    unlimitedMessaging: true,
     isActive: true,
     createdAt: true,
     updatedAt: true,
@@ -4194,6 +4197,7 @@ function mapPremiumPlan(
     dailyInterestLimit: number;
     interstitialAdsFree: boolean;
     directMessageEnabled: boolean;
+    unlimitedMessaging: boolean;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -4221,6 +4225,7 @@ function mapPremiumPlan(
     dailyInterestLimit: plan.dailyInterestLimit,
     interstitialAdsFree: plan.interstitialAdsFree,
     directMessageEnabled: plan.directMessageEnabled,
+    unlimitedMessaging: plan.unlimitedMessaging,
     isActive: plan.isActive,
     prices: plan.prices.map((price) => ({
       id: price.id,

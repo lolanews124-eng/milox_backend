@@ -60,10 +60,8 @@ export class RewardsService {
         sentToday,
         freeDailyInterestGrants,
       ),
-      dailyInterestLimit:
-        entitlements.features.dailyInterestLimit >= 9999
-          ? null
-          : entitlements.features.dailyInterestLimit,
+      // Sends are unlimited for everyone; null means no hard daily cap in clients.
+      dailyInterestLimit: null,
     });
   }
 

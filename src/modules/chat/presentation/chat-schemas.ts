@@ -64,3 +64,21 @@ export const startDirectConversationSchema = z
     recipientId: z.uuid(),
   })
   .strict();
+
+export const createGroupSchema = z
+  .object({
+    title: z.string().trim().min(1).max(80),
+    memberIds: z.array(z.uuid()).min(0).max(100),
+  })
+  .strict();
+
+export const addGroupMemberSchema = z
+  .object({
+    userId: z.uuid(),
+  })
+  .strict();
+
+export const memberUserIdParamSchema = z.object({
+  conversationId: z.uuid(),
+  userId: z.uuid(),
+});

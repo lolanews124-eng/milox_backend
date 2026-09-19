@@ -1,10 +1,12 @@
 import {
   ConversationKind,
+  ConversationMemberRole,
   ConversationStatus,
   MatchStatus,
   MediaKind,
   MediaVisibility,
   MessageDeliveryStatus,
+  MessageType,
   Prisma,
   type PrismaClient,
   AgeRange,
@@ -17,6 +19,7 @@ import type {
   CreatedMessage,
   DeletedMessage,
   DeliveryReceipt,
+  GroupMemberRecord,
   MessagePageQuery,
   PresenceAudience,
   ReadReceipt,
@@ -24,10 +27,15 @@ import type {
   SendMessageData,
 } from "../application/ports/chat-repository.js";
 import {
+  AlreadyMemberError,
   ChatActionConflictError,
   ChatIdempotencyConflictError,
   ChatMediaOwnershipError,
   ChatReplyNotFoundError,
+  MessageLimitReachedError,
+  NotGroupAdminError,
+  NotGroupError,
+  NotMatchedError,
 } from "../application/ports/chat-repository.js";
 import type { PostAuthorViewRecord } from "../../posts/application/post-view.js";
 import type {
@@ -39,7 +47,10 @@ import {
   MILOX_OFFICIAL_DISPLAY_NAME,
   MILOX_OFFICIAL_USERNAME,
 } from "../../official-chat/official-chat-config.js";
-import { visibleUserCardWhere } from "../../posts/infrastructure/post-query-policy.js";
+import {
+  publicAuthorSelect,
+  visibleUserCardWhere,
+} from "../../posts/infrastructure/post-query-policy.js";
 import {
   conversationViewSelect,
   messageViewSelect,
@@ -162,6 +173,26 @@ export class PrismaChatRepository implements ChatRepository {
         if (!conversation) return null;
         if (conversation.kind === ConversationKind.OFFICIAL) {
           throw new ChatActionConflictError("read_only");
+        }
+        if (
+          conversation.kind === ConversationKind.GROUP &&
+          data.type === "IMAGE"
+        ) {
+          throw new ChatActionConflictError("group_images_disabled");
+        }
+
+        const quota = data.messagingQuota;
+        if (quota && !quota.hasUnlimited) {
+          const reserved = await transaction.user.updateMany({
+            where: {
+              id: data.senderId,
+              messagesSentCount: { lt: quota.freeLimit },
+            },
+            data: { messagesSentCount: { increment: 1 } },
+          });
+          if (reserved.count === 0) {
+            throw new MessageLimitReachedError();
+          }
         }
 
         if (data.mediaId) {
@@ -511,6 +542,7 @@ export class PrismaChatRepository implements ChatRepository {
         OR: [
           { kind: ConversationKind.OFFICIAL },
           { kind: ConversationKind.DIRECT },
+          { kind: ConversationKind.GROUP },
           { match: { is: { status: MatchStatus.ACTIVE } } },
         ],
       },
@@ -730,8 +762,11 @@ export class PrismaChatRepository implements ChatRepository {
     return this.database.$transaction(async (transaction) => {
       const members = await transaction.conversationMember.findMany({
         where: { conversationId, leftAt: null },
-        select: { userId: true },
+        select: { userId: true, role: true },
       });
+      const leaving = members.find((member) => member.userId === userId);
+      if (!leaving) return false;
+
       const updated = await transaction.conversationMember.updateMany({
         where: {
           conversationId,
@@ -741,6 +776,36 @@ export class PrismaChatRepository implements ChatRepository {
         data: { leftAt: now, clearedAt: now, isArchived: false },
       });
       if (updated.count === 0) return false;
+
+      if (conversation.kind === ConversationKind.GROUP) {
+        await ensureGroupHasAdmin(transaction, conversationId);
+        const leaver = await transaction.user.findUnique({
+          where: { id: userId },
+          select: { username: true, displayName: true },
+        });
+        const label =
+          leaver?.displayName?.trim() || leaver?.username || "Someone";
+        await createSystemMessage(
+          transaction,
+          conversationId,
+          userId,
+          `${label} left the group`,
+        );
+        // Do not notify other members with conversation:left — they stay in the group.
+        await transaction.outboxEvent.create({
+          data: {
+            eventType: "chat.conversation.left",
+            aggregateType: "conversation",
+            aggregateId: conversationId,
+            payload: {
+              conversationId,
+              actorId: userId,
+              peerId: null,
+            },
+          },
+        });
+        return true;
+      }
 
       const peerId =
         members.find((member) => member.userId !== userId)?.userId ?? null;
@@ -758,6 +823,273 @@ export class PrismaChatRepository implements ChatRepository {
       });
       return true;
     });
+  }
+
+  async createGroup(input: {
+    creatorId: string;
+    title: string;
+    memberIds: string[];
+  }): Promise<ConversationViewRecord> {
+    const title = input.title.trim();
+    if (title.length < 1 || title.length > 80) {
+      throw new ChatActionConflictError("invalid_title");
+    }
+
+    const uniqueMemberIds = [
+      ...new Set(input.memberIds.filter((id) => id !== input.creatorId)),
+    ];
+    for (const memberId of uniqueMemberIds) {
+      const matched = await findActiveMatch(
+        this.database,
+        input.creatorId,
+        memberId,
+      );
+      if (!matched) throw new NotMatchedError();
+    }
+
+    const created = await this.database.$transaction(async (transaction) => {
+      const conversation = await transaction.conversation.create({
+        data: {
+          kind: ConversationKind.GROUP,
+          title,
+          createdByUserId: input.creatorId,
+          members: {
+            create: [
+              {
+                userId: input.creatorId,
+                role: ConversationMemberRole.ADMIN,
+              },
+              ...uniqueMemberIds.map((userId) => ({
+                userId,
+                role: ConversationMemberRole.MEMBER,
+              })),
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      const creator = await transaction.user.findUnique({
+        where: { id: input.creatorId },
+        select: { username: true, displayName: true },
+      });
+      const label =
+        creator?.displayName?.trim() || creator?.username || "Someone";
+      await createSystemMessage(
+        transaction,
+        conversation.id,
+        input.creatorId,
+        `${label} created the group`,
+      );
+      return conversation.id;
+    });
+
+    const view = await this.findConversation(created, input.creatorId);
+    if (!view) throw new Error("Created group conversation is missing");
+    return view;
+  }
+
+  async addGroupMember(input: {
+    conversationId: string;
+    actorId: string;
+    userId: string;
+  }): Promise<ConversationViewRecord | null> {
+    if (input.actorId === input.userId) {
+      throw new AlreadyMemberError();
+    }
+
+    const conversation = await this.database.conversation.findFirst({
+      where: {
+        id: input.conversationId,
+        status: ConversationStatus.ACTIVE,
+      },
+      select: { id: true, kind: true },
+    });
+    if (!conversation) return null;
+    if (conversation.kind !== ConversationKind.GROUP) {
+      throw new NotGroupError();
+    }
+
+    const actor = await this.database.conversationMember.findFirst({
+      where: {
+        conversationId: input.conversationId,
+        userId: input.actorId,
+        leftAt: null,
+      },
+      select: { id: true },
+    });
+    if (!actor) return null;
+
+    const matched = await findActiveMatch(
+      this.database,
+      input.actorId,
+      input.userId,
+    );
+    if (!matched) throw new NotMatchedError();
+
+    const existing = await this.database.conversationMember.findUnique({
+      where: {
+        conversationId_userId: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+        },
+      },
+      select: { id: true, leftAt: true },
+    });
+    if (existing && existing.leftAt === null) {
+      throw new AlreadyMemberError();
+    }
+
+    await this.database.$transaction(async (transaction) => {
+      if (existing) {
+        await transaction.conversationMember.update({
+          where: { id: existing.id },
+          data: {
+            leftAt: null,
+            clearedAt: null,
+            isArchived: false,
+            role: ConversationMemberRole.MEMBER,
+            unreadCount: 0,
+          },
+        });
+      } else {
+        await transaction.conversationMember.create({
+          data: {
+            conversationId: input.conversationId,
+            userId: input.userId,
+            role: ConversationMemberRole.MEMBER,
+          },
+        });
+      }
+      await transaction.conversation.update({
+        where: { id: input.conversationId },
+        data: { updatedAt: new Date() },
+      });
+    });
+
+    return this.findConversation(input.conversationId, input.actorId);
+  }
+
+  async removeGroupMember(input: {
+    conversationId: string;
+    actorId: string;
+    userId: string;
+  }): Promise<ConversationViewRecord | null> {
+    if (input.actorId === input.userId) {
+      throw new ChatActionConflictError("cannot_remove_self");
+    }
+
+    const conversation = await this.database.conversation.findFirst({
+      where: {
+        id: input.conversationId,
+        status: ConversationStatus.ACTIVE,
+      },
+      select: { id: true, kind: true },
+    });
+    if (!conversation) return null;
+    if (conversation.kind !== ConversationKind.GROUP) {
+      throw new NotGroupError();
+    }
+
+    const actor = await this.database.conversationMember.findFirst({
+      where: {
+        conversationId: input.conversationId,
+        userId: input.actorId,
+        leftAt: null,
+      },
+      select: { id: true, role: true },
+    });
+    if (!actor) return null;
+    if (actor.role !== ConversationMemberRole.ADMIN) {
+      throw new NotGroupAdminError();
+    }
+
+    const now = new Date();
+    const removed = await this.database.$transaction(async (transaction) => {
+      const target = await transaction.conversationMember.findFirst({
+        where: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+          leftAt: null,
+        },
+        select: { id: true },
+      });
+      if (!target) return false;
+
+      await transaction.conversationMember.update({
+        where: { id: target.id },
+        data: { leftAt: now, clearedAt: now, isArchived: false },
+      });
+      await ensureGroupHasAdmin(transaction, input.conversationId);
+      await transaction.conversation.update({
+        where: { id: input.conversationId },
+        data: { updatedAt: now },
+      });
+      const removedUser = await transaction.user.findUnique({
+        where: { id: input.userId },
+        select: { username: true, displayName: true },
+      });
+      const label =
+        removedUser?.displayName?.trim() ||
+        removedUser?.username ||
+        "Someone";
+      await createSystemMessage(
+        transaction,
+        input.conversationId,
+        input.actorId,
+        `${label} was removed from the group`,
+      );
+      // Notify only the removed member to drop this conversation from their inbox.
+      await transaction.outboxEvent.create({
+        data: {
+          eventType: "chat.conversation.left",
+          aggregateType: "conversation",
+          aggregateId: input.conversationId,
+          payload: {
+            conversationId: input.conversationId,
+            actorId: input.actorId,
+            peerId: input.userId,
+          },
+        },
+      });
+      return true;
+    });
+    if (!removed) return null;
+
+    return this.findConversation(input.conversationId, input.actorId);
+  }
+
+  async listGroupMembers(
+    conversationId: string,
+    userId: string,
+  ): Promise<GroupMemberRecord[] | null> {
+    const conversation = await this.database.conversation.findFirst({
+      where: {
+        id: conversationId,
+        status: ConversationStatus.ACTIVE,
+        members: { some: { userId, leftAt: null } },
+      },
+      select: {
+        kind: true,
+        members: {
+          where: { leftAt: null },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            userId: true,
+            role: true,
+            user: { select: publicAuthorSelect() },
+          },
+        },
+      },
+    });
+    if (!conversation) return null;
+    if (conversation.kind !== ConversationKind.GROUP) {
+      throw new NotGroupError();
+    }
+    return conversation.members.map((member) => ({
+      userId: member.userId,
+      role: member.role,
+      user: member.user,
+    }));
   }
 
   private async findReplay(
@@ -823,21 +1155,29 @@ function mapConversation(
   if (!member) throw new Error("Conversation member projection is missing");
   const isOfficial = row.kind === ConversationKind.OFFICIAL;
   const isDirect = row.kind === ConversationKind.DIRECT;
-  const peer = isOfficial
-    ? (row.members.find((entry) => entry.userId !== userId)?.user ??
-      officialPeerFallback(row.members.find((entry) => entry.userId !== userId)?.userId))
-    : isDirect
-      ? (row.members.find((entry) => entry.userId !== userId)?.user ?? null)
-      : row.match
-        ? row.match.userAId === userId
-          ? row.match.userB
-          : row.match.userA
-        : null;
+  const isGroup = row.kind === ConversationKind.GROUP;
+  const peer = isGroup
+    ? groupPeerFallback(row.id, row.title)
+    : isOfficial
+      ? (row.members.find((entry) => entry.userId !== userId)?.user ??
+        officialPeerFallback(
+          row.members.find((entry) => entry.userId !== userId)?.userId,
+        ))
+      : isDirect
+        ? (row.members.find((entry) => entry.userId !== userId)?.user ?? null)
+        : row.match
+          ? row.match.userAId === userId
+            ? row.match.userB
+            : row.match.userA
+          : null;
   if (!peer) throw new Error("Conversation peer projection is missing");
   return {
     id: row.id,
     kind: row.kind,
     matchId: row.matchId,
+    title: isGroup ? row.title : null,
+    memberCount: isGroup ? row.members.length : row.members.length || 2,
+    myRole: isGroup ? member.role : null,
     isOfficial,
     isReadOnly: isOfficial,
     peer,
@@ -847,6 +1187,37 @@ function mapConversation(
     isArchived: member.isArchived,
     updatedAt: row.updatedAt,
     lastMessage: row.messages[0] ?? null,
+  };
+}
+
+function groupPeerFallback(
+  conversationId: string,
+  title: string | null,
+): PostAuthorViewRecord {
+  return {
+    id: conversationId,
+    username: "group",
+    displayName: title,
+    bio: null,
+    ageRange: AgeRange.AGE_25_28,
+    gender: Gender.OTHER,
+    country: "Global",
+    relationshipGoal: null,
+    websiteUrl: null,
+    instagramHandle: null,
+    isVerifiedBadge: false,
+    premiumTier: "FREE",
+    isPrivateAccount: false,
+    hideAge: true,
+    hideCountry: true,
+    hideOnline: true,
+    followerCount: 0,
+    followingCount: 0,
+    postCount: 0,
+    createdAt: new Date(0),
+    profilePhoto: null,
+    coverPhoto: null,
+    interests: [],
   };
 }
 
@@ -876,4 +1247,92 @@ function officialPeerFallback(userId?: string): PostAuthorViewRecord {
     coverPhoto: null,
     interests: [],
   };
+}
+
+type TransactionClient = Prisma.TransactionClient;
+
+async function findActiveMatch(
+  database: PrismaClient | TransactionClient,
+  userA: string,
+  userB: string,
+): Promise<boolean> {
+  const match = await database.match.findFirst({
+    where: {
+      status: MatchStatus.ACTIVE,
+      OR: [
+        { userAId: userA, userBId: userB },
+        { userAId: userB, userBId: userA },
+      ],
+    },
+    select: { id: true },
+  });
+  return Boolean(match);
+}
+
+async function ensureGroupHasAdmin(
+  transaction: TransactionClient,
+  conversationId: string,
+): Promise<void> {
+  const adminCount = await transaction.conversationMember.count({
+    where: {
+      conversationId,
+      leftAt: null,
+      role: ConversationMemberRole.ADMIN,
+    },
+  });
+  if (adminCount > 0) return;
+
+  const oldest = await transaction.conversationMember.findFirst({
+    where: { conversationId, leftAt: null },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  if (!oldest) return;
+
+  await transaction.conversationMember.update({
+    where: { id: oldest.id },
+    data: { role: ConversationMemberRole.ADMIN },
+  });
+}
+
+async function createSystemMessage(
+  transaction: TransactionClient,
+  conversationId: string,
+  senderId: string,
+  body: string,
+): Promise<void> {
+  const created = await transaction.message.create({
+    data: {
+      conversationId,
+      senderId,
+      type: MessageType.SYSTEM,
+      body,
+    },
+    select: { id: true, createdAt: true },
+  });
+  await transaction.conversation.update({
+    where: { id: conversationId },
+    data: { updatedAt: created.createdAt },
+  });
+  const eventPayload = {
+    messageId: created.id,
+    conversationId,
+    senderId,
+  };
+  await transaction.outboxEvent.createMany({
+    data: [
+      {
+        eventType: "chat.message.created",
+        aggregateType: "message",
+        aggregateId: created.id,
+        payload: eventPayload,
+      },
+      {
+        eventType: "message.created",
+        aggregateType: "message",
+        aggregateId: created.id,
+        payload: eventPayload,
+      },
+    ],
+  });
 }

@@ -15,6 +15,7 @@ const config = {
   API_PUBLIC_URL: "http://localhost:3001",
   UPLOAD_ROOT: "../../uploads-test",
   JWT_ACCESS_SECRET: "chat-service-secret-at-least-32",
+  INTEREST_DAILY_LIMIT: 30,
 } as AppConfig;
 const userId = "8b4dd0d9-7a0d-4d75-a4ad-cb1ca37924e9";
 const peerId = "fca0622f-cba7-4398-bfe7-11842c026990";
@@ -47,6 +48,10 @@ describe("ChatService", () => {
       replyToId: null,
       idempotencyKey: key,
       requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      messagingQuota: {
+        freeLimit: 50,
+        hasUnlimited: false,
+      },
     });
   });
 
@@ -148,11 +153,28 @@ describe("ChatService", () => {
 });
 
 function createService(repository: ChatRepository): ChatService {
+  const database = {
+    userSubscription: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    appEconomyConfig: {
+      upsert: vi.fn().mockResolvedValue({
+        id: "default",
+        freeMessageLimit: 50,
+        freeDailyInterestGrants: 10,
+        usdInrRate: 85,
+        videoCallEnabled: false,
+        videoCallPointsPerMinute: 40,
+        videoCallRingTimeoutSec: 45,
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      }),
+    },
+  } as never;
   return new ChatService(
     repository,
     new FeedCursorCodec(config.JWT_ACCESS_SECRET),
     config,
-    {} as PrismaClient,
+    database,
   );
 }
 
@@ -175,6 +197,10 @@ function createRepository(): ChatRepository {
     findMessageForRealtime: vi.fn(),
     findOrCreateDirectConversation: vi.fn(),
     leaveConversation: vi.fn(),
+    createGroup: vi.fn(),
+    addGroupMember: vi.fn(),
+    removeGroupMember: vi.fn(),
+    listGroupMembers: vi.fn(),
   };
 }
 
@@ -205,6 +231,9 @@ function conversationFixture(hidePrivateFields: boolean): ConversationViewRecord
     id: conversationId,
     kind: "MATCH",
     matchId: "11111111-1111-4111-8111-111111111111",
+    title: null,
+    memberCount: 2,
+    myRole: null,
     isOfficial: false,
     isReadOnly: false,
     peer: {

@@ -97,6 +97,7 @@ export class AdminService {
     videoCallRingTimeoutSec?: number;
     usdInrRate?: number;
     freeDailyInterestGrants?: number;
+    freeMessageLimit?: number;
   }): Promise<object> {
     return presentEconomyConfig(
       await updateAppEconomyConfig(this.requireDatabase(), input),
@@ -874,6 +875,9 @@ export class AdminService {
           : {}),
         ...(input.directMessageEnabled !== undefined
           ? { directMessageEnabled: input.directMessageEnabled }
+          : {}),
+        ...(input.unlimitedMessaging !== undefined
+          ? { unlimitedMessaging: input.unlimitedMessaging }
           : {}),
         ...(input.prices !== undefined ? { prices: input.prices } : {}),
       });

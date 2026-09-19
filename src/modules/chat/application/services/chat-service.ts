@@ -6,6 +6,7 @@ import type { MessageType, PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
+import { getFreeMessageLimit } from "../../../economy/app-economy-config.js";
 import { resolveUserEntitlements } from "../../../premium/application/entitlements.js";
 import type {
   ChatRepository,
@@ -15,15 +16,21 @@ import type {
   ReadReceipt,
 } from "../ports/chat-repository.js";
 import {
+  AlreadyMemberError,
   ChatActionConflictError,
   ChatIdempotencyConflictError,
   ChatMediaOwnershipError,
   ChatReplyNotFoundError,
+  MessageLimitReachedError,
+  NotGroupAdminError,
+  NotGroupError,
+  NotMatchedError,
 } from "../ports/chat-repository.js";
 import {
   presentConversation,
   presentMessage,
 } from "../chat-view.js";
+import { presentPublicAuthor } from "../../../posts/application/post-view.js";
 
 export interface ChatPage {
   items: object[];
@@ -158,6 +165,7 @@ export class ChatService {
         userId,
       );
       if (!left) throw conversationNotFound();
+      this.hooks?.wakeOutbox?.();
     } catch (error) {
       if (
         error instanceof ChatActionConflictError &&
@@ -180,6 +188,81 @@ export class ChatService {
         );
       }
       throw error;
+    }
+  }
+
+  async createGroup(
+    creatorId: string,
+    input: { title: string; memberIds: string[] },
+  ): Promise<object> {
+    try {
+      const conversation = await this.repository.createGroup({
+        creatorId,
+        title: input.title,
+        memberIds: input.memberIds,
+      });
+      this.hooks?.wakeOutbox?.();
+      return presentConversation(conversation, this.config);
+    } catch (error) {
+      mapGroupError(error);
+    }
+  }
+
+  async addGroupMember(
+    conversationId: string,
+    actorId: string,
+    userId: string,
+  ): Promise<object> {
+    try {
+      const conversation = await this.repository.addGroupMember({
+        conversationId,
+        actorId,
+        userId,
+      });
+      if (!conversation) throw conversationNotFound();
+      this.hooks?.wakeOutbox?.();
+      return presentConversation(conversation, this.config);
+    } catch (error) {
+      mapGroupError(error);
+    }
+  }
+
+  async removeGroupMember(
+    conversationId: string,
+    actorId: string,
+    userId: string,
+  ): Promise<object> {
+    try {
+      const conversation = await this.repository.removeGroupMember({
+        conversationId,
+        actorId,
+        userId,
+      });
+      if (!conversation) throw conversationNotFound();
+      this.hooks?.wakeOutbox?.();
+      return presentConversation(conversation, this.config);
+    } catch (error) {
+      mapGroupError(error);
+    }
+  }
+
+  async listGroupMembers(
+    conversationId: string,
+    userId: string,
+  ): Promise<object[]> {
+    try {
+      const members = await this.repository.listGroupMembers(
+        conversationId,
+        userId,
+      );
+      if (!members) throw conversationNotFound();
+      return members.map((member) => ({
+        userId: member.userId,
+        role: member.role,
+        user: presentPublicAuthor(member.user, this.config),
+      }));
+    } catch (error) {
+      mapGroupError(error);
     }
   }
 
@@ -248,6 +331,14 @@ export class ChatService {
     }
 
     try {
+      const [entitlements, freeMessageLimit] = await Promise.all([
+        resolveUserEntitlements(
+          this.database,
+          senderId,
+          this.config.INTEREST_DAILY_LIMIT,
+        ),
+        getFreeMessageLimit(this.database),
+      ]);
       const created = await this.repository.sendMessage({
         conversationId,
         senderId,
@@ -263,6 +354,10 @@ export class ChatService {
           mediaId,
           replyToId,
         }),
+        messagingQuota: {
+          freeLimit: freeMessageLimit,
+          hasUnlimited: entitlements.features.unlimitedMessaging,
+        },
       });
       if (!created) throw conversationNotFound();
       if (!created.replayed) {
@@ -273,12 +368,26 @@ export class ChatService {
         replayed: created.replayed,
       };
     } catch (error) {
+      if (error instanceof MessageLimitReachedError) {
+        throw new AppError(
+          "MESSAGE_LIMIT_REACHED",
+          "Unlock unlimited messaging to keep chatting",
+          403,
+        );
+      }
       if (error instanceof ChatActionConflictError) {
         if (error.message === "read_only") {
           throw new AppError(
             "READ_ONLY_CONVERSATION",
             "This conversation cannot receive replies",
             403,
+          );
+        }
+        if (error.message === "group_images_disabled") {
+          throw new AppError(
+            "GROUP_IMAGES_DISABLED",
+            "Images are not allowed in group chats",
+            400,
           );
         }
       }
@@ -495,4 +604,56 @@ function conversationNotFound(): AppError {
     "Active conversation not found",
     404,
   );
+}
+
+function mapGroupError(error: unknown): never {
+  if (error instanceof NotMatchedError) {
+    throw new AppError(
+      "NOT_MATCHED",
+      "You can only add users you are matched with",
+      403,
+    );
+  }
+  if (error instanceof AlreadyMemberError) {
+    throw new AppError(
+      "ALREADY_MEMBER",
+      "User is already a member of this group",
+      409,
+    );
+  }
+  if (error instanceof NotGroupAdminError) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only group admins can remove members",
+      403,
+    );
+  }
+  if (error instanceof NotGroupError) {
+    throw new AppError(
+      "FORBIDDEN",
+      "This conversation is not a group",
+      403,
+    );
+  }
+  if (
+    error instanceof ChatActionConflictError &&
+    error.message === "invalid_title"
+  ) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Group title must be between 1 and 80 characters",
+      400,
+    );
+  }
+  if (
+    error instanceof ChatActionConflictError &&
+    error.message === "cannot_remove_self"
+  ) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Use leave conversation to remove yourself",
+      400,
+    );
+  }
+  throw error;
 }

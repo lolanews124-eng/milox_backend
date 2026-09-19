@@ -129,6 +129,9 @@ export class AdminController {
           ...(input.freeDailyInterestGrants !== undefined
             ? { freeDailyInterestGrants: input.freeDailyInterestGrants }
             : {}),
+          ...(input.freeMessageLimit !== undefined
+            ? { freeMessageLimit: input.freeMessageLimit }
+            : {}),
         }),
       ),
     );

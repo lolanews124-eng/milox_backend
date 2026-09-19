@@ -12,6 +12,8 @@ export interface PremiumFeatures {
   dailyInterestLimit: number;
   interstitialAdsFree: boolean;
   directMessageEnabled: boolean;
+  /** Bypass lifetime free message cap. */
+  unlimitedMessaging: boolean;
 }
 
 export interface UserEntitlements {
@@ -195,6 +197,7 @@ export const FREE_ENTITLEMENTS: UserEntitlements = {
     dailyInterestLimit: 30,
     interstitialAdsFree: false,
     directMessageEnabled: false,
+    unlimitedMessaging: false,
   },
 };
 
@@ -217,6 +220,7 @@ export function entitlementsFromPlan(plan: {
   dailyInterestLimit: number;
   interstitialAdsFree: boolean;
   directMessageEnabled: boolean;
+  unlimitedMessaging?: boolean;
 }, expiresAt: Date): UserEntitlements {
   return {
     tier: plan.tier,
@@ -235,6 +239,7 @@ export function entitlementsFromPlan(plan: {
       dailyInterestLimit: normalizeInterestLimit(plan.dailyInterestLimit),
       interstitialAdsFree: plan.interstitialAdsFree,
       directMessageEnabled: plan.directMessageEnabled,
+      unlimitedMessaging: Boolean(plan.unlimitedMessaging),
     },
   };
 }
@@ -267,6 +272,7 @@ export async function resolveUserEntitlements(
           dailyInterestLimit: true,
           interstitialAdsFree: true,
           directMessageEnabled: true,
+          unlimitedMessaging: true,
         },
       },
     },

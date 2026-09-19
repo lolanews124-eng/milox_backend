@@ -3,14 +3,17 @@ import type { Request, Response } from "express";
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { ChatService } from "../application/services/chat-service.js";
 import {
+  addGroupMemberSchema,
   chatMediaParamSchema,
   conversationIdParamSchema,
   conversationPageQuerySchema,
   conversationSettingsSchema,
+  createGroupSchema,
   deleteMessageQuerySchema,
   editMessageSchema,
   idempotencyKeySchema,
   markReadSchema,
+  memberUserIdParamSchema,
   messageIdParamSchema,
   messagePageQuerySchema,
   sendMessageSchema,
@@ -55,6 +58,59 @@ export class ChatController {
     const conversation = await this.chat.startDirectConversation(
       requireUser(request),
       recipientId,
+    );
+    response.status(200).json(success(request, conversation));
+  };
+
+  createGroup = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = createGroupSchema.parse(request.body as unknown);
+    const conversation = await this.chat.createGroup(
+      requireUser(request),
+      input,
+    );
+    response.status(201).json(success(request, conversation));
+  };
+
+  listGroupMembers = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { conversationId } = conversationIdParamSchema.parse(request.params);
+    const members = await this.chat.listGroupMembers(
+      conversationId,
+      requireUser(request),
+    );
+    response.status(200).json(success(request, { items: members }));
+  };
+
+  addGroupMember = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { conversationId } = conversationIdParamSchema.parse(request.params);
+    const { userId } = addGroupMemberSchema.parse(request.body as unknown);
+    const conversation = await this.chat.addGroupMember(
+      conversationId,
+      requireUser(request),
+      userId,
+    );
+    response.status(200).json(success(request, conversation));
+  };
+
+  removeGroupMember = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { conversationId, userId } = memberUserIdParamSchema.parse(
+      request.params,
+    );
+    const conversation = await this.chat.removeGroupMember(
+      conversationId,
+      requireUser(request),
+      userId,
     );
     response.status(200).json(success(request, conversation));
   };

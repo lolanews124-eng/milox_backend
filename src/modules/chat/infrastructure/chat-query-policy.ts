@@ -18,6 +18,7 @@ export function messageViewSelect() {
     editedAt: true,
     createdAt: true,
     updatedAt: true,
+    sender: { select: publicAuthorSelect() },
     mediaAsset: {
       select: {
         id: true,
@@ -37,12 +38,15 @@ export function conversationViewSelect(userId: string) {
     id: true,
     kind: true,
     matchId: true,
+    title: true,
+    createdByUserId: true,
     recipientUserId: true,
     updatedAt: true,
     members: {
       where: { leftAt: null },
       select: {
         userId: true,
+        role: true,
         unreadCount: true,
         isMuted: true,
         isPinned: true,
@@ -111,6 +115,10 @@ export function activeConversationWhere(
             },
           },
         ],
+      },
+      {
+        kind: ConversationKind.GROUP,
+        members: { some: { userId, leftAt: null } },
       },
     ],
   };

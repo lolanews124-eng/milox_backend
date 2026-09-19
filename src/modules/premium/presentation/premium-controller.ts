@@ -45,6 +45,7 @@ export class PremiumController {
         dailyInterestLimit: true,
         interstitialAdsFree: true,
         directMessageEnabled: true,
+        unlimitedMessaging: true,
         prices: {
           where: { isActive: true },
           orderBy: { billingCycle: "asc" },

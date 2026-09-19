@@ -1,5 +1,6 @@
-import type { MessageType } from "@prisma/client";
+import type { ConversationMemberRole, MessageType } from "@prisma/client";
 
+import type { PostAuthorViewRecord } from "../../../posts/application/post-view.js";
 import type {
   ConversationViewRecord,
   MessageViewRecord,
@@ -28,6 +29,11 @@ export interface SendMessageData {
   replyToId: string | null;
   idempotencyKey: string;
   requestHash: string;
+  /** When set, enforce lifetime free message cap unless unlimited. */
+  messagingQuota?: {
+    freeLimit: number;
+    hasUnlimited: boolean;
+  };
 }
 
 export interface CreatedMessage {
@@ -66,6 +72,12 @@ export interface ResolvedChatMedia {
   storageKey: string;
   mimeType: string;
   checksum: string | null;
+}
+
+export interface GroupMemberRecord {
+  userId: string;
+  role: ConversationMemberRole;
+  user: PostAuthorViewRecord;
 }
 
 export interface ChatRepository {
@@ -123,9 +135,33 @@ export interface ChatRepository {
     recipientId: string,
   ): Promise<ConversationViewRecord | null>;
   leaveConversation(conversationId: string, userId: string): Promise<boolean>;
+  createGroup(input: {
+    creatorId: string;
+    title: string;
+    memberIds: string[];
+  }): Promise<ConversationViewRecord>;
+  addGroupMember(input: {
+    conversationId: string;
+    actorId: string;
+    userId: string;
+  }): Promise<ConversationViewRecord | null>;
+  removeGroupMember(input: {
+    conversationId: string;
+    actorId: string;
+    userId: string;
+  }): Promise<ConversationViewRecord | null>;
+  listGroupMembers(
+    conversationId: string,
+    userId: string,
+  ): Promise<GroupMemberRecord[] | null>;
 }
 
 export class ChatMediaOwnershipError extends Error {}
 export class ChatReplyNotFoundError extends Error {}
 export class ChatActionConflictError extends Error {}
 export class ChatIdempotencyConflictError extends Error {}
+export class MessageLimitReachedError extends Error {}
+export class NotMatchedError extends Error {}
+export class AlreadyMemberError extends Error {}
+export class NotGroupAdminError extends Error {}
+export class NotGroupError extends Error {}

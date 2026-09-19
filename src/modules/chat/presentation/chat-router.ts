@@ -27,6 +27,28 @@ export function createChatRouters(
     actionLimit,
     asyncHandler(controller.startDirectConversation),
   );
+  conversations.post(
+    "/groups",
+    requireVerified,
+    actionLimit,
+    asyncHandler(controller.createGroup),
+  );
+  conversations.get(
+    "/:conversationId/members",
+    asyncHandler(controller.listGroupMembers),
+  );
+  conversations.post(
+    "/:conversationId/members",
+    requireVerified,
+    actionLimit,
+    asyncHandler(controller.addGroupMember),
+  );
+  conversations.delete(
+    "/:conversationId/members/:userId",
+    requireVerified,
+    actionLimit,
+    asyncHandler(controller.removeGroupMember),
+  );
   conversations.get(
     "/:conversationId/media/:mediaId",
     asyncHandler(controller.serveMedia),

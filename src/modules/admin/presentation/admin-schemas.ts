@@ -24,6 +24,8 @@ export const updateEconomyConfigSchema = z
     usdInrRate: z.number().min(1).max(1000).optional(),
     /** 0 = no free daily interests; max 100. */
     freeDailyInterestGrants: z.number().int().min(0).max(100).optional(),
+    /** Lifetime free outbound chat messages before messaging plan. */
+    freeMessageLimit: z.number().int().min(0).max(100_000).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
@@ -273,6 +275,7 @@ export const createPremiumPlanSchema = z
     dailyInterestLimit: z.coerce.number().int().min(1).max(9999).default(30),
     interstitialAdsFree: z.boolean().default(true),
     directMessageEnabled: z.boolean().default(false),
+    unlimitedMessaging: z.boolean().default(false),
     prices: z.array(premiumPlanPriceSchema).length(3).optional(),
   })
   .strict();
@@ -295,6 +298,7 @@ export const updatePremiumPlanSchema = z
     dailyInterestLimit: z.coerce.number().int().min(1).max(9999).optional(),
     interstitialAdsFree: z.boolean().optional(),
     directMessageEnabled: z.boolean().optional(),
+    unlimitedMessaging: z.boolean().optional(),
     prices: z.array(premiumPlanPriceSchema).min(1).max(3).optional(),
   })
   .strict();

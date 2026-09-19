@@ -28,7 +28,7 @@ const matchId = "b9e27322-a92d-4b13-8ddc-3849a3b09a5a";
 const key = "4c960e9a-592a-41e0-9942-2589f5dd0894";
 
 describe("InterestService", () => {
-  it("normalizes an idempotent send and applies the configured daily limit", async () => {
+  it("normalizes an idempotent send without a hard daily send cap", async () => {
     const repository = createRepository();
     vi.mocked(repository.countInterestsSentToday).mockResolvedValue(0);
     vi.mocked(repository.create).mockResolvedValue({
@@ -49,7 +49,7 @@ describe("InterestService", () => {
       message: "hello anonymously",
       idempotencyKey: key,
       requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      dailyLimit: 30,
+      dailyLimit: 9999,
       interestPricing: {
         baseCost: 40,
         freeDailyGrants: 10,
@@ -185,6 +185,17 @@ function createService(repository: InterestRepository): InterestService {
   const database = {
     userSubscription: {
       findFirst: vi.fn().mockResolvedValue(null),
+    },
+    appEconomyConfig: {
+      upsert: vi.fn().mockResolvedValue({
+        id: "default",
+        freeDailyInterestGrants: 10,
+        usdInrRate: 85,
+        videoCallEnabled: false,
+        videoCallPointsPerMinute: 40,
+        videoCallRingTimeoutSec: 45,
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      }),
     },
   } as never;
   return new InterestService(

@@ -111,6 +111,12 @@ enum ConversationKind {
   MATCH
   DIRECT
   OFFICIAL
+  GROUP
+}
+
+enum ConversationMemberRole {
+  MEMBER
+  ADMIN
 }
 
 enum MessageType {
@@ -329,6 +335,8 @@ model User {
   followerCount       Int               @default(0)
   followingCount      Int               @default(0)
   postCount           Int               @default(0)
+  /// Lifetime outbound user chat messages (TEXT/IMAGE). Used for free message cap.
+  messagesSentCount   Int               @default(0)
   lastSeenAt          DateTime?
   lastLoginAt         DateTime?
   usernameChangedAt   DateTime?
@@ -392,6 +400,7 @@ model User {
   referralReceived    Referral?           @relation("ReferralReceived")
   pushDevices         PushDevice[]
   officialConversation Conversation? @relation("OfficialConversationRecipient")
+  groupsCreated       Conversation[]          @relation("GroupConversationCreator")
   callsInitiated      CallSession[]            @relation("CallCaller")
   callsReceived       CallSession[]            @relation("CallCallee")
 
@@ -829,12 +838,17 @@ model Conversation {
   directUserHighId String?           @db.Uuid
   /// App user who owns this official inbox (one per user).
   recipientUserId String?            @unique @db.Uuid
+  /// Display title for GROUP chats.
+  title           String?            @db.VarChar(80)
+  /// User who created a GROUP (initial admin).
+  createdByUserId String?            @db.Uuid
   status          ConversationStatus @default(ACTIVE)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
   match         Match?               @relation(fields: [matchId], references: [id], onDelete: Cascade)
   recipientUser User?                @relation("OfficialConversationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  createdBy     User?                @relation("GroupConversationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   members       ConversationMember[]
   messages      Message[]
   callSessions  CallSession[]
@@ -843,6 +857,7 @@ model Conversation {
   @@index([status, updatedAt])
   @@index([kind, recipientUserId])
   @@index([kind, directUserLowId, directUserHighId])
+  @@index([kind, createdByUserId])
   @@map("conversations")
 }
 
@@ -893,24 +908,27 @@ model AppEconomyConfig {
   usdInrRate                 Float    @default(85)
   /// Free-tier users may send this many interests per UTC day at 0 points. 0 = no free interests.
   freeDailyInterestGrants    Int      @default(10)
+  /// Lifetime free outbound chat messages before unlimited-messaging plan is required.
+  freeMessageLimit           Int      @default(50)
   updatedAt                  DateTime @updatedAt
 
   @@map("app_economy_configs")
 }
 
 model ConversationMember {
-  id                String    @id @default(uuid()) @db.Uuid
-  conversationId    String    @db.Uuid
-  userId            String    @db.Uuid
-  lastReadMessageId String?   @db.Uuid
-  unreadCount       Int       @default(0)
-  isMuted           Boolean   @default(false)
-  isPinned          Boolean   @default(false)
-  isArchived        Boolean   @default(false)
+  id                String                 @id @default(uuid()) @db.Uuid
+  conversationId    String                 @db.Uuid
+  userId            String                 @db.Uuid
+  role              ConversationMemberRole @default(MEMBER)
+  lastReadMessageId String?                @db.Uuid
+  unreadCount       Int                    @default(0)
+  isMuted           Boolean                @default(false)
+  isPinned          Boolean                @default(false)
+  isArchived        Boolean                @default(false)
   clearedAt         DateTime?
   leftAt            DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1213,6 +1231,8 @@ model PremiumPlan {
   interstitialAdsFree  Boolean @default(true)
   /// Send chat messages without sending interest first.
   directMessageEnabled Boolean @default(false)
+  /// Bypass the free lifetime message cap (separate messaging plan).
+  unlimitedMessaging   Boolean @default(false)
   incognitoBrowse      Boolean @default(false)
   rewindPass           Boolean @default(false)
   isActive     Boolean     @default(true)

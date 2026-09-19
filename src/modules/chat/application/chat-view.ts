@@ -34,12 +34,16 @@ export interface MessageViewRecord {
   createdAt: Date;
   updatedAt: Date;
   mediaAsset: ChatMediaRecord | null;
+  sender?: PostAuthorViewRecord | null;
 }
 
 export interface ConversationViewRecord {
   id: string;
   kind: ConversationKind;
   matchId: string | null;
+  title: string | null;
+  memberCount: number;
+  myRole: "MEMBER" | "ADMIN" | null;
   isOfficial: boolean;
   isReadOnly: boolean;
   peer: PostAuthorViewRecord;
@@ -60,6 +64,9 @@ export function presentMessage(
     id: message.id,
     conversationId: message.conversationId,
     senderId: message.senderId,
+    sender: message.sender
+      ? presentPublicAuthor(message.sender, config)
+      : null,
     type: message.type,
     body: deleted ? null : message.body,
     metadata: deleted ? null : normalizeMessageMetadata(message.metadata),
@@ -93,6 +100,9 @@ export function presentConversation(
     id: conversation.id,
     kind: conversation.kind,
     matchId: conversation.matchId,
+    title: conversation.title,
+    memberCount: conversation.memberCount,
+    myRole: conversation.myRole,
     isOfficial: conversation.isOfficial,
     isReadOnly: conversation.isReadOnly,
     peer: presentPublicAuthor(conversation.peer, config),

@@ -54,10 +54,9 @@ export class InterestService {
       senderId,
       this.config.INTEREST_DAILY_LIMIT,
     );
-    const dailyLimit =
-      entitlements.features.dailyInterestLimit >= 9999
-        ? 9999
-        : entitlements.features.dailyInterestLimit;
+    // Hard daily send cap removed for everyone: free grants then points, unlimited.
+    // Keep plan entitlement limits only for pricing (premium/unlimited still waive cost).
+    const dailyLimit = 9999;
     const waiveCost =
       entitlements.isPremium ||
       hasUnlimitedInterests(entitlements.features.dailyInterestLimit);

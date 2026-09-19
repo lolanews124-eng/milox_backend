@@ -296,6 +296,7 @@ export interface AdminPremiumPlanRecord {
   dailyInterestLimit: number;
   interstitialAdsFree: boolean;
   directMessageEnabled: boolean;
+  unlimitedMessaging: boolean;
   isActive: boolean;
   prices: AdminPlanPriceRecord[];
   subscriberCount: number;
@@ -719,6 +720,7 @@ export function presentAdminPremiumPlan(plan: AdminPremiumPlanRecord): object {
       plan.dailyInterestLimit >= 9999 ? "unlimited" : plan.dailyInterestLimit,
     interstitialAdsFree: plan.interstitialAdsFree,
     directMessageEnabled: plan.directMessageEnabled,
+    unlimitedMessaging: plan.unlimitedMessaging,
     isActive: plan.isActive,
     prices: plan.prices.map((price) => ({
       id: price.id,

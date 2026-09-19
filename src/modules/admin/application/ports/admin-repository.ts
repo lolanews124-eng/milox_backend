@@ -226,6 +226,7 @@ export interface CreatePremiumPlanData {
   dailyInterestLimit?: number;
   interstitialAdsFree?: boolean;
   directMessageEnabled?: boolean;
+  unlimitedMessaging?: boolean;
   prices?: PremiumPlanPriceInput[];
 }
 
@@ -248,6 +249,7 @@ export interface UpdatePremiumPlanData {
   dailyInterestLimit?: number;
   interstitialAdsFree?: boolean;
   directMessageEnabled?: boolean;
+  unlimitedMessaging?: boolean;
   prices?: PremiumPlanPriceInput[];
 }
 
