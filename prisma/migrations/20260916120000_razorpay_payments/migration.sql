@@ -1,4 +1,7 @@
--- Razorpay gateway + admin settings (idempotent).
+-- Step 1/2: add enum values only.
+-- PostgreSQL forbids using a newly added enum label in the same transaction
+-- (ERROR 55P04). Defaults / data changes that reference RAZORPAY must run in
+-- a later migration after this one commits.
 
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -19,16 +22,3 @@ DO $$ BEGIN
     ALTER TYPE "VerifiedBadgePaymentMethod" ADD VALUE 'RAZORPAY';
   END IF;
 END $$;
-
-ALTER TABLE "paypal_checkouts" ALTER COLUMN "gateway" SET DEFAULT 'RAZORPAY';
-
-CREATE TABLE IF NOT EXISTS "razorpay_settings" (
-    "id" VARCHAR(32) NOT NULL DEFAULT 'default',
-    "keyId" VARCHAR(255) NOT NULL DEFAULT '',
-    "keySecret" TEXT NOT NULL DEFAULT '',
-    "webhookSecret" TEXT NOT NULL DEFAULT '',
-    "mode" VARCHAR(16) NOT NULL DEFAULT 'test',
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "razorpay_settings_pkey" PRIMARY KEY ("id")
-);
