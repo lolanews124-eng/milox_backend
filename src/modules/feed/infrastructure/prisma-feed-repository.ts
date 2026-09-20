@@ -18,10 +18,18 @@ import type {
   FeedPostRecord,
   FeedQuery,
   FeedRepository,
+  RankedDiscoverPerson,
+  RankedFeedPost,
 } from "../application/ports/feed-repository.js";
 import type { FeedCursor } from "../application/services/feed-cursor.js";
 import {
+  computeDiscoverPeopleScore,
+  computeSuggestedFeedScore,
+  discoverRankPoolSize,
+  diversifyByAuthor,
+  feedRankPoolSize,
   latestFeedCutoff,
+  rankedAfterCursor,
   suggestedNewAuthorCutoff,
   trendingFreshCutoff,
 } from "../application/services/feed-scoring.js";
@@ -40,56 +48,140 @@ export class PrismaFeedRepository implements FeedRepository {
     });
   }
 
-  getFollowing(
+  async getFollowing(
     query: FeedQuery & { viewerId: string },
-  ): Promise<FeedPostRecord[]> {
-    const cursorWhere = chronologicalCursorWhere(query.cursor);
-    return this.findPosts(query, {
-      additionalAuthorWhere: {
-        followers: {
-          some: {
-            followerId: query.viewerId,
-            status: FollowStatus.ACTIVE,
+  ): Promise<RankedFeedPost[]> {
+    const poolLimit = feedRankPoolSize(query.limit);
+    const rows = await this.findPosts(
+      { ...query, limit: poolLimit },
+      {
+        additionalAuthorWhere: {
+          followers: {
+            some: {
+              followerId: query.viewerId,
+              status: FollowStatus.ACTIVE,
+            },
           },
         },
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      ...(cursorWhere ? { cursorWhere } : {}),
-    });
-  }
-
-  getTrending(query: FeedQuery): Promise<FeedPostRecord[]> {
-    const cursorWhere = rankedCursorWhere(query.cursor);
-    const freshCutoff = trendingFreshCutoff();
-    return this.findPosts(query, {
-      additionalPostWhere: {
-        OR: [
-          { trendingScore: { gt: 0 } },
-          { createdAt: { gte: freshCutoff } },
+        orderBy: [
+          { trendingScore: "desc" },
+          { createdAt: "desc" },
+          { id: "desc" },
         ],
       },
-      orderBy: [
-        { trendingScore: "desc" },
-        { createdAt: "desc" },
-        { id: "desc" },
-      ],
-      ...(cursorWhere ? { cursorWhere } : {}),
+    );
+
+    const ranked = rows.map((post) => ({
+      item: post,
+      // Prefer hot posts, but keep recency visible when scores tie / are zero.
+      score:
+        post.trendingScore +
+        Math.min(
+          8,
+          Math.max(
+            0,
+            8 -
+              (Date.now() - post.createdAt.getTime()) /
+                (1000 * 60 * 60 * 24 * 2),
+          ),
+        ),
+      createdAt: post.createdAt,
+      id: post.id,
+    }));
+    ranked.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+      if (byTime !== 0) return byTime;
+      return b.id.localeCompare(a.id);
     });
+    const afterCursor = rankedAfterCursor(
+      ranked,
+      query.cursor?.kind === "ranked" ? query.cursor : undefined,
+    );
+    const diversified = diversifyByAuthor(
+      afterCursor,
+      (entry) => entry.item.author.id,
+      { limit: query.limit + 1 },
+    );
+    return diversified.map((entry) => ({
+      post: entry.item,
+      score: entry.score,
+    }));
+  }
+
+  async getTrending(query: FeedQuery): Promise<RankedFeedPost[]> {
+    const poolLimit = feedRankPoolSize(query.limit);
+    const freshCutoff = trendingFreshCutoff();
+    const rows = await this.findPosts(
+      { ...query, limit: poolLimit },
+      {
+        additionalPostWhere: {
+          OR: [
+            { trendingScore: { gt: 0 } },
+            { createdAt: { gte: freshCutoff } },
+          ],
+        },
+        orderBy: [
+          { trendingScore: "desc" },
+          { createdAt: "desc" },
+          { id: "desc" },
+        ],
+      },
+    );
+
+    const ranked = rows.map((post) => ({
+      item: post,
+      score: post.trendingScore,
+      createdAt: post.createdAt,
+      id: post.id,
+    }));
+    const afterCursor = rankedAfterCursor(
+      ranked,
+      query.cursor?.kind === "ranked" ? query.cursor : undefined,
+    );
+    const diversified = diversifyByAuthor(
+      afterCursor,
+      (entry) => entry.item.author.id,
+      { limit: query.limit + 1 },
+    );
+    return diversified.map((entry) => ({
+      post: entry.item,
+      score: entry.score,
+    }));
   }
 
   async getSuggested(
     query: FeedQuery & { viewerId: string },
-  ): Promise<FeedPostRecord[]> {
-    const cursorWhere = rankedCursorWhere(query.cursor);
-    const viewerTagRows = await this.database.userInterest.findMany({
-      where: {
-        userId: query.viewerId,
-        tag: { isActive: true },
-      },
-      select: { tagId: true },
-    });
+  ): Promise<RankedFeedPost[]> {
+    const poolLimit = feedRankPoolSize(query.limit);
+    const viewerId = query.viewerId;
+
+    const [viewer, viewerTagRows, likedAuthorRows] = await Promise.all([
+      this.database.user.findUnique({
+        where: { id: viewerId },
+        select: { country: true },
+      }),
+      this.database.userInterest.findMany({
+        where: { userId: viewerId, tag: { isActive: true } },
+        select: { tagId: true, tag: { select: { slug: true } } },
+      }),
+      this.database.postLike.findMany({
+        where: { userId: viewerId },
+        orderBy: { createdAt: "desc" },
+        take: 250,
+        select: { post: { select: { authorId: true } } },
+      }),
+    ]);
+
     const viewerTagIds = viewerTagRows.map(({ tagId }) => tagId);
+    const viewerInterestSlugs = new Set(
+      viewerTagRows.map(({ tag }) => tag.slug.toLowerCase()),
+    );
+    const affinityAuthorIds = new Set(
+      likedAuthorRows.map(({ post }) => post.authorId),
+    );
     const newAuthorCutoff = suggestedNewAuthorCutoff();
+    const viewerCountry = viewer?.country ?? null;
 
     const relevanceFilter =
       viewerTagIds.length > 0
@@ -104,54 +196,162 @@ export class PrismaFeedRepository implements FeedRepository {
                 },
               },
               { createdAt: { gte: newAuthorCutoff } },
+              { followerCount: { gte: 25 } },
             ],
           }
-        : { createdAt: { gte: newAuthorCutoff } };
+        : {
+            OR: [
+              { createdAt: { gte: newAuthorCutoff } },
+              { followerCount: { gte: 10 } },
+            ],
+          };
 
-    return this.findPosts(query, {
-      additionalAuthorWhere: {
-        id: { not: query.viewerId },
-        isPrivateAccount: false,
-        passedByProfiles: {
-          none: { viewerId: query.viewerId },
-        },
-        followers: {
-          none: {
-            followerId: query.viewerId,
-            status: FollowStatus.ACTIVE,
+    const rows = await this.findPosts(
+      { ...query, limit: poolLimit },
+      {
+        additionalAuthorWhere: {
+          id: { not: viewerId },
+          isPrivateAccount: false,
+          passedByProfiles: {
+            none: { viewerId },
           },
+          followers: {
+            none: {
+              followerId: viewerId,
+              status: FollowStatus.ACTIVE,
+            },
+          },
+          AND: [relevanceFilter],
         },
-        AND: [relevanceFilter],
+        orderBy: [
+          { trendingScore: "desc" },
+          { createdAt: "desc" },
+          { id: "desc" },
+        ],
       },
-      orderBy: [
-        { trendingScore: "desc" },
-        { createdAt: "desc" },
-        { id: "desc" },
-      ],
-      ...(cursorWhere ? { cursorWhere } : {}),
+    );
+
+    if (rows.length === 0) return [];
+
+    const postIds = rows.map((post) => post.id);
+    const [seenRows, hashtagRows] = await Promise.all([
+      this.database.postView.findMany({
+        where: { viewerId, postId: { in: postIds } },
+        select: { postId: true },
+      }),
+      this.database.postHashtag.findMany({
+        where: { postId: { in: postIds } },
+        select: {
+          postId: true,
+          hashtag: { select: { tag: true } },
+        },
+      }),
+    ]);
+
+    const seenPostIds = new Set(seenRows.map(({ postId }) => postId));
+    const hashtagsByPost = new Map<string, string[]>();
+    for (const row of hashtagRows) {
+      const list = hashtagsByPost.get(row.postId) ?? [];
+      list.push(row.hashtag.tag.toLowerCase());
+      hashtagsByPost.set(row.postId, list);
+    }
+
+    const ranked = rows.map((post) => {
+      const authorInterestSlugs = new Set(
+        (post.author.interests ?? []).map((entry) =>
+          entry.tag.slug.toLowerCase(),
+        ),
+      );
+      const sharedInterestAuthor =
+        viewerInterestSlugs.size > 0 &&
+        [...viewerInterestSlugs].some((slug) => authorInterestSlugs.has(slug));
+      const postTags = hashtagsByPost.get(post.id) ?? [];
+      let hashtagInterestOverlap = 0;
+      for (const tag of postTags) {
+        if (viewerInterestSlugs.has(tag)) hashtagInterestOverlap += 1;
+      }
+
+      const score = computeSuggestedFeedScore({
+        trendingScore: post.trendingScore,
+        sameCountry: Boolean(
+          viewerCountry && post.author.country === viewerCountry,
+        ),
+        sharedInterestAuthor,
+        hashtagInterestOverlap,
+        affinityAuthor: affinityAuthorIds.has(post.author.id),
+        seenByViewer: seenPostIds.has(post.id),
+        followerCount: post.author.followerCount ?? 0,
+        createdAt: post.createdAt,
+      });
+
+      return {
+        item: post,
+        score,
+        createdAt: post.createdAt,
+        id: post.id,
+      };
     });
+
+    ranked.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+      if (byTime !== 0) return byTime;
+      return b.id.localeCompare(a.id);
+    });
+
+    const afterCursor = rankedAfterCursor(
+      ranked,
+      query.cursor?.kind === "ranked" ? query.cursor : undefined,
+    );
+    const diversified = diversifyByAuthor(
+      afterCursor,
+      (entry) => entry.item.author.id,
+      { limit: query.limit + 1 },
+    );
+
+    return diversified.map((entry) => ({
+      post: entry.item,
+      score: entry.score,
+    }));
   }
 
   async getDiscoverPeople(
     query: DiscoverPeopleQuery,
-  ): Promise<PostAuthorViewRecord[]> {
-    const cursorWhere = discoverPeopleCursorWhere(query.cursor);
+  ): Promise<RankedDiscoverPerson[]> {
+    const poolLimit = discoverRankPoolSize(query.limit);
+    const viewerId = query.viewerId;
 
-    return this.database.user.findMany({
+    const [viewer, viewerTagRows] = await Promise.all([
+      this.database.user.findUnique({
+        where: { id: viewerId },
+        select: { country: true },
+      }),
+      this.database.userInterest.findMany({
+        where: { userId: viewerId, tag: { isActive: true } },
+        select: { tag: { select: { slug: true } } },
+      }),
+    ]);
+
+    const viewerInterestSlugs = new Set(
+      viewerTagRows.map(({ tag }) => tag.slug.toLowerCase()),
+    );
+    const viewerCountry = viewer?.country ?? null;
+
+    const rows = await this.database.user.findMany({
       where: {
         AND: [
-          visibleUserCardWhere(query.viewerId),
-          { id: { not: query.viewerId } },
+          visibleUserCardWhere(viewerId),
+          { id: { not: viewerId } },
           { isPrivateAccount: false },
           {
             passedByProfiles: {
-              none: { viewerId: query.viewerId },
+              none: { viewerId },
             },
           },
           {
             interestsReceived: {
               none: {
-                senderId: query.viewerId,
+                senderId: viewerId,
                 status: {
                   in: [InterestStatus.PENDING, InterestStatus.ACCEPTED],
                 },
@@ -161,7 +361,7 @@ export class PrismaFeedRepository implements FeedRepository {
           {
             interestsSent: {
               none: {
-                recipientId: query.viewerId,
+                recipientId: viewerId,
                 status: InterestStatus.PENDING,
               },
             },
@@ -169,7 +369,7 @@ export class PrismaFeedRepository implements FeedRepository {
           {
             matchesAsUserA: {
               none: {
-                userBId: query.viewerId,
+                userBId: viewerId,
                 status: MatchStatus.ACTIVE,
               },
             },
@@ -177,7 +377,7 @@ export class PrismaFeedRepository implements FeedRepository {
           {
             matchesAsUserB: {
               none: {
-                userAId: query.viewerId,
+                userAId: viewerId,
                 status: MatchStatus.ACTIVE,
               },
             },
@@ -191,23 +391,73 @@ export class PrismaFeedRepository implements FeedRepository {
           ...(query.countries?.length
             ? [{ country: { in: query.countries } }]
             : []),
-          ...(cursorWhere ? [cursorWhere] : []),
         ],
       },
-      orderBy: [{ discoverBoost: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-      take: query.limit + 1,
+      orderBy: [
+        { discoverBoost: "desc" },
+        { followerCount: "desc" },
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
+      take: poolLimit,
       select: {
         ...publicAuthorSelect(),
+        discoverBoost: true,
         followers: {
           where: {
-            followerId: query.viewerId,
+            followerId: viewerId,
             status: { in: [FollowStatus.ACTIVE, FollowStatus.PENDING] },
           },
           select: { status: true },
           take: 1,
         },
       },
-    }) as Promise<PostAuthorViewRecord[]>;
+    });
+
+    const ranked = rows.map((row) => {
+      const { discoverBoost, ...person } = row;
+      const authorInterestSlugs = (person.interests ?? []).map((entry) =>
+        entry.tag.slug.toLowerCase(),
+      );
+      let sharedInterestCount = 0;
+      for (const slug of authorInterestSlugs) {
+        if (viewerInterestSlugs.has(slug)) sharedInterestCount += 1;
+      }
+
+      const score = computeDiscoverPeopleScore({
+        discoverBoost,
+        sameCountry: Boolean(
+          viewerCountry && person.country === viewerCountry,
+        ),
+        sharedInterestCount,
+        followerCount: person.followerCount ?? 0,
+        createdAt: person.createdAt,
+      });
+
+      return {
+        item: person as PostAuthorViewRecord,
+        score,
+        createdAt: person.createdAt,
+        id: person.id,
+      };
+    });
+
+    ranked.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+      if (byTime !== 0) return byTime;
+      return b.id.localeCompare(a.id);
+    });
+
+    const afterCursor = rankedAfterCursor(
+      ranked,
+      query.cursor?.kind === "ranked" ? query.cursor : undefined,
+    );
+
+    return afterCursor.slice(0, query.limit + 1).map((entry) => ({
+      person: entry.item,
+      score: entry.score,
+    }));
   }
 
   async passProfile(viewerId: string, targetId: string): Promise<void> {
@@ -283,35 +533,3 @@ function chronologicalCursorWhere(
     ],
   };
 }
-
-function rankedCursorWhere(
-  cursor: FeedCursor | undefined,
-): Prisma.PostWhereInput | undefined {
-  if (!cursor || cursor.kind !== "ranked") return undefined;
-  const createdAt = new Date(cursor.createdAt);
-  return {
-    OR: [
-      { trendingScore: { lt: cursor.score } },
-      { trendingScore: cursor.score, createdAt: { lt: createdAt } },
-      {
-        trendingScore: cursor.score,
-        createdAt,
-        id: { lt: cursor.id },
-      },
-    ],
-  };
-}
-
-function discoverPeopleCursorWhere(
-  cursor: FeedCursor | undefined,
-): Prisma.UserWhereInput | undefined {
-  if (!cursor || cursor.kind !== "chronological") return undefined;
-  const createdAt = new Date(cursor.createdAt);
-  return {
-    OR: [
-      { createdAt: { lt: createdAt } },
-      { createdAt, id: { lt: cursor.id } },
-    ],
-  };
-}
-

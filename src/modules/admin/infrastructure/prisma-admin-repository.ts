@@ -77,6 +77,7 @@ import type {
   GrantSubscriptionData,
   ResolveReportData,
   SetVerifiedBadgeData,
+  SetBroadcastEnabledData,
   UpdateAdData,
   UpdateCmsPageData,
   UpdateBlogPostData,
@@ -159,6 +160,7 @@ const adminUserSelect = {
   role: true,
   status: true,
   isVerifiedBadge: true,
+  broadcastEnabled: true,
   country: true,
   profilePhotoMediaId: true,
   lastSeenAt: true,
@@ -188,6 +190,7 @@ const adminReportSelect = {
   postId: true,
   commentId: true,
   messageId: true,
+  storyId: true,
   reasonCode: true,
   details: true,
   status: true,
@@ -1627,6 +1630,49 @@ export class PrismaAdminRepository implements AdminRepository {
             resourceType: "user",
             resourceId: target.id,
             metadata: { isVerifiedBadge: data.isVerifiedBadge },
+          },
+        });
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  setBroadcastEnabled(
+    data: SetBroadcastEnabledData,
+  ): Promise<AdminUserRecord | null> {
+    return this.database.$transaction(
+      async (transaction) => {
+        const actor = await transaction.user.findFirst({
+          where: {
+            id: data.actorId,
+            status: UserStatus.ACTIVE,
+            role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+          },
+          select: { id: true },
+        });
+        if (!actor) throw new AdminHierarchyError();
+        const target = await transaction.user.findUnique({
+          where: { id: data.targetUserId },
+          select: { id: true, broadcastEnabled: true },
+        });
+        if (!target) return null;
+        if (target.broadcastEnabled === data.broadcastEnabled) {
+          throw new AdminStateConflictError();
+        }
+        const updated = await transaction.user.update({
+          where: { id: target.id },
+          data: { broadcastEnabled: data.broadcastEnabled },
+          select: adminUserSelect,
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorType: AuditActorType.ADMIN,
+            actorUserId: actor.id,
+            action: "admin.user.broadcast_changed",
+            resourceType: "user",
+            resourceId: target.id,
+            metadata: { broadcastEnabled: data.broadcastEnabled },
           },
         });
         return updated;

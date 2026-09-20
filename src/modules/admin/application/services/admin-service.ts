@@ -735,6 +735,40 @@ export class AdminService {
     }
   }
 
+  async setBroadcastEnabled(
+    actorId: string,
+    targetUserId: string,
+    input: { broadcastEnabled: boolean },
+  ): Promise<object> {
+    try {
+      const user = await this.repository.setBroadcastEnabled({
+        actorId,
+        targetUserId,
+        broadcastEnabled: input.broadcastEnabled,
+      });
+      if (!user) {
+        throw new AppError("ADMIN_USER_NOT_FOUND", "User not found", 404);
+      }
+      return presentAdminUser(user);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      if (error instanceof AdminStateConflictError) {
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "Broadcast access is already in the requested state",
+          409,
+        );
+      }
+      throw error;
+    }
+  }
+
   async listInterestTags(options: {
     page: number;
     pageSize: number;

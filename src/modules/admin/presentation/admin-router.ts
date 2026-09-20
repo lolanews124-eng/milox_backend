@@ -222,6 +222,12 @@ export function createAdminRouter(
     adminOnly,
     asyncHandler(controller.setVerifiedBadge),
   );
+  router.patch(
+    "/users/:userId/broadcast",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.setBroadcastEnabled),
+  );
   router.get(
     "/verified-badge/product",
     readLimit,

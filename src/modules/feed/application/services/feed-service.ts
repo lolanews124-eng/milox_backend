@@ -2,16 +2,17 @@ import type { AgeRange, Gender } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
-import { presentPost, presentPublicAuthor } from "../../../posts/application/post-view.js";
+import {
+  presentPost,
+  presentPublicAuthor,
+} from "../../../posts/application/post-view.js";
 import type {
   FeedPostRecord,
   FeedRepository,
+  RankedDiscoverPerson,
+  RankedFeedPost,
 } from "../ports/feed-repository.js";
-import type { PostAuthorViewRecord } from "../../../posts/application/post-view.js";
-import type {
-  FeedCursorCodec,
-  FeedCursor,
-} from "./feed-cursor.js";
+import type { FeedCursorCodec } from "./feed-cursor.js";
 
 export type FeedKind = "latest" | "following" | "trending" | "suggested";
 
@@ -33,9 +34,7 @@ export class FeedService {
     options: { viewerId?: string; cursor?: string; limit: number },
   ): Promise<FeedPage> {
     const expectedCursorKind =
-      kind === "latest" || kind === "following"
-        ? "chronological"
-        : "ranked";
+      kind === "latest" ? "chronological" : "ranked";
     const cursor = options.cursor
       ? this.cursors.decode(options.cursor)
       : undefined;
@@ -47,44 +46,37 @@ export class FeedService {
       );
     }
 
-    let rows: FeedPostRecord[];
     const query = {
       limit: options.limit,
       ...(options.viewerId ? { viewerId: options.viewerId } : {}),
       ...(cursor ? { cursor } : {}),
     };
+
+    if (kind === "latest") {
+      const rows = await this.repository.getLatest(query);
+      return this.pageFromChronological(rows, options.limit);
+    }
+
+    let ranked: RankedFeedPost[];
     switch (kind) {
-      case "latest":
-        rows = await this.repository.getLatest(query);
-        break;
       case "trending":
-        rows = await this.repository.getTrending(query);
+        ranked = await this.repository.getTrending(query);
         break;
       case "following":
-        rows = await this.repository.getFollowing({
+        ranked = await this.repository.getFollowing({
           ...query,
           viewerId: requireViewer(options.viewerId),
         });
         break;
       case "suggested":
-        rows = await this.repository.getSuggested({
+        ranked = await this.repository.getSuggested({
           ...query,
           viewerId: requireViewer(options.viewerId),
         });
         break;
     }
 
-    const hasMore = rows.length > options.limit;
-    const pageRows = rows.slice(0, options.limit);
-    const last = pageRows.at(-1);
-    return {
-      items: pageRows.map((row) => presentPost(row, this.config)),
-      nextCursor:
-        hasMore && last
-          ? this.cursors.encode(cursorForPost(last, expectedCursorKind))
-          : null,
-      hasMore,
-    };
+    return this.pageFromRanked(ranked, options.limit);
   }
 
   async passProfile(viewerId: string, targetId: string): Promise<void> {
@@ -101,21 +93,19 @@ export class FeedService {
     return this.repository.getPassedProfileIds(viewerId);
   }
 
-  async getDiscoverPeople(
-    options: {
-      viewerId?: string;
-      cursor?: string;
-      limit: number;
-      ageRanges?: AgeRange[];
-      genders?: Gender[];
-      countries?: string[];
-    },
-  ): Promise<FeedPage> {
+  async getDiscoverPeople(options: {
+    viewerId?: string;
+    cursor?: string;
+    limit: number;
+    ageRanges?: AgeRange[];
+    genders?: Gender[];
+    countries?: string[];
+  }): Promise<FeedPage> {
     const viewerId = requireViewer(options.viewerId);
     const cursor = options.cursor
       ? this.cursors.decode(options.cursor)
       : undefined;
-    if (cursor && cursor.kind !== "chronological") {
+    if (cursor && cursor.kind !== "ranked") {
       throw new AppError(
         "INVALID_CURSOR",
         "This cursor belongs to a different feed",
@@ -131,14 +121,71 @@ export class FeedService {
       ...(options.genders ? { genders: options.genders } : {}),
       ...(options.countries ? { countries: options.countries } : {}),
     });
-    const hasMore = rows.length > options.limit;
-    const pageRows = rows.slice(0, options.limit);
+    return this.pageFromRankedPeople(rows, options.limit);
+  }
+
+  private pageFromChronological(
+    rows: FeedPostRecord[],
+    limit: number,
+  ): FeedPage {
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
     const last = pageRows.at(-1);
     return {
-      items: pageRows.map((row) => presentPublicAuthor(row, this.config)),
+      items: pageRows.map((row) => presentPost(row, this.config)),
       nextCursor:
         hasMore && last
-          ? this.cursors.encode(cursorForPerson(last))
+          ? this.cursors.encode({
+              version: 1,
+              kind: "chronological",
+              id: last.id,
+              createdAt: last.createdAt.toISOString(),
+            })
+          : null,
+      hasMore,
+    };
+  }
+
+  private pageFromRanked(rows: RankedFeedPost[], limit: number): FeedPage {
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map((row) => presentPost(row.post, this.config)),
+      nextCursor:
+        hasMore && last
+          ? this.cursors.encode({
+              version: 1,
+              kind: "ranked",
+              id: last.post.id,
+              createdAt: last.post.createdAt.toISOString(),
+              score: last.score,
+            })
+          : null,
+      hasMore,
+    };
+  }
+
+  private pageFromRankedPeople(
+    rows: RankedDiscoverPerson[],
+    limit: number,
+  ): FeedPage {
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map((row) =>
+        presentPublicAuthor(row.person, this.config),
+      ),
+      nextCursor:
+        hasMore && last
+          ? this.cursors.encode({
+              version: 1,
+              kind: "ranked",
+              id: last.person.id,
+              createdAt: last.person.createdAt.toISOString(),
+              score: last.score,
+            })
           : null,
       hasMore,
     };
@@ -151,34 +198,3 @@ function requireViewer(viewerId: string | undefined): string {
   }
   return viewerId;
 }
-
-function cursorForPost(
-  post: FeedPostRecord,
-  kind: FeedCursor["kind"],
-): FeedCursor {
-  if (kind === "chronological") {
-    return {
-      version: 1,
-      kind,
-      id: post.id,
-      createdAt: post.createdAt.toISOString(),
-    };
-  }
-  return {
-    version: 1,
-    kind,
-    id: post.id,
-    createdAt: post.createdAt.toISOString(),
-    score: post.trendingScore,
-  };
-}
-
-function cursorForPerson(person: PostAuthorViewRecord): FeedCursor {
-  return {
-    version: 1,
-    kind: "chronological",
-    id: person.id,
-    createdAt: person.createdAt.toISOString(),
-  };
-}
-

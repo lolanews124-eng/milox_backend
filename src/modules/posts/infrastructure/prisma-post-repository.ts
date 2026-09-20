@@ -31,6 +31,7 @@ import {
 import type { PostViewRecord } from "../application/post-view.js";
 import type { RewardsRepository } from "../../rewards/application/ports/rewards-repository.js";
 import { extractHashtags } from "../../../shared/hashtags.js";
+import { extractMentions } from "../../../shared/mentions.js";
 import { normalizePostBodyForDuplicateCheck } from "../application/services/post-spam-guard.js";
 import {
   postViewSelect,
@@ -87,6 +88,12 @@ export class PrismaPostRepository implements PostRepository {
         });
 
         await syncPostHashtags(transaction, created.id, data.body);
+        await enqueuePostMentionNotifications(
+          transaction,
+          created.id,
+          data.authorId,
+          data.body,
+        );
 
         await transaction.user.update({
           where: { id: data.authorId },
@@ -779,6 +786,67 @@ export async function syncPostHashtags(
       data: { postId, hashtagId: hashtag.id },
     });
   }
+}
+
+/**
+ * Creates one outbox event per @mentioned user so they get a POST_MENTION
+ * notification. Skips self-mentions and blocked relationships.
+ */
+export async function enqueuePostMentionNotifications(
+  transaction: Transaction,
+  postId: string,
+  authorId: string,
+  body: string | null | undefined,
+): Promise<void> {
+  const usernames = extractMentions(body);
+  if (usernames.length === 0) return;
+
+  const users = await transaction.user.findMany({
+    where: {
+      usernameNormalized: { in: usernames },
+      status: "ACTIVE",
+      deletedAt: null,
+    },
+    select: { id: true, usernameNormalized: true },
+  });
+  if (users.length === 0) return;
+
+  const candidateIds = users
+    .map((user) => user.id)
+    .filter((id) => id !== authorId);
+  if (candidateIds.length === 0) return;
+
+  const blocks = await transaction.block.findMany({
+    where: {
+      OR: [
+        { blockerId: authorId, blockedId: { in: candidateIds } },
+        { blockerId: { in: candidateIds }, blockedId: authorId },
+      ],
+    },
+    select: { blockerId: true, blockedId: true },
+  });
+  const blocked = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockerId === authorId) blocked.add(block.blockedId);
+    if (block.blockedId === authorId) blocked.add(block.blockerId);
+  }
+
+  const recipientIds = candidateIds.filter((id) => !blocked.has(id));
+  if (recipientIds.length === 0) return;
+
+  await transaction.outboxEvent.createMany({
+    data: recipientIds.map((recipientId) => ({
+      eventType: "post.mentioned",
+      aggregateType: "post",
+      aggregateId: postId,
+      payload: {
+        postId,
+        actorId: authorId,
+        recipientId,
+      },
+      status: OutboxStatus.PENDING,
+    })),
+  });
 }
 
 function findVisibleForAction(

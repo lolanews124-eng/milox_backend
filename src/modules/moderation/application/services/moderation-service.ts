@@ -95,6 +95,7 @@ export class ModerationService {
       postId?: string | null;
       commentId?: string | null;
       messageId?: string | null;
+      storyId?: string | null;
       reasonCode: string;
       details?: string | null;
     },
@@ -108,6 +109,7 @@ export class ModerationService {
         postId: input.postId ?? null,
         commentId: input.commentId ?? null,
         messageId: input.messageId ?? null,
+        storyId: input.storyId ?? null,
         reasonCode: input.reasonCode,
         details: input.details?.trim() || null,
       });
@@ -148,34 +150,46 @@ function assertTargetShape(input: {
   postId?: string | null;
   commentId?: string | null;
   messageId?: string | null;
+  storyId?: string | null;
 }): void {
   const ids = {
     reportedUserId: Boolean(input.reportedUserId),
     postId: Boolean(input.postId),
     commentId: Boolean(input.commentId),
     messageId: Boolean(input.messageId),
+    storyId: Boolean(input.storyId),
   };
   const valid =
     (input.targetType === "USER" &&
       ids.reportedUserId &&
       !ids.postId &&
       !ids.commentId &&
-      !ids.messageId) ||
+      !ids.messageId &&
+      !ids.storyId) ||
     (input.targetType === "POST" &&
       ids.postId &&
       !ids.reportedUserId &&
       !ids.commentId &&
-      !ids.messageId) ||
+      !ids.messageId &&
+      !ids.storyId) ||
     (input.targetType === "COMMENT" &&
       ids.commentId &&
       !ids.reportedUserId &&
       !ids.postId &&
-      !ids.messageId) ||
+      !ids.messageId &&
+      !ids.storyId) ||
     (input.targetType === "MESSAGE" &&
       ids.messageId &&
       !ids.reportedUserId &&
       !ids.postId &&
-      !ids.commentId);
+      !ids.commentId &&
+      !ids.storyId) ||
+    (input.targetType === "STORY" &&
+      ids.storyId &&
+      !ids.reportedUserId &&
+      !ids.postId &&
+      !ids.commentId &&
+      !ids.messageId);
 
   if (!valid) {
     throw new AppError(

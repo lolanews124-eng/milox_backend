@@ -18,6 +18,12 @@ export function createRewardsRouter(
     rewardedAdLimit,
     asyncHandler(controller.claimRewardedAd),
   );
+  router.post(
+    "/wallet/daily-check-in",
+    authenticate,
+    createRateLimit(10, 10 * 60 * 1000),
+    asyncHandler(controller.claimDailyCheckIn),
+  );
   router.get(
     "/wallet/transactions",
     authenticate,

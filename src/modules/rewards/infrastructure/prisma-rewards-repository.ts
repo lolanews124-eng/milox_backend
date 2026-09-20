@@ -24,9 +24,14 @@ import {
   InsufficientWalletBalanceError,
   InvalidReferralCodeError,
   RewardedAdDailyLimitError,
+  DailyCheckInAlreadyClaimedError,
 } from "../application/ports/rewards-repository.js";
 
-export { InsufficientWalletBalanceError, RewardedAdDailyLimitError };
+export {
+  InsufficientWalletBalanceError,
+  RewardedAdDailyLimitError,
+  DailyCheckInAlreadyClaimedError,
+};
 
 export class PrismaRewardsRepository implements RewardsRepository {
   constructor(
@@ -315,6 +320,97 @@ export class PrismaRewardsRepository implements RewardsRepository {
     });
   }
 
+  async getDailyCheckInStatus(userId: string): Promise<{
+    claimedToday: boolean;
+    streakDays: number;
+    points: number;
+  }> {
+    const points = this.config.DAILY_CHECK_IN_POINTS;
+    const todayKey = utcDayKey(new Date());
+    const claimedToday = Boolean(
+      await this.database.walletTransaction.findUnique({
+        where: { idempotencyKey: dailyCheckInKey(userId, todayKey) },
+        select: { id: true },
+      }),
+    );
+    const streakDays = await this.computeStreakDays(userId, claimedToday);
+    return { claimedToday, streakDays, points };
+  }
+
+  async claimDailyCheckIn(userId: string): Promise<{
+    amount: number;
+    balance: number;
+    streakDays: number;
+  }> {
+    const todayKey = utcDayKey(new Date());
+    const idempotencyKey = dailyCheckInKey(userId, todayKey);
+    const amount = this.config.DAILY_CHECK_IN_POINTS;
+
+    const existing = await this.database.walletTransaction.findUnique({
+      where: { idempotencyKey },
+      select: { amount: true, balanceAfter: true },
+    });
+    if (existing) {
+      throw new DailyCheckInAlreadyClaimedError();
+    }
+
+    const result = await this.database.$transaction(async (transaction) => {
+      await creditWallet(transaction, {
+        userId,
+        amount,
+        type: WalletTransactionType.DAILY_CHECK_IN,
+        idempotencyKey,
+        referenceType: "daily_check_in",
+        referenceId: todayKey,
+        description: "Daily check-in",
+      });
+
+      const wallet = await transaction.wallet.findUnique({
+        where: { userId },
+        select: { balance: true },
+      });
+      if (!wallet) {
+        throw new Error("Wallet missing after daily check-in credit");
+      }
+
+      return {
+        amount,
+        balance: wallet.balance,
+      };
+    });
+
+    const streakDays = await this.computeStreakDays(userId, true);
+    return { ...result, streakDays };
+  }
+
+  private async computeStreakDays(
+    userId: string,
+    claimedToday: boolean,
+  ): Promise<number> {
+    const rows = await this.database.walletTransaction.findMany({
+      where: {
+        walletUserId: userId,
+        type: WalletTransactionType.DAILY_CHECK_IN,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 60,
+      select: { createdAt: true },
+    });
+    if (rows.length === 0) return claimedToday ? 1 : 0;
+
+    const days = new Set(rows.map((row) => utcDayKey(row.createdAt)));
+    let cursor = new Date();
+    if (!claimedToday) {
+      cursor = new Date(cursor.getTime() - 86_400_000);
+    }
+    let streak = 0;
+    while (days.has(utcDayKey(cursor))) {
+      streak += 1;
+      cursor = new Date(cursor.getTime() - 86_400_000);
+    }
+    return streak;
+  }
+
   listActivePointPacks() {
     return this.database.pointPurchaseRate.findMany({
       where: { isActive: true },
@@ -329,6 +425,14 @@ export class PrismaRewardsRepository implements RewardsRepository {
       },
     });
   }
+}
+
+function dailyCheckInKey(userId: string, dayKey: string): string {
+  return `daily-checkin:${userId}:${dayKey}`;
+}
+
+function utcDayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 async function creditWallet(

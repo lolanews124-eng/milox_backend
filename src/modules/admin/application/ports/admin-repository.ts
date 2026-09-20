@@ -200,6 +200,12 @@ export interface SetVerifiedBadgeData {
   isVerifiedBadge: boolean;
 }
 
+export interface SetBroadcastEnabledData {
+  actorId: string;
+  targetUserId: string;
+  broadcastEnabled: boolean;
+}
+
 export interface PremiumPlanPriceInput {
   billingCycle: "MONTHLY" | "YEARLY" | "ONE_TIME";
   priceCents: number;
@@ -487,6 +493,9 @@ export interface AdminRepository {
   listStaff(query: OffsetPage): Promise<AdminPage<AdminUserRecord>>;
   changeStaffRole(data: ChangeStaffRoleData): Promise<AdminUserRecord | null>;
   setVerifiedBadge(data: SetVerifiedBadgeData): Promise<AdminUserRecord | null>;
+  setBroadcastEnabled(
+    data: SetBroadcastEnabledData,
+  ): Promise<AdminUserRecord | null>;
   listInterestTags(query: OffsetPage): Promise<AdminPage<AdminInterestTagRecord>>;
   createInterestTag(
     data: CreateInterestTagData,

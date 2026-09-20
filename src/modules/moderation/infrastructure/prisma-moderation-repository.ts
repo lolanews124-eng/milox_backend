@@ -125,6 +125,9 @@ export class PrismaModerationRepository implements ModerationRepository {
     if (data.targetType === ReportTargetType.POST && !data.postId) {
       throw new ReportTargetInvalidError();
     }
+    if (data.targetType === ReportTargetType.STORY && !data.storyId) {
+      throw new ReportTargetInvalidError();
+    }
 
     try {
       return await this.database.$transaction(async (transaction) => {
@@ -158,6 +161,12 @@ export class PrismaModerationRepository implements ModerationRepository {
                   messageId: resolved.messageId,
                 }
               : {}),
+            ...(data.targetType === ReportTargetType.STORY
+              ? {
+                  targetType: ReportTargetType.STORY,
+                  storyId: resolved.storyId,
+                }
+              : {}),
           },
           select: { id: true },
         });
@@ -171,6 +180,7 @@ export class PrismaModerationRepository implements ModerationRepository {
             postId: resolved.postId,
             commentId: resolved.commentId,
             messageId: resolved.messageId,
+            storyId: resolved.storyId,
             reasonCode: data.reasonCode,
             details: data.details,
           },
@@ -221,6 +231,46 @@ export class PrismaModerationRepository implements ModerationRepository {
           });
         }
 
+        // Any story report immediately soft-deletes it (24h content).
+        if (
+          data.targetType === ReportTargetType.STORY &&
+          resolved.storyId &&
+          resolved.reportedUserId
+        ) {
+          await transaction.story.update({
+            where: { id: resolved.storyId },
+            data: { deletedAt: new Date() },
+          });
+          await transaction.moderationAction.create({
+            data: {
+              actorId: data.reporterId,
+              targetUserId: resolved.reportedUserId,
+              reportId: report.id,
+              actionCode: "STORY_AUTO_REMOVED",
+              note: "Auto-removed after user report",
+              metadata: {
+                storyId: resolved.storyId,
+                reasonCode: data.reasonCode,
+                source: "reports_api",
+              },
+            },
+          });
+          await transaction.auditLog.create({
+            data: {
+              actorType: AuditActorType.USER,
+              actorUserId: data.reporterId,
+              action: "moderation.story.auto_removed",
+              resourceType: "story",
+              resourceId: resolved.storyId,
+              metadata: {
+                reportId: report.id,
+                reasonCode: data.reasonCode,
+                deleted: true,
+              },
+            },
+          });
+        }
+
         return report;
       });
     } catch (error) {
@@ -245,6 +295,7 @@ async function resolveReportTarget(
   postId: string | null;
   commentId: string | null;
   messageId: string | null;
+  storyId: string | null;
 } | null> {
   if (data.targetType === ReportTargetType.USER) {
     if (!data.reportedUserId) throw new ReportTargetInvalidError();
@@ -262,6 +313,7 @@ async function resolveReportTarget(
       postId: null,
       commentId: null,
       messageId: null,
+      storyId: null,
     };
   }
 
@@ -277,6 +329,7 @@ async function resolveReportTarget(
       postId: post.id,
       commentId: null,
       messageId: null,
+      storyId: null,
     };
   }
 
@@ -292,6 +345,7 @@ async function resolveReportTarget(
       postId: null,
       commentId: comment.id,
       messageId: null,
+      storyId: null,
     };
   }
 
@@ -315,6 +369,27 @@ async function resolveReportTarget(
       postId: null,
       commentId: null,
       messageId: message.id,
+      storyId: null,
+    };
+  }
+
+  if (data.targetType === ReportTargetType.STORY) {
+    if (!data.storyId) throw new ReportTargetInvalidError();
+    const story = await transaction.story.findFirst({
+      where: {
+        id: data.storyId,
+        deletedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true, authorId: true },
+    });
+    if (!story) return null;
+    return {
+      reportedUserId: story.authorId,
+      postId: null,
+      commentId: null,
+      messageId: null,
+      storyId: story.id,
     };
   }
 

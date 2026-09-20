@@ -19,16 +19,30 @@ export interface DiscoverPeopleQuery extends FeedQuery {
   countries?: string[];
 }
 
+export interface RankedFeedPost {
+  post: FeedPostRecord;
+  /** Viewer-specific or diversified rank score used for cursors. */
+  score: number;
+}
+
+export interface RankedDiscoverPerson {
+  person: PostAuthorViewRecord;
+  /** Light personalization score used for Discover cursors. */
+  score: number;
+}
+
 export interface FeedRepository {
   getLatest(query: FeedQuery): Promise<FeedPostRecord[]>;
-  getFollowing(query: FeedQuery & { viewerId: string }): Promise<FeedPostRecord[]>;
-  getTrending(query: FeedQuery): Promise<FeedPostRecord[]>;
+  getFollowing(
+    query: FeedQuery & { viewerId: string },
+  ): Promise<RankedFeedPost[]>;
+  getTrending(query: FeedQuery): Promise<RankedFeedPost[]>;
   getSuggested(
     query: FeedQuery & { viewerId: string },
-  ): Promise<FeedPostRecord[]>;
+  ): Promise<RankedFeedPost[]>;
   getDiscoverPeople(
     query: DiscoverPeopleQuery,
-  ): Promise<PostAuthorViewRecord[]>;
+  ): Promise<RankedDiscoverPerson[]>;
   passProfile(viewerId: string, targetId: string): Promise<void>;
   getPassedProfileIds(viewerId: string): Promise<string[]>;
   userExists(userId: string): Promise<boolean>;

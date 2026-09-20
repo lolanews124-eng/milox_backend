@@ -6,7 +6,6 @@ import type { MessageType, PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
-import { getFreeMessageLimit } from "../../../economy/app-economy-config.js";
 import { resolveUserEntitlements } from "../../../premium/application/entitlements.js";
 import type {
   ChatRepository,
@@ -17,14 +16,15 @@ import type {
 } from "../ports/chat-repository.js";
 import {
   AlreadyMemberError,
+  CannotRemoveAdminError,
   ChatActionConflictError,
   ChatIdempotencyConflictError,
   ChatMediaOwnershipError,
   ChatReplyNotFoundError,
-  MessageLimitReachedError,
   NotGroupAdminError,
   NotGroupError,
   NotMatchedError,
+  BroadcastDisabledError,
 } from "../ports/chat-repository.js";
 import {
   presentConversation,
@@ -208,16 +208,41 @@ export class ChatService {
     }
   }
 
+  async createBroadcast(
+    creatorId: string,
+    input: { title: string; memberIds: string[] },
+  ): Promise<object> {
+    try {
+      const conversation = await this.repository.createBroadcast({
+        creatorId,
+        title: input.title,
+        memberIds: input.memberIds,
+      });
+      this.hooks?.wakeOutbox?.();
+      return presentConversation(conversation, this.config);
+    } catch (error) {
+      mapGroupError(error);
+    }
+  }
+
   async addGroupMember(
     conversationId: string,
     actorId: string,
     userId: string,
   ): Promise<object> {
+    return this.addGroupMembers(conversationId, actorId, [userId]);
+  }
+
+  async addGroupMembers(
+    conversationId: string,
+    actorId: string,
+    userIds: string[],
+  ): Promise<object> {
     try {
-      const conversation = await this.repository.addGroupMember({
+      const conversation = await this.repository.addGroupMembers({
         conversationId,
         actorId,
-        userId,
+        userIds,
       });
       if (!conversation) throw conversationNotFound();
       this.hooks?.wakeOutbox?.();
@@ -331,14 +356,6 @@ export class ChatService {
     }
 
     try {
-      const [entitlements, freeMessageLimit] = await Promise.all([
-        resolveUserEntitlements(
-          this.database,
-          senderId,
-          this.config.INTEREST_DAILY_LIMIT,
-        ),
-        getFreeMessageLimit(this.database),
-      ]);
       const created = await this.repository.sendMessage({
         conversationId,
         senderId,
@@ -354,10 +371,6 @@ export class ChatService {
           mediaId,
           replyToId,
         }),
-        messagingQuota: {
-          freeLimit: freeMessageLimit,
-          hasUnlimited: entitlements.features.unlimitedMessaging,
-        },
       });
       if (!created) throw conversationNotFound();
       if (!created.replayed) {
@@ -368,13 +381,6 @@ export class ChatService {
         replayed: created.replayed,
       };
     } catch (error) {
-      if (error instanceof MessageLimitReachedError) {
-        throw new AppError(
-          "MESSAGE_LIMIT_REACHED",
-          "Unlock unlimited messaging to keep chatting",
-          403,
-        );
-      }
       if (error instanceof ChatActionConflictError) {
         if (error.message === "read_only") {
           throw new AppError(
@@ -386,7 +392,7 @@ export class ChatService {
         if (error.message === "group_images_disabled") {
           throw new AppError(
             "GROUP_IMAGES_DISABLED",
-            "Images are not allowed in group chats",
+            "Images are not allowed in group or broadcast chats",
             400,
           );
         }
@@ -628,10 +634,24 @@ function mapGroupError(error: unknown): never {
       403,
     );
   }
+  if (error instanceof CannotRemoveAdminError) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Group admins cannot be removed",
+      403,
+    );
+  }
   if (error instanceof NotGroupError) {
     throw new AppError(
       "FORBIDDEN",
       "This conversation is not a group",
+      403,
+    );
+  }
+  if (error instanceof BroadcastDisabledError) {
+    throw new AppError(
+      "BROADCAST_DISABLED",
+      "Broadcast lists require admin approval",
       403,
     );
   }
@@ -641,7 +661,17 @@ function mapGroupError(error: unknown): never {
   ) {
     throw new AppError(
       "VALIDATION_ERROR",
-      "Group title must be between 1 and 80 characters",
+      "Title must be between 1 and 80 characters",
+      400,
+    );
+  }
+  if (
+    error instanceof ChatActionConflictError &&
+    error.message === "broadcast_needs_recipients"
+  ) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Add at least one recipient to the broadcast list",
       400,
     );
   }

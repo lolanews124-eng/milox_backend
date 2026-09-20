@@ -65,7 +65,10 @@ describe("FeedService", () => {
   it("omits hidden author age and country", async () => {
     const repository = createRepository();
     vi.mocked(repository.getTrending).mockResolvedValue([
-      postFixture(1, { hideAge: true, hideCountry: true }),
+      {
+        post: postFixture(1, { hideAge: true, hideCountry: true }),
+        score: 10,
+      },
     ]);
     const service = new FeedService(
       repository,

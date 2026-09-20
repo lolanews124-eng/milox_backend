@@ -163,7 +163,9 @@ function createRepository(): ChatRepository {
     findOrCreateDirectConversation: vi.fn(),
     leaveConversation: vi.fn(),
     createGroup: vi.fn(),
+    createBroadcast: vi.fn(),
     addGroupMember: vi.fn(),
+    addGroupMembers: vi.fn(),
     removeGroupMember: vi.fn(),
     listGroupMembers: vi.fn(),
   };

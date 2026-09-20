@@ -45,6 +45,7 @@ const profileSelect = {
   websiteUrl: true,
   instagramHandle: true,
   isVerifiedBadge: true,
+  broadcastEnabled: true,
   premiumTier: true,
   premiumExpiresAt: true,
   isSystemAccount: true,

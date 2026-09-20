@@ -27,6 +27,7 @@ export interface UserProfileRecord {
   websiteUrl: string | null;
   instagramHandle: string | null;
   isVerifiedBadge: boolean;
+  broadcastEnabled: boolean;
   premiumTier: PremiumTier;
   premiumExpiresAt: Date | null;
   isSystemAccount: boolean;

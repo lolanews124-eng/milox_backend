@@ -72,11 +72,41 @@ export const createGroupSchema = z
   })
   .strict();
 
-export const addGroupMemberSchema = z
+export const createBroadcastSchema = z
   .object({
-    userId: z.uuid(),
+    title: z.string().trim().min(1).max(80),
+    memberIds: z.array(z.uuid()).min(1).max(5_000),
   })
   .strict();
+
+export const addGroupMemberSchema = z
+  .object({
+    userId: z.uuid().optional(),
+    userIds: z.array(z.uuid()).min(1).max(500).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasSingle = Boolean(value.userId);
+    const hasMany = Boolean(value.userIds && value.userIds.length > 0);
+    if (!hasSingle && !hasMany) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide userId or userIds",
+        path: ["userIds"],
+      });
+    }
+  });
+
+export function resolveAddGroupMemberIds(input: {
+  userId?: string | undefined;
+  userIds?: string[] | undefined;
+}): string[] {
+  if (input.userIds && input.userIds.length > 0) {
+    return [...new Set(input.userIds)];
+  }
+  if (input.userId) return [input.userId];
+  return [];
+}
 
 export const memberUserIdParamSchema = z.object({
   conversationId: z.uuid(),

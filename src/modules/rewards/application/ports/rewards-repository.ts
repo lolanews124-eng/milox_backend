@@ -8,6 +8,8 @@ export class InsufficientWalletBalanceError extends Error {}
 
 export class RewardedAdDailyLimitError extends Error {}
 
+export class DailyCheckInAlreadyClaimedError extends Error {}
+
 export class InvalidReferralCodeError extends Error {}
 
 export interface WalletSummary {
@@ -88,6 +90,16 @@ export interface RewardsRepository extends SignupRewardsWriter {
     userId: string,
     claimId: string,
   ): Promise<{ amount: number; balance: number }>;
+  getDailyCheckInStatus(userId: string): Promise<{
+    claimedToday: boolean;
+    streakDays: number;
+    points: number;
+  }>;
+  claimDailyCheckIn(userId: string): Promise<{
+    amount: number;
+    balance: number;
+    streakDays: number;
+  }>;
   listActivePointPacks(): Promise<PointPackRecord[]>;
 }
 

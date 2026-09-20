@@ -56,6 +56,7 @@ export class ModerationController {
       postId: input.postId ?? null,
       commentId: input.commentId ?? null,
       messageId: input.messageId ?? null,
+      storyId: input.storyId ?? null,
       reasonCode: input.reasonCode,
       details: input.details ?? null,
     });

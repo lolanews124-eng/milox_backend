@@ -8,6 +8,7 @@ import {
   MessageDeliveryStatus,
   MessageType,
   Prisma,
+  UserStatus,
   type PrismaClient,
   AgeRange,
   Gender,
@@ -28,14 +29,15 @@ import type {
 } from "../application/ports/chat-repository.js";
 import {
   AlreadyMemberError,
+  CannotRemoveAdminError,
   ChatActionConflictError,
   ChatIdempotencyConflictError,
   ChatMediaOwnershipError,
   ChatReplyNotFoundError,
-  MessageLimitReachedError,
   NotGroupAdminError,
   NotGroupError,
   NotMatchedError,
+  BroadcastDisabledError,
 } from "../application/ports/chat-repository.js";
 import type { PostAuthorViewRecord } from "../../posts/application/post-view.js";
 import type {
@@ -162,6 +164,7 @@ export class PrismaChatRepository implements ChatRepository {
     if (replay) return replay;
 
     try {
+      let fanOutBody: string | null = null;
       const message = await this.database.$transaction(async (transaction) => {
         const conversation = await transaction.conversation.findFirst({
           where: activeConversationWhere(
@@ -175,25 +178,15 @@ export class PrismaChatRepository implements ChatRepository {
           throw new ChatActionConflictError("read_only");
         }
         if (
-          conversation.kind === ConversationKind.GROUP &&
+          (conversation.kind === ConversationKind.GROUP ||
+            conversation.kind === ConversationKind.BROADCAST) &&
           data.type === "IMAGE"
         ) {
           throw new ChatActionConflictError("group_images_disabled");
         }
 
-        const quota = data.messagingQuota;
-        if (quota && !quota.hasUnlimited) {
-          const reserved = await transaction.user.updateMany({
-            where: {
-              id: data.senderId,
-              messagesSentCount: { lt: quota.freeLimit },
-            },
-            data: { messagesSentCount: { increment: 1 } },
-          });
-          if (reserved.count === 0) {
-            throw new MessageLimitReachedError();
-          }
-        }
+        // Messaging is free — do not enforce lifetime send caps.
+        // (Legacy messagingQuota path intentionally unused.)
 
         if (data.mediaId) {
           const media = await transaction.mediaAsset.findFirst({
@@ -279,8 +272,38 @@ export class PrismaChatRepository implements ChatRepository {
             },
           ],
         });
+
+        // Fan-out after commit — large recipient lists must not run inside
+        // this transaction (timeout / all-or-nothing failure risk).
+        if (
+          conversation.kind === ConversationKind.BROADCAST &&
+          data.type === "TEXT" &&
+          data.body
+        ) {
+          fanOutBody = data.body;
+        }
+
         return created;
       });
+
+      if (message && fanOutBody) {
+        try {
+          await fanOutBroadcastMessage(this.database, {
+            broadcastConversationId: data.conversationId,
+            senderId: data.senderId,
+            body: fanOutBody,
+          });
+        } catch (error) {
+          // Message is already committed; never fail the send on fan-out.
+          // Idempotent retries would otherwise skip fan-out entirely.
+          console.error("Broadcast fan-out failed", {
+            conversationId: data.conversationId,
+            senderId: data.senderId,
+            error,
+          });
+        }
+      }
+
       return message ? { message, replayed: false } : null;
     } catch (error) {
       if (
@@ -543,6 +566,7 @@ export class PrismaChatRepository implements ChatRepository {
           { kind: ConversationKind.OFFICIAL },
           { kind: ConversationKind.DIRECT },
           { kind: ConversationKind.GROUP },
+          { kind: ConversationKind.BROADCAST },
           { match: { is: { status: MatchStatus.ACTIVE } } },
         ],
       },
@@ -807,6 +831,29 @@ export class PrismaChatRepository implements ChatRepository {
         return true;
       }
 
+      if (conversation.kind === ConversationKind.BROADCAST) {
+        await transaction.broadcastRecipient.deleteMany({
+          where: { conversationId },
+        });
+        await transaction.conversation.update({
+          where: { id: conversationId },
+          data: { status: ConversationStatus.CLOSED, updatedAt: now },
+        });
+        await transaction.outboxEvent.create({
+          data: {
+            eventType: "chat.conversation.left",
+            aggregateType: "conversation",
+            aggregateId: conversationId,
+            payload: {
+              conversationId,
+              actorId: userId,
+              peerId: null,
+            },
+          },
+        });
+        return true;
+      }
+
       const peerId =
         members.find((member) => member.userId !== userId)?.userId ?? null;
       await transaction.outboxEvent.create({
@@ -888,13 +935,100 @@ export class PrismaChatRepository implements ChatRepository {
     return view;
   }
 
+  async createBroadcast(input: {
+    creatorId: string;
+    title: string;
+    memberIds: string[];
+  }): Promise<ConversationViewRecord> {
+    const creator = await this.database.user.findFirst({
+      where: {
+        id: input.creatorId,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+        broadcastEnabled: true,
+      },
+      select: { id: true, username: true, displayName: true },
+    });
+    if (!creator) throw new BroadcastDisabledError();
+
+    const title = input.title.trim();
+    if (title.length < 1 || title.length > 80) {
+      throw new ChatActionConflictError("invalid_title");
+    }
+
+    const uniqueMemberIds = [
+      ...new Set(input.memberIds.filter((id) => id !== input.creatorId)),
+    ];
+    if (uniqueMemberIds.length < 1) {
+      throw new ChatActionConflictError("broadcast_needs_recipients");
+    }
+    for (const memberId of uniqueMemberIds) {
+      const matched = await findActiveMatch(
+        this.database,
+        input.creatorId,
+        memberId,
+      );
+      if (!matched) throw new NotMatchedError();
+    }
+
+    const created = await this.database.$transaction(async (transaction) => {
+      const conversation = await transaction.conversation.create({
+        data: {
+          kind: ConversationKind.BROADCAST,
+          title,
+          createdByUserId: input.creatorId,
+          members: {
+            create: [
+              {
+                userId: input.creatorId,
+                role: ConversationMemberRole.ADMIN,
+              },
+            ],
+          },
+          broadcastRecipients: {
+            create: uniqueMemberIds.map((userId) => ({ userId })),
+          },
+        },
+        select: { id: true },
+      });
+      const label =
+        creator.displayName?.trim() || creator.username || "Someone";
+      await createSystemMessage(
+        transaction,
+        conversation.id,
+        input.creatorId,
+        `${label} created the broadcast list`,
+      );
+      return conversation.id;
+    });
+
+    const view = await this.findConversation(created, input.creatorId);
+    if (!view) throw new Error("Created broadcast conversation is missing");
+    return view;
+  }
+
   async addGroupMember(input: {
     conversationId: string;
     actorId: string;
     userId: string;
   }): Promise<ConversationViewRecord | null> {
-    if (input.actorId === input.userId) {
-      throw new AlreadyMemberError();
+    return this.addGroupMembers({
+      conversationId: input.conversationId,
+      actorId: input.actorId,
+      userIds: [input.userId],
+    });
+  }
+
+  async addGroupMembers(input: {
+    conversationId: string;
+    actorId: string;
+    userIds: string[];
+  }): Promise<ConversationViewRecord | null> {
+    const uniqueIds = [
+      ...new Set(input.userIds.filter((id) => id !== input.actorId)),
+    ];
+    if (uniqueIds.length === 0) {
+      return this.findConversation(input.conversationId, input.actorId);
     }
 
     const conversation = await this.database.conversation.findFirst({
@@ -905,7 +1039,10 @@ export class PrismaChatRepository implements ChatRepository {
       select: { id: true, kind: true },
     });
     if (!conversation) return null;
-    if (conversation.kind !== ConversationKind.GROUP) {
+    if (
+      conversation.kind !== ConversationKind.GROUP &&
+      conversation.kind !== ConversationKind.BROADCAST
+    ) {
       throw new NotGroupError();
     }
 
@@ -919,47 +1056,119 @@ export class PrismaChatRepository implements ChatRepository {
     });
     if (!actor) return null;
 
-    const matched = await findActiveMatch(
-      this.database,
-      input.actorId,
-      input.userId,
-    );
-    if (!matched) throw new NotMatchedError();
+    for (const userId of uniqueIds) {
+      const matched = await findActiveMatch(
+        this.database,
+        input.actorId,
+        userId,
+      );
+      if (!matched) throw new NotMatchedError();
+    }
 
-    const existing = await this.database.conversationMember.findUnique({
-      where: {
-        conversationId_userId: {
+    if (conversation.kind === ConversationKind.BROADCAST) {
+      const existing = await this.database.broadcastRecipient.findMany({
+        where: {
           conversationId: input.conversationId,
-          userId: input.userId,
+          userId: { in: uniqueIds },
         },
+        select: { userId: true },
+      });
+      if (existing.length > 0) throw new AlreadyMemberError();
+
+      await this.database.$transaction(async (transaction) => {
+        await transaction.broadcastRecipient.createMany({
+          data: uniqueIds.map((userId) => ({
+            conversationId: input.conversationId,
+            userId,
+          })),
+        });
+        await transaction.conversation.update({
+          where: { id: input.conversationId },
+          data: { updatedAt: new Date() },
+        });
+      });
+      return this.findConversation(input.conversationId, input.actorId);
+    }
+
+    const existingRows = await this.database.conversationMember.findMany({
+      where: {
+        conversationId: input.conversationId,
+        userId: { in: uniqueIds },
       },
-      select: { id: true, leftAt: true },
+      select: { id: true, userId: true, leftAt: true },
     });
-    if (existing && existing.leftAt === null) {
-      throw new AlreadyMemberError();
+    const existingByUser = new Map(
+      existingRows.map((row) => [row.userId, row] as const),
+    );
+    for (const userId of uniqueIds) {
+      const existing = existingByUser.get(userId);
+      if (existing && existing.leftAt === null) {
+        throw new AlreadyMemberError();
+      }
     }
 
     await this.database.$transaction(async (transaction) => {
-      if (existing) {
-        await transaction.conversationMember.update({
-          where: { id: existing.id },
-          data: {
-            leftAt: null,
-            clearedAt: null,
-            isArchived: false,
-            role: ConversationMemberRole.MEMBER,
-            unreadCount: 0,
-          },
-        });
-      } else {
-        await transaction.conversationMember.create({
-          data: {
-            conversationId: input.conversationId,
-            userId: input.userId,
-            role: ConversationMemberRole.MEMBER,
-          },
-        });
+      for (const userId of uniqueIds) {
+        const existing = existingByUser.get(userId);
+        if (existing) {
+          await transaction.conversationMember.update({
+            where: { id: existing.id },
+            data: {
+              leftAt: null,
+              clearedAt: null,
+              isArchived: false,
+              role: ConversationMemberRole.MEMBER,
+              unreadCount: 0,
+            },
+          });
+        } else {
+          await transaction.conversationMember.create({
+            data: {
+              conversationId: input.conversationId,
+              userId,
+              role: ConversationMemberRole.MEMBER,
+            },
+          });
+        }
       }
+
+      const [actorUser, addedUsers] = await Promise.all([
+        transaction.user.findUnique({
+          where: { id: input.actorId },
+          select: { username: true, displayName: true },
+        }),
+        transaction.user.findMany({
+          where: { id: { in: uniqueIds } },
+          select: { id: true, username: true, displayName: true },
+        }),
+      ]);
+      const actorLabel =
+        actorUser?.displayName?.trim() || actorUser?.username || "Someone";
+      const nameById = new Map(
+        addedUsers.map(
+          (user) =>
+            [
+              user.id,
+              user.displayName?.trim() || user.username || "Someone",
+            ] as const,
+        ),
+      );
+      const labels = uniqueIds.map(
+        (id) => nameById.get(id) ?? "Someone",
+      );
+      const addedLabel =
+        labels.length === 1
+          ? labels[0]
+          : labels.length === 2
+            ? `${labels[0]} and ${labels[1]}`
+            : `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+      await createSystemMessage(
+        transaction,
+        input.conversationId,
+        input.actorId,
+        `${actorLabel} added ${addedLabel}`,
+      );
+
       await transaction.conversation.update({
         where: { id: input.conversationId },
         data: { updatedAt: new Date() },
@@ -986,7 +1195,10 @@ export class PrismaChatRepository implements ChatRepository {
       select: { id: true, kind: true },
     });
     if (!conversation) return null;
-    if (conversation.kind !== ConversationKind.GROUP) {
+    if (
+      conversation.kind !== ConversationKind.GROUP &&
+      conversation.kind !== ConversationKind.BROADCAST
+    ) {
       throw new NotGroupError();
     }
 
@@ -1003,6 +1215,21 @@ export class PrismaChatRepository implements ChatRepository {
       throw new NotGroupAdminError();
     }
 
+    if (conversation.kind === ConversationKind.BROADCAST) {
+      const deleted = await this.database.broadcastRecipient.deleteMany({
+        where: {
+          conversationId: input.conversationId,
+          userId: input.userId,
+        },
+      });
+      if (deleted.count === 0) return null;
+      await this.database.conversation.update({
+        where: { id: input.conversationId },
+        data: { updatedAt: new Date() },
+      });
+      return this.findConversation(input.conversationId, input.actorId);
+    }
+
     const now = new Date();
     const removed = await this.database.$transaction(async (transaction) => {
       const target = await transaction.conversationMember.findFirst({
@@ -1011,9 +1238,12 @@ export class PrismaChatRepository implements ChatRepository {
           userId: input.userId,
           leftAt: null,
         },
-        select: { id: true },
+        select: { id: true, role: true },
       });
       if (!target) return false;
+      if (target.role === ConversationMemberRole.ADMIN) {
+        throw new CannotRemoveAdminError();
+      }
 
       await transaction.conversationMember.update({
         where: { id: target.id },
@@ -1082,8 +1312,27 @@ export class PrismaChatRepository implements ChatRepository {
       },
     });
     if (!conversation) return null;
-    if (conversation.kind !== ConversationKind.GROUP) {
+    if (
+      conversation.kind !== ConversationKind.GROUP &&
+      conversation.kind !== ConversationKind.BROADCAST
+    ) {
       throw new NotGroupError();
+    }
+    if (conversation.kind === ConversationKind.BROADCAST) {
+      const recipients = await this.database.broadcastRecipient.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: "asc" },
+        select: {
+          userId: true,
+          user: { select: publicAuthorSelect() },
+        },
+      });
+      // Recipients only — creator is the sole ConversationMember, not a recipient.
+      return recipients.map((recipient) => ({
+        userId: recipient.userId,
+        role: ConversationMemberRole.MEMBER,
+        user: recipient.user,
+      }));
     }
     return conversation.members.map((member) => ({
       userId: member.userId,
@@ -1156,8 +1405,14 @@ function mapConversation(
   const isOfficial = row.kind === ConversationKind.OFFICIAL;
   const isDirect = row.kind === ConversationKind.DIRECT;
   const isGroup = row.kind === ConversationKind.GROUP;
-  const peer = isGroup
-    ? groupPeerFallback(row.id, row.title)
+  const isBroadcast = row.kind === ConversationKind.BROADCAST;
+  const isNamedList = isGroup || isBroadcast;
+  const peer = isNamedList
+    ? groupPeerFallback(
+        row.id,
+        row.title,
+        isBroadcast ? "broadcast" : "group",
+      )
     : isOfficial
       ? (row.members.find((entry) => entry.userId !== userId)?.user ??
         officialPeerFallback(
@@ -1175,9 +1430,13 @@ function mapConversation(
     id: row.id,
     kind: row.kind,
     matchId: row.matchId,
-    title: isGroup ? row.title : null,
-    memberCount: isGroup ? row.members.length : row.members.length || 2,
-    myRole: isGroup ? member.role : null,
+    title: isNamedList ? row.title : null,
+    memberCount: isBroadcast
+      ? row._count.broadcastRecipients
+      : isGroup
+        ? row.members.length
+        : row.members.length || 2,
+    myRole: isNamedList ? member.role : null,
     isOfficial,
     isReadOnly: isOfficial,
     peer,
@@ -1193,10 +1452,11 @@ function mapConversation(
 function groupPeerFallback(
   conversationId: string,
   title: string | null,
+  username: "group" | "broadcast" = "group",
 ): PostAuthorViewRecord {
   return {
     id: conversationId,
-    username: "group",
+    username,
     displayName: title,
     bio: null,
     ageRange: AgeRange.AGE_25_28,
@@ -1256,7 +1516,16 @@ async function findActiveMatch(
   userA: string,
   userB: string,
 ): Promise<boolean> {
-  const match = await database.match.findFirst({
+  const match = await findActiveMatchRecord(database, userA, userB);
+  return Boolean(match);
+}
+
+async function findActiveMatchRecord(
+  database: PrismaClient | TransactionClient,
+  userA: string,
+  userB: string,
+): Promise<{ id: string } | null> {
+  return database.match.findFirst({
     where: {
       status: MatchStatus.ACTIVE,
       OR: [
@@ -1266,7 +1535,87 @@ async function findActiveMatch(
     },
     select: { id: true },
   });
-  return Boolean(match);
+}
+
+async function fanOutBroadcastMessage(
+  database: PrismaClient | TransactionClient,
+  input: {
+    broadcastConversationId: string;
+    senderId: string;
+    body: string;
+  },
+): Promise<void> {
+  const recipients = await database.broadcastRecipient.findMany({
+    where: { conversationId: input.broadcastConversationId },
+    select: { userId: true },
+  });
+  for (const recipient of recipients) {
+    try {
+      const match = await findActiveMatchRecord(
+        database,
+        input.senderId,
+        recipient.userId,
+      );
+      if (!match) continue;
+      const dm = await database.conversation.findFirst({
+        where: {
+          kind: ConversationKind.MATCH,
+          matchId: match.id,
+          status: ConversationStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      if (!dm) continue;
+
+      const created = await database.message.create({
+        data: {
+          conversationId: dm.id,
+          senderId: input.senderId,
+          type: MessageType.TEXT,
+          body: input.body,
+        },
+        select: { id: true, createdAt: true },
+      });
+      await database.conversation.update({
+        where: { id: dm.id },
+        data: { updatedAt: created.createdAt },
+      });
+      await database.conversationMember.updateMany({
+        where: {
+          conversationId: dm.id,
+          userId: { not: input.senderId },
+          leftAt: null,
+        },
+        data: {
+          unreadCount: { increment: 1 },
+          isArchived: false,
+        },
+      });
+      const eventPayload = {
+        messageId: created.id,
+        conversationId: dm.id,
+        senderId: input.senderId,
+      };
+      await database.outboxEvent.createMany({
+        data: [
+          {
+            eventType: "chat.message.created",
+            aggregateType: "message",
+            aggregateId: created.id,
+            payload: eventPayload,
+          },
+          {
+            eventType: "message.created",
+            aggregateType: "message",
+            aggregateId: created.id,
+            payload: eventPayload,
+          },
+        ],
+      });
+    } catch {
+      // Skip one failed recipient so the rest of the list still receives the message.
+    }
+  }
 }
 
 async function ensureGroupHasAdmin(

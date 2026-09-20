@@ -21,6 +21,7 @@ export interface CreateReportData {
   postId: string | null;
   commentId: string | null;
   messageId: string | null;
+  storyId: string | null;
   reasonCode: string;
   details: string | null;
 }

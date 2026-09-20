@@ -97,6 +97,7 @@ function notificationAction(notification: PresentedNotification): string {
     INTEREST_ACCEPTED: "accepted your interest",
     MATCH_CREATED: "matched with you",
     NEW_MESSAGE: "sent you a message",
+    POST_MENTION: "mentioned you in a post",
   };
   return mapping[notification.type] ?? "sent you an update";
 }

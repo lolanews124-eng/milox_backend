@@ -78,6 +78,7 @@ import {
   adminVerifiedBadgeOrderActionSchema,
   resolveReportSchema,
   setVerifiedBadgeSchema,
+  setBroadcastEnabledSchema,
   updateAdSchema,
   updateCmsPageSchema,
   updateInterestTagSchema,
@@ -422,6 +423,20 @@ export class AdminController {
     const { userId } = adminUserIdParamSchema.parse(request.params);
     const input = setVerifiedBadgeSchema.parse(request.body as unknown);
     const data = await this.admin.setVerifiedBadge(
+      requireUser(request),
+      userId,
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  setBroadcastEnabled = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { userId } = adminUserIdParamSchema.parse(request.params);
+    const input = setBroadcastEnabledSchema.parse(request.body as unknown);
+    const data = await this.admin.setBroadcastEnabled(
       requireUser(request),
       userId,
       input,

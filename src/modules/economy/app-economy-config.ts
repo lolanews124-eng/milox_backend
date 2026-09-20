@@ -10,6 +10,9 @@ export const DEFAULT_FREE_DAILY_INTEREST_GRANTS = 10;
 /** Lifetime free outbound chat messages before messaging plan is required. */
 export const DEFAULT_FREE_MESSAGE_LIMIT = 50;
 
+/** Messaging is free platform-wide; limit config is retained for legacy admin data only. */
+export const MESSAGING_IS_FREE = true;
+
 export type EconomyConfigView = {
   videoCallEnabled: boolean;
   videoCallPointsPerMinute: number;

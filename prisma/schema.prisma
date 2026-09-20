@@ -112,6 +112,7 @@ enum ConversationKind {
   DIRECT
   OFFICIAL
   GROUP
+  BROADCAST
 }
 
 enum ConversationMemberRole {
@@ -147,6 +148,7 @@ enum NotificationType {
   NEW_MESSAGE
   SYSTEM
   REFERRAL_REWARD
+  POST_MENTION
 }
 
 enum WalletTransactionType {
@@ -159,6 +161,7 @@ enum WalletTransactionType {
   VERIFIED_BADGE
   POINT_PURCHASE
   VIDEO_CALL
+  DAILY_CHECK_IN
 }
 
 enum CallSessionStatus {
@@ -221,6 +224,7 @@ enum ReportTargetType {
   COMMENT
   MESSAGE
   CONVERSATION
+  STORY
 }
 
 enum ReportStatus {
@@ -330,6 +334,8 @@ model User {
   hideCountry         Boolean           @default(false)
   hideLastSeen        Boolean           @default(false)
   hideOnline          Boolean           @default(false)
+  /// Admin-approved: user may create WhatsApp-style broadcast lists.
+  broadcastEnabled    Boolean           @default(false)
   profilePhotoMediaId String?           @unique @db.Uuid
   coverPhotoMediaId   String?           @unique @db.Uuid
   followerCount       Int               @default(0)
@@ -374,6 +380,7 @@ model User {
   matchesAsUserA      Match[]                  @relation("MatchUserA")
   matchesAsUserB      Match[]                  @relation("MatchUserB")
   conversationMembers ConversationMember[]
+  broadcastRecipients BroadcastRecipient[]
   messagesSent        Message[]                @relation("MessageSender")
   messageDeletions    MessageDeletion[]
   notifications       Notification[]           @relation("NotificationRecipient")
@@ -546,6 +553,7 @@ model Story {
   author     User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
   mediaAsset MediaAsset  @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   views      StoryView[]
+  reports    Report[]
 
   @@index([authorId, createdAt])
   @@index([expiresAt, deletedAt])
@@ -838,9 +846,9 @@ model Conversation {
   directUserHighId String?           @db.Uuid
   /// App user who owns this official inbox (one per user).
   recipientUserId String?            @unique @db.Uuid
-  /// Display title for GROUP chats.
+  /// Display title for GROUP / BROADCAST chats.
   title           String?            @db.VarChar(80)
-  /// User who created a GROUP (initial admin).
+  /// User who created a GROUP or BROADCAST (initial admin).
   createdByUserId String?            @db.Uuid
   status          ConversationStatus @default(ACTIVE)
   createdAt       DateTime           @default(now())
@@ -850,6 +858,7 @@ model Conversation {
   recipientUser User?                @relation("OfficialConversationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
   createdBy     User?                @relation("GroupConversationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   members       ConversationMember[]
+  broadcastRecipients BroadcastRecipient[]
   messages      Message[]
   callSessions  CallSession[]
 
@@ -859,6 +868,21 @@ model Conversation {
   @@index([kind, directUserLowId, directUserHighId])
   @@index([kind, createdByUserId])
   @@map("conversations")
+}
+
+/// Recipients of a BROADCAST list. Only the creator is a ConversationMember;
+/// recipients receive fan-out DMs and never see the broadcast thread itself.
+model BroadcastRecipient {
+  conversationId String   @db.Uuid
+  userId         String   @db.Uuid
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("broadcast_recipients")
 }
 
 // -----------------------------------------------------------------------------
@@ -1080,6 +1104,7 @@ model Report {
   postId         String?          @db.Uuid
   commentId      String?          @db.Uuid
   messageId      String?          @db.Uuid
+  storyId        String?          @db.Uuid
   reasonCode     String           @db.VarChar(64)
   details        String?          @db.VarChar(1000)
   status         ReportStatus     @default(OPEN)
@@ -1093,12 +1118,14 @@ model Report {
   post              Post?              @relation(fields: [postId], references: [id], onDelete: SetNull)
   comment           Comment?           @relation(fields: [commentId], references: [id], onDelete: SetNull)
   message           Message?           @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  story             Story?             @relation(fields: [storyId], references: [id], onDelete: SetNull)
   moderationActions ModerationAction[]
 
   @@index([status, createdAt])
   @@index([reporterId, createdAt])
   @@index([reportedUserId, createdAt])
   @@index([targetType, status])
+  @@index([storyId])
   @@map("reports")
 }
 

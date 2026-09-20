@@ -9,6 +9,7 @@ import {
   conversationPageQuerySchema,
   conversationSettingsSchema,
   createGroupSchema,
+  createBroadcastSchema,
   deleteMessageQuerySchema,
   editMessageSchema,
   idempotencyKeySchema,
@@ -16,6 +17,7 @@ import {
   memberUserIdParamSchema,
   messageIdParamSchema,
   messagePageQuerySchema,
+  resolveAddGroupMemberIds,
   sendMessageSchema,
   startDirectConversationSchema,
 } from "./chat-schemas.js";
@@ -74,6 +76,18 @@ export class ChatController {
     response.status(201).json(success(request, conversation));
   };
 
+  createBroadcast = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = createBroadcastSchema.parse(request.body as unknown);
+    const conversation = await this.chat.createBroadcast(
+      requireUser(request),
+      input,
+    );
+    response.status(201).json(success(request, conversation));
+  };
+
   listGroupMembers = async (
     request: Request,
     response: Response,
@@ -91,11 +105,12 @@ export class ChatController {
     response: Response,
   ): Promise<void> => {
     const { conversationId } = conversationIdParamSchema.parse(request.params);
-    const { userId } = addGroupMemberSchema.parse(request.body as unknown);
-    const conversation = await this.chat.addGroupMember(
+    const input = addGroupMemberSchema.parse(request.body as unknown);
+    const userIds = resolveAddGroupMemberIds(input);
+    const conversation = await this.chat.addGroupMembers(
       conversationId,
       requireUser(request),
-      userId,
+      userIds,
     );
     response.status(200).json(success(request, conversation));
   };

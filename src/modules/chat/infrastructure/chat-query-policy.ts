@@ -67,6 +67,7 @@ export function conversationViewSelect(userId: string) {
       take: 1,
       select: messageViewSelect(),
     },
+    _count: { select: { broadcastRecipients: true } },
   } satisfies Prisma.ConversationSelect;
 }
 
@@ -118,6 +119,11 @@ export function activeConversationWhere(
       },
       {
         kind: ConversationKind.GROUP,
+        members: { some: { userId, leftAt: null } },
+      },
+      {
+        kind: ConversationKind.BROADCAST,
+        createdByUserId: userId,
         members: { some: { userId, leftAt: null } },
       },
     ],

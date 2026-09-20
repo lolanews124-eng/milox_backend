@@ -48,6 +48,19 @@ export class RewardsController {
     });
   };
 
+  claimDailyCheckIn = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const userId = requireUserId(request);
+    const result = await this.rewards.claimDailyCheckIn(userId);
+    response.status(200).json({
+      success: true,
+      data: result,
+      meta: { requestId: request.requestId },
+    });
+  };
+
   listPointPacks = async (
     request: Request,
     response: Response,

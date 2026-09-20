@@ -48,6 +48,7 @@ export interface AdminUserRecord {
   role: UserRole;
   status: UserStatus;
   isVerifiedBadge: boolean;
+  broadcastEnabled: boolean;
   country: string | null;
   profilePhotoMediaId: string | null;
   lastSeenAt: Date | null;
@@ -77,6 +78,7 @@ export interface AdminReportRecord {
   postId: string | null;
   commentId: string | null;
   messageId: string | null;
+  storyId: string | null;
   reasonCode: string;
   details: string | null;
   status: ReportStatus;
@@ -98,6 +100,7 @@ export function presentAdminUser(user: AdminUserRecord): object {
     role: user.role,
     status: user.status,
     isVerifiedBadge: user.isVerifiedBadge,
+    broadcastEnabled: user.broadcastEnabled,
     country: user.country,
     profilePhotoMediaId: user.profilePhotoMediaId,
     lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
@@ -136,6 +139,7 @@ export function presentAdminReport(report: AdminReportRecord): object {
     postId: report.postId,
     commentId: report.commentId,
     messageId: report.messageId,
+    storyId: report.storyId,
     reasonCode: report.reasonCode,
     details: report.details,
     status: report.status,

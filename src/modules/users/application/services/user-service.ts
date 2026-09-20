@@ -299,6 +299,19 @@ export class UserService {
       ];
     }
 
+    // Profile photo is required for Discover/feed quality — never clear it.
+    if (
+      input.profilePhotoMediaId === null ||
+      (input.profilePhotoMediaId !== undefined &&
+        String(input.profilePhotoMediaId).trim() === "")
+    ) {
+      throw new AppError(
+        "PROFILE_PHOTO_REQUIRED",
+        "A profile photo is required. You can replace it, but not remove it.",
+        422,
+      );
+    }
+
     try {
       const updated = await this.repository.updateProfile(userId, data);
       await this.publishProfilePhotoUpdatePosts(current, input);
@@ -555,6 +568,7 @@ function mapPrivateProfile(
     canChangeUsernameAt: usernameChangeAllowed
       ? null
       : nextUsernameChangeAt.toISOString(),
+    broadcastEnabled: user.broadcastEnabled,
     isPremium: entitlements.isPremium,
     premiumTier: entitlements.tier,
     premiumExpiresAt: entitlements.expiresAt,

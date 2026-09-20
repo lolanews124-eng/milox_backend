@@ -33,6 +33,12 @@ export function createChatRouters(
     actionLimit,
     asyncHandler(controller.createGroup),
   );
+  conversations.post(
+    "/broadcasts",
+    requireVerified,
+    actionLimit,
+    asyncHandler(controller.createBroadcast),
+  );
   conversations.get(
     "/:conversationId/members",
     asyncHandler(controller.listGroupMembers),

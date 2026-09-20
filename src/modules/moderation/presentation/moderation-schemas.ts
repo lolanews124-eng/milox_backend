@@ -32,11 +32,13 @@ export const createReportSchema = z
       ReportTargetType.POST,
       ReportTargetType.COMMENT,
       ReportTargetType.MESSAGE,
+      ReportTargetType.STORY,
     ]),
     reportedUserId: z.uuid().nullable().optional(),
     postId: z.uuid().nullable().optional(),
     commentId: z.uuid().nullable().optional(),
     messageId: z.uuid().nullable().optional(),
+    storyId: z.uuid().nullable().optional(),
     reasonCode: z.enum(REPORT_REASON_CODES),
     details: z.string().trim().min(1).max(1_000).nullable().optional(),
   })

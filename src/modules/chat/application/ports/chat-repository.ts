@@ -29,7 +29,7 @@ export interface SendMessageData {
   replyToId: string | null;
   idempotencyKey: string;
   requestHash: string;
-  /** When set, enforce lifetime free message cap unless unlimited. */
+  /** @deprecated Messaging is free; quota is no longer enforced. */
   messagingQuota?: {
     freeLimit: number;
     hasUnlimited: boolean;
@@ -140,10 +140,20 @@ export interface ChatRepository {
     title: string;
     memberIds: string[];
   }): Promise<ConversationViewRecord>;
+  createBroadcast(input: {
+    creatorId: string;
+    title: string;
+    memberIds: string[];
+  }): Promise<ConversationViewRecord>;
   addGroupMember(input: {
     conversationId: string;
     actorId: string;
     userId: string;
+  }): Promise<ConversationViewRecord | null>;
+  addGroupMembers(input: {
+    conversationId: string;
+    actorId: string;
+    userIds: string[];
   }): Promise<ConversationViewRecord | null>;
   removeGroupMember(input: {
     conversationId: string;
@@ -165,3 +175,5 @@ export class NotMatchedError extends Error {}
 export class AlreadyMemberError extends Error {}
 export class NotGroupAdminError extends Error {}
 export class NotGroupError extends Error {}
+export class CannotRemoveAdminError extends Error {}
+export class BroadcastDisabledError extends Error {}

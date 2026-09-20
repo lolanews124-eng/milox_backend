@@ -236,6 +236,12 @@ export const setVerifiedBadgeSchema = z
   })
   .strict();
 
+export const setBroadcastEnabledSchema = z
+  .object({
+    broadcastEnabled: z.boolean(),
+  })
+  .strict();
+
 export const premiumBillingCycleSchema = z.enum([
   "MONTHLY",
   "YEARLY",

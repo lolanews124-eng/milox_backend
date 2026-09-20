@@ -8,6 +8,7 @@ import {
 } from "../../../premium/application/entitlements.js";
 import type { RewardsRepository } from "../ports/rewards-repository.js";
 import { RewardedAdDailyLimitError } from "../ports/rewards-repository.js";
+import { DailyCheckInAlreadyClaimedError } from "../ports/rewards-repository.js";
 import { ensureAppEconomyConfig } from "../../../economy/app-economy-config.js";
 
 export class RewardsService {
@@ -22,7 +23,7 @@ export class RewardsService {
     if (!wallet) {
       throw new AppError("WALLET_NOT_FOUND", "Milox Points not found", 404);
     }
-    const [entitlements, economy, sentToday] = await Promise.all([
+    const [entitlements, economy, sentToday, dailyCheckIn] = await Promise.all([
       resolveUserEntitlements(
         this.database,
         userId,
@@ -35,6 +36,7 @@ export class RewardsService {
           createdAt: { gte: startOfUtcDay() },
         },
       }),
+      this.repository.getDailyCheckInStatus(userId),
     ]);
     const freeDailyInterestGrants =
       typeof economy.freeDailyInterestGrants === "number"
@@ -62,6 +64,9 @@ export class RewardsService {
       ),
       // Sends are unlimited for everyone; null means no hard daily cap in clients.
       dailyInterestLimit: null,
+      dailyCheckInAvailable: !dailyCheckIn.claimedToday,
+      dailyCheckInStreak: dailyCheckIn.streakDays,
+      dailyCheckInPoints: dailyCheckIn.points,
     });
   }
 
@@ -108,6 +113,19 @@ export class RewardsService {
     });
   }
 
+  claimDailyCheckIn(userId: string) {
+    return this.repository.claimDailyCheckIn(userId).catch((error) => {
+      if (error instanceof DailyCheckInAlreadyClaimedError) {
+        throw new AppError(
+          "DAILY_CHECK_IN_CLAIMED",
+          "You already claimed today's check-in. Come back tomorrow!",
+          409,
+        );
+      }
+      throw error;
+    });
+  }
+
   async listPointPacks() {
     const packs = await this.repository.listActivePointPacks();
     return {
@@ -139,6 +157,9 @@ function presentWallet(wallet: {
   freeInterestsRemaining: number;
   dailyInterestLimit: number | null;
   paidInterestCost: number;
+  dailyCheckInAvailable: boolean;
+  dailyCheckInStreak: number;
+  dailyCheckInPoints: number;
 }) {
   return {
     balance: wallet.balance,
@@ -156,6 +177,9 @@ function presentWallet(wallet: {
     rewardedAdDailyLimit: wallet.rewardedAdDailyLimit,
     videoCallEnabled: wallet.videoCallEnabled,
     videoCallPointsPerMinute: wallet.videoCallPointsPerMinute,
+    dailyCheckInAvailable: wallet.dailyCheckInAvailable,
+    dailyCheckInStreak: wallet.dailyCheckInStreak,
+    dailyCheckInPoints: wallet.dailyCheckInPoints,
   };
 }
 
