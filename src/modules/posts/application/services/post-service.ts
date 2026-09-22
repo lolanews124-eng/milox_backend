@@ -20,6 +20,8 @@ import {
   normalizePostBodyForDuplicateCheck,
   postSpamLimitsFromConfig,
 } from "./post-spam-guard.js";
+import { prisma } from "../../../../infrastructure/prisma/client.js";
+import { recordDailyMission } from "../../../rewards/application/daily-engagement.js";
 
 export interface PostPage {
   items: object[];
@@ -98,6 +100,11 @@ export class PostService implements ProfileUpdatePostWriter {
             }
           : {}),
       });
+      if (!created.replayed) {
+        void recordDailyMission(prisma, this.config, authorId, "POST").catch(
+          () => undefined,
+        );
+      }
       return {
         item: presentPost(created.post, this.config),
         replayed: created.replayed,

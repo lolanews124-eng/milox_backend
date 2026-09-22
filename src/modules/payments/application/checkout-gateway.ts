@@ -1,7 +1,7 @@
 /**
- * India → INR; every other set profile country → USD.
- * Blank/unset country defaults to INR (India-first; avoids charging $ by accident).
- * Gateway is always Razorpay.
+ * India → Razorpay (INR).
+ * Every other set profile country → PayPal (USD).
+ * Blank/unset country defaults to India (India-first).
  */
 
 export function isIndiaCountry(country: string | null | undefined): boolean {
@@ -10,8 +10,10 @@ export function isIndiaCountry(country: string | null | undefined): boolean {
   return normalized === "india" || normalized === "in";
 }
 
+export type CheckoutGateway = "RAZORPAY" | "PAYPAL";
+
 export type CheckoutCurrencyResolution = {
-  gateway: "RAZORPAY";
+  gateway: CheckoutGateway;
   country: string;
   currency: "INR" | "USD";
   label: string;
@@ -30,10 +32,10 @@ export function resolveCheckoutCurrency(
     };
   }
   return {
-    gateway: "RAZORPAY",
+    gateway: "PAYPAL",
     country: raw,
     currency: "USD",
-    label: "Razorpay",
+    label: "PayPal",
   };
 }
 
@@ -41,4 +43,7 @@ export function resolveCheckoutCurrency(
 export const resolveCheckoutGateway = resolveCheckoutCurrency;
 
 export const INDIA_GATEWAY_UNAVAILABLE_MESSAGE =
-  "Coming soon. Payment gateway is not set up for Indian users yet.";
+  "Razorpay is not configured yet. Ask admin to add Key ID and Secret in Payments.";
+
+export const PAYPAL_GATEWAY_UNAVAILABLE_MESSAGE =
+  "PayPal is not configured yet. Ask admin to add Client ID and Secret in Payments.";

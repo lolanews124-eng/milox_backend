@@ -326,7 +326,7 @@ export class PrismaRewardsRepository implements RewardsRepository {
     points: number;
   }> {
     const points = this.config.DAILY_CHECK_IN_POINTS;
-    const todayKey = utcDayKey(new Date());
+    const todayKey = checkInDayKey(new Date(), this.config.DAILY_CHECK_IN_TIMEZONE);
     const claimedToday = Boolean(
       await this.database.walletTransaction.findUnique({
         where: { idempotencyKey: dailyCheckInKey(userId, todayKey) },
@@ -342,7 +342,7 @@ export class PrismaRewardsRepository implements RewardsRepository {
     balance: number;
     streakDays: number;
   }> {
-    const todayKey = utcDayKey(new Date());
+    const todayKey = checkInDayKey(new Date(), this.config.DAILY_CHECK_IN_TIMEZONE);
     const idempotencyKey = dailyCheckInKey(userId, todayKey);
     const amount = this.config.DAILY_CHECK_IN_POINTS;
 
@@ -354,39 +354,50 @@ export class PrismaRewardsRepository implements RewardsRepository {
       throw new DailyCheckInAlreadyClaimedError();
     }
 
-    const result = await this.database.$transaction(async (transaction) => {
-      await creditWallet(transaction, {
-        userId,
-        amount,
-        type: WalletTransactionType.DAILY_CHECK_IN,
-        idempotencyKey,
-        referenceType: "daily_check_in",
-        referenceId: todayKey,
-        description: "Daily check-in",
+    try {
+      const result = await this.database.$transaction(async (transaction) => {
+        await creditWallet(transaction, {
+          userId,
+          amount,
+          type: WalletTransactionType.DAILY_CHECK_IN,
+          idempotencyKey,
+          referenceType: "daily_check_in",
+          referenceId: todayKey,
+          description: "Daily check-in",
+        });
+
+        const wallet = await transaction.wallet.findUnique({
+          where: { userId },
+          select: { balance: true },
+        });
+        if (!wallet) {
+          throw new Error("Wallet missing after daily check-in credit");
+        }
+
+        return {
+          amount,
+          balance: wallet.balance,
+        };
       });
 
-      const wallet = await transaction.wallet.findUnique({
-        where: { userId },
-        select: { balance: true },
-      });
-      if (!wallet) {
-        throw new Error("Wallet missing after daily check-in credit");
+      const streakDays = await this.computeStreakDays(userId, true);
+      return { ...result, streakDays };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new DailyCheckInAlreadyClaimedError();
       }
-
-      return {
-        amount,
-        balance: wallet.balance,
-      };
-    });
-
-    const streakDays = await this.computeStreakDays(userId, true);
-    return { ...result, streakDays };
+      throw error;
+    }
   }
 
   private async computeStreakDays(
     userId: string,
     claimedToday: boolean,
   ): Promise<number> {
+    const timeZone = this.config.DAILY_CHECK_IN_TIMEZONE;
     const rows = await this.database.walletTransaction.findMany({
       where: {
         walletUserId: userId,
@@ -394,17 +405,23 @@ export class PrismaRewardsRepository implements RewardsRepository {
       },
       orderBy: { createdAt: "desc" },
       take: 60,
-      select: { createdAt: true },
+      select: { createdAt: true, referenceId: true },
     });
     if (rows.length === 0) return claimedToday ? 1 : 0;
 
-    const days = new Set(rows.map((row) => utcDayKey(row.createdAt)));
+    const days = new Set(
+      rows.map((row) =>
+        row.referenceId && /^\d{4}-\d{2}-\d{2}$/.test(row.referenceId)
+          ? row.referenceId
+          : checkInDayKey(row.createdAt, timeZone),
+      ),
+    );
     let cursor = new Date();
     if (!claimedToday) {
       cursor = new Date(cursor.getTime() - 86_400_000);
     }
     let streak = 0;
-    while (days.has(utcDayKey(cursor))) {
+    while (days.has(checkInDayKey(cursor, timeZone))) {
       streak += 1;
       cursor = new Date(cursor.getTime() - 86_400_000);
     }
@@ -431,8 +448,18 @@ function dailyCheckInKey(userId: string, dayKey: string): string {
   return `daily-checkin:${userId}:${dayKey}`;
 }
 
-function utcDayKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+/** Calendar day key in the given IANA timezone (YYYY-MM-DD). */
+function checkInDayKey(date: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 async function creditWallet(

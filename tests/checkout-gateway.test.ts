@@ -6,7 +6,7 @@ import {
 } from "../src/modules/payments/application/checkout-gateway.js";
 
 describe("checkout currency by country", () => {
-  it("shows INR for India profiles", () => {
+  it("shows INR + Razorpay for India profiles", () => {
     expect(resolveCheckoutCurrency("India")).toEqual({
       gateway: "RAZORPAY",
       country: "India",
@@ -17,14 +17,18 @@ describe("checkout currency by country", () => {
     expect(resolveCheckoutCurrency("in").currency).toBe("INR");
   });
 
-  it("shows USD for every other country", () => {
-    expect(resolveCheckoutCurrency("United States").currency).toBe("USD");
-    expect(resolveCheckoutCurrency("United States").gateway).toBe("RAZORPAY");
+  it("shows USD + PayPal for every other country", () => {
+    expect(resolveCheckoutCurrency("United States")).toEqual({
+      gateway: "PAYPAL",
+      country: "United States",
+      currency: "USD",
+      label: "PayPal",
+    });
   });
 
-  it("defaults blank country to INR (India-first)", () => {
+  it("defaults blank country to INR Razorpay (India-first)", () => {
     expect(resolveCheckoutCurrency(null).currency).toBe("INR");
-    expect(resolveCheckoutCurrency("").country).toBe("India");
+    expect(resolveCheckoutCurrency("").gateway).toBe("RAZORPAY");
     expect(isIndiaCountry(null)).toBe(true);
   });
 });

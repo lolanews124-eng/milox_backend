@@ -54,6 +54,7 @@ import {
   updateAdPlacementConfigSchema,
   updateMobileAppConfigSchema,
   updateRazorpaySettingsSchema,
+  updatePaypalSettingsSchema,
   updateEmailSettingsSchema,
   testEmailSettingsSchema,
   emailCampaignAudienceSchema,
@@ -739,6 +740,34 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const data = await this.admin.testRazorpaySettings();
+    response.status(200).json(success(request, data));
+  };
+
+  getPaypalSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.getPaypalSettings();
+    response.status(200).json(success(request, data));
+  };
+
+  updatePaypalSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updatePaypalSettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.updatePaypalSettings(
+      requireUser(request),
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  testPaypalSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.testPaypalSettings();
     response.status(200).json(success(request, data));
   };
 

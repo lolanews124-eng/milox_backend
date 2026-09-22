@@ -464,6 +464,24 @@ export function createAdminRouter(
     asyncHandler(controller.testRazorpaySettings),
   );
   router.get(
+    "/paypal",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.getPaypalSettings),
+  );
+  router.patch(
+    "/paypal",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.updatePaypalSettings),
+  );
+  router.post(
+    "/paypal/test",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.testPaypalSettings),
+  );
+  router.get(
     "/email-settings",
     readLimit,
     superAdminOnly,

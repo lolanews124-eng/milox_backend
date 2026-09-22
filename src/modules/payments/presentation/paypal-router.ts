@@ -24,7 +24,6 @@ export function createPaypalRouter(
     buyLimit,
     asyncHandler(controller.createCheckout),
   );
-  // Legacy create paths (older app builds).
   router.post(
     "/paypal/orders",
     authenticate,
@@ -50,18 +49,18 @@ export function createPaypalRouter(
     buyLimit,
     asyncHandler(controller.verifyRazorpay),
   );
-  // Old capture path → verify (expects Razorpay fields).
-  router.post(
-    "/checkout/capture",
-    authenticate,
-    buyLimit,
-    asyncHandler(controller.verifyRazorpay),
-  );
+
   router.post(
     "/paypal/capture",
     authenticate,
     buyLimit,
-    asyncHandler(controller.verifyRazorpay),
+    asyncHandler(controller.capturePaypal),
+  );
+  router.post(
+    "/checkout/capture",
+    authenticate,
+    buyLimit,
+    asyncHandler(controller.capturePaypal),
   );
 
   router.post(
@@ -75,6 +74,11 @@ export function createPaypalRouter(
     "/razorpay/webhook",
     webhookLimit,
     asyncHandler(controller.razorpayWebhook),
+  );
+  router.post(
+    "/paypal/webhook",
+    webhookLimit,
+    asyncHandler(controller.paypalWebhook),
   );
 
   return router;

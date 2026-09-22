@@ -24,6 +24,7 @@ import {
   InterestIdempotencyConflictError,
 } from "../ports/interest-repository.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
+import { recordDailyMission } from "../../../rewards/application/daily-engagement.js";
 import {
   presentInterest,
   presentMatch,
@@ -79,6 +80,14 @@ export class InterestService {
         },
       });
       if (!created) throw new AppError("NOT_FOUND", "User not found", 404);
+      if (!created.replayed) {
+        void recordDailyMission(
+          this.database,
+          this.config,
+          senderId,
+          "INTEREST",
+        ).catch(() => undefined);
+      }
       return {
         item: presentInterest(created.interest, this.config),
         replayed: created.replayed,

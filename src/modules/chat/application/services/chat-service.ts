@@ -31,6 +31,7 @@ import {
   presentMessage,
 } from "../chat-view.js";
 import { presentPublicAuthor } from "../../../posts/application/post-view.js";
+import { recordDailyMission } from "../../../rewards/application/daily-engagement.js";
 
 export interface ChatPage {
   items: object[];
@@ -375,6 +376,12 @@ export class ChatService {
       if (!created) throw conversationNotFound();
       if (!created.replayed) {
         this.hooks?.wakeOutbox?.();
+        void recordDailyMission(
+          this.database,
+          this.config,
+          senderId,
+          "CHAT",
+        ).catch(() => undefined);
       }
       return {
         item: presentMessage(created.message, this.config),

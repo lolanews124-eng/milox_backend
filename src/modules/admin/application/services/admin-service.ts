@@ -64,11 +64,15 @@ import {
   presentRazorpaySettings,
 } from "../../../payments/application/razorpay-settings.js";
 import {
+  presentPaypalSettings,
+} from "../../../payments/application/paypal-settings.js";
+import {
   presentEmailSettings,
   resolveEmailRuntime,
 } from "../../../../jobs/email/email-settings.js";
 import { sendViaZeptoMail } from "../../../../jobs/email/zeptomail-client.js";
 import type { RazorpayClient } from "../../../payments/infrastructure/razorpay-client.js";
+import type { PaypalClient } from "../../../payments/infrastructure/paypal-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
 import {
@@ -93,6 +97,10 @@ export class AdminService {
     private readonly calls?: CallService,
     private readonly appConfig?: AppConfig,
     private readonly onEmailSettingsUpdated?: () => void,
+    private readonly paypal?: {
+      config: AppConfig;
+      client: PaypalClient;
+    },
   ) {}
 
   private requireEmailCampaigns(): EmailCampaignService {
@@ -1252,6 +1260,59 @@ export class AdminService {
   async testRazorpaySettings(): Promise<object> {
     const razorpay = this.requireRazorpay();
     return razorpay.client.verifyCredentials();
+  }
+
+  private requirePaypal() {
+    if (!this.paypal) {
+      throw new AppError(
+        "PAYPAL_NOT_CONFIGURED",
+        "PayPal is not available",
+        503,
+      );
+    }
+    return this.paypal;
+  }
+
+  async getPaypalSettings(): Promise<object> {
+    const paypal = this.requirePaypal();
+    const [row, runtime] = await Promise.all([
+      this.repository.getPaypalSettings(),
+      paypal.client.runtime(),
+    ]);
+    return presentPaypalSettings(row, paypal.config, runtime);
+  }
+
+  async updatePaypalSettings(
+    actorId: string,
+    input: {
+      clientId?: string | undefined;
+      clientSecret?: string | undefined;
+      mode?: "sandbox" | "live" | undefined;
+      webhookId?: string | undefined;
+      clearSecret?: boolean | undefined;
+    },
+  ): Promise<object> {
+    const paypal = this.requirePaypal();
+    try {
+      const row = await this.repository.updatePaypalSettings({
+        actorId,
+        encryptionSecret: paypal.config.JWT_ACCESS_SECRET,
+        ...input,
+      });
+      paypal.client.invalidate();
+      const runtime = await paypal.client.runtime();
+      return presentPaypalSettings(row, paypal.config, runtime);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async testPaypalSettings(): Promise<object> {
+    const paypal = this.requirePaypal();
+    return paypal.client.verifyCredentials();
   }
 
   private requireAppConfig(): AppConfig {

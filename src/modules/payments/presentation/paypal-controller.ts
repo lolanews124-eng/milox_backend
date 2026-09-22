@@ -4,6 +4,7 @@ import { PremiumBillingCycle } from "@prisma/client";
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { CheckoutService } from "../application/checkout-service.js";
 import {
+  capturePaypalSchema,
   createPaypalCheckoutSchema,
   markCheckoutSchema,
   verifyRazorpaySchema,
@@ -67,6 +68,21 @@ export class PaypalController {
     });
   };
 
+  capturePaypal = async (request: Request, response: Response): Promise<void> => {
+    const userId = request.auth?.userId;
+    const input = capturePaypalSchema.parse(request.body as unknown);
+    const orderId = input.paypalOrderId || input.providerOrderId || input.token;
+    if (!orderId) {
+      throw new AppError("VALIDATION_ERROR", "PayPal order id required", 400);
+    }
+    const data = await this.checkout.captureProviderOrder(orderId, userId);
+    response.status(200).json({
+      success: true,
+      data,
+      meta: { requestId: request.requestId },
+    });
+  };
+
   markCancelled = async (request: Request, response: Response): Promise<void> => {
     const userId = request.auth?.userId;
     const input = markCheckoutSchema.parse(request.body as unknown);
@@ -93,6 +109,24 @@ export class PaypalController {
           : JSON.stringify(request.body ?? {}));
     const signature = String(request.header("x-razorpay-signature") ?? "");
     await this.checkout.handleRazorpayWebhook(raw, signature);
+    response.status(200).json({ success: true });
+  };
+
+  paypalWebhook = async (request: Request, response: Response): Promise<void> => {
+    const raw =
+      (request as Request & { rawBody?: string }).rawBody ??
+      (typeof request.body === "string"
+        ? request.body
+        : Buffer.isBuffer(request.body)
+          ? request.body.toString("utf8")
+          : JSON.stringify(request.body ?? {}));
+    await this.checkout.handlePaypalWebhook(raw, {
+      authAlgo: String(request.header("paypal-auth-algo") ?? ""),
+      certUrl: String(request.header("paypal-cert-url") ?? ""),
+      transmissionId: String(request.header("paypal-transmission-id") ?? ""),
+      transmissionSig: String(request.header("paypal-transmission-sig") ?? ""),
+      transmissionTime: String(request.header("paypal-transmission-time") ?? ""),
+    });
     response.status(200).json({ success: true });
   };
 }

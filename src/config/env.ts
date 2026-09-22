@@ -88,8 +88,10 @@ const envSchema = z
       .transform((value) => (value === 10 ? 40 : value)),
     REWARDED_AD_POINTS: z.coerce.number().int().positive().max(500).default(20),
     REWARDED_AD_DAILY_LIMIT: z.coerce.number().int().positive().max(50).default(10),
-    /** Points awarded once per UTC day for opening the app / claiming check-in. */
+    /** Points awarded once per calendar day (see DAILY_CHECK_IN_TIMEZONE). */
     DAILY_CHECK_IN_POINTS: z.coerce.number().int().positive().max(200).default(25),
+    /** IANA timezone for daily check-in day boundaries (India-first default). */
+    DAILY_CHECK_IN_TIMEZONE: z.string().min(1).default("Asia/Kolkata"),
     PAYPAL_CLIENT_ID: z.string().default(""),
     PAYPAL_CLIENT_SECRET: z.string().default(""),
     PAYPAL_MODE: z.enum(["sandbox", "live"]).default("sandbox"),

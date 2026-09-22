@@ -7,11 +7,16 @@ import {
 import type { AppConfig } from "../../../config/env.js";
 import { AppError } from "../../../shared/errors/app-error.js";
 import { getUsdInrRate } from "../../economy/app-economy-config.js";
-import { resolveCheckoutCurrency } from "./checkout-gateway.js";
+import {
+  INDIA_GATEWAY_UNAVAILABLE_MESSAGE,
+  PAYPAL_GATEWAY_UNAVAILABLE_MESSAGE,
+  resolveCheckoutCurrency,
+} from "./checkout-gateway.js";
 import {
   convertAmountMinor,
   presentMoneyForCountry,
 } from "./payment-money.js";
+import { PaypalService } from "./paypal-service.js";
 import { RazorpayService } from "./razorpay-service.js";
 
 type CheckoutInput =
@@ -19,18 +24,16 @@ type CheckoutInput =
   | { kind: "PREMIUM"; planId: string; billingCycle: PremiumBillingCycle }
   | { kind: "VERIFIED_BADGE" };
 
-const UNAVAILABLE =
-  "Razorpay is not configured yet. Ask admin to add Key ID and Secret in Payments.";
-
 /**
- * Razorpay only. Admin enters one base price; India sees/pays INR,
- * international sees/pays USD (converted via economy usdInrRate).
+ * India → Razorpay (INR). International → PayPal (USD).
+ * Admin enters one base price; currency converts via economy usdInrRate.
  */
 export class CheckoutService {
   constructor(
     private readonly database: PrismaClient,
     private readonly _config: AppConfig,
     private readonly razorpay: RazorpayService,
+    private readonly paypal: PaypalService,
   ) {}
 
   async getOptions(userId: string) {
@@ -52,7 +55,6 @@ export class CheckoutService {
       },
     });
 
-    // One admin price per pack. If old INR+USD duplicates exist, keep one row per points.
     const chargeCurrency = resolved.currency;
     const ranked = [...rows].sort((a, b) => {
       const aMatch = a.currency.toUpperCase() === chargeCurrency ? 0 : 1;
@@ -87,28 +89,36 @@ export class CheckoutService {
       };
     });
 
-    const razorpayConfigured = await this.razorpay.isConfigured();
-    const checkoutAvailable = razorpayConfigured;
-    const unavailableReason = razorpayConfigured ? null : UNAVAILABLE;
+    const [razorpayConfigured, paypalConfigured] = await Promise.all([
+      this.razorpay.isConfigured(),
+      this.paypal.isConfigured(),
+    ]);
+    const gatewayReady =
+      resolved.gateway === "RAZORPAY" ? razorpayConfigured : paypalConfigured;
+    const unavailableReason = gatewayReady
+      ? null
+      : resolved.gateway === "RAZORPAY"
+        ? INDIA_GATEWAY_UNAVAILABLE_MESSAGE
+        : PAYPAL_GATEWAY_UNAVAILABLE_MESSAGE;
 
     return {
-      gateway: "RAZORPAY" as const,
+      gateway: resolved.gateway,
       country: resolved.country,
       profileCountry: user?.country ?? null,
       currency: resolved.currency,
       usdInrRate,
-      gatewayLabel: "Razorpay",
-      payingAsMessage: `Paying as ${resolved.country} · prices in ${resolved.currency}`,
+      gatewayLabel: resolved.label,
+      payingAsMessage: `Paying as ${resolved.country} · prices in ${resolved.currency} · ${resolved.label}`,
       changeCountryHint: unavailableReason
         ? unavailableReason
         : packs.length === 0
           ? "No point packs published yet. Add a pack price in admin (one price is enough)."
-          : "Wrong country? Update it in Profile — India sees ₹, others see $.",
-      checkoutAvailable,
+          : "Wrong country? Update it in Profile — India pays with Razorpay (₹), others with PayPal ($).",
+      checkoutAvailable: gatewayReady,
       unavailableReason,
-      packs: checkoutAvailable ? packs : [],
+      packs: gatewayReady ? packs : [],
       razorpayConfigured,
-      paypalConfigured: false,
+      paypalConfigured,
       cashfreeConfigured: false,
     };
   }
@@ -118,12 +128,33 @@ export class CheckoutService {
       where: { id: userId },
       select: { country: true, email: true, username: true },
     });
-    const ready = await this.razorpay.isConfigured();
-    if (!ready) {
-      throw new AppError("PAYMENT_GATEWAY_UNAVAILABLE", UNAVAILABLE, 503);
-    }
     const resolved = resolveCheckoutCurrency(user?.country);
     const usdInrRate = await getUsdInrRate(this.database);
+
+    if (resolved.gateway === "PAYPAL") {
+      const ready = await this.paypal.isConfigured();
+      if (!ready) {
+        throw new AppError(
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          PAYPAL_GATEWAY_UNAVAILABLE_MESSAGE,
+          503,
+        );
+      }
+      return this.paypal.createCheckout(userId, input, {
+        country: resolved.country,
+        chargeCurrency: resolved.currency,
+        usdInrRate,
+      });
+    }
+
+    const ready = await this.razorpay.isConfigured();
+    if (!ready) {
+      throw new AppError(
+        "PAYMENT_GATEWAY_UNAVAILABLE",
+        INDIA_GATEWAY_UNAVAILABLE_MESSAGE,
+        503,
+      );
+    }
     return this.razorpay.createCheckout(userId, input, {
       country: resolved.country,
       email: user?.email ?? null,
@@ -142,12 +173,24 @@ export class CheckoutService {
     return this.razorpay.verifyAndFulfill(input);
   }
 
-  async captureProviderOrder(_providerOrderId: string) {
-    throw new AppError(
-      "VALIDATION_ERROR",
-      "Use Razorpay verify with paymentId and signature",
-      400,
-    );
+  async captureProviderOrder(providerOrderId: string, userId?: string) {
+    const checkout = await this.database.paypalCheckout.findUnique({
+      where: { paypalOrderId: providerOrderId },
+    });
+    if (!checkout) {
+      throw new AppError("NOT_FOUND", "Checkout not found", 404);
+    }
+    if (userId && checkout.userId !== userId) {
+      throw new AppError("FORBIDDEN", "Not your checkout", 403);
+    }
+    if (checkout.gateway === "RAZORPAY") {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Use Razorpay verify with paymentId and signature",
+        400,
+      );
+    }
+    return this.paypal.captureByPaypalOrderId(providerOrderId);
   }
 
   async markCancelled(providerOrderId: string, userId?: string) {
@@ -163,7 +206,6 @@ export class CheckoutService {
     if (checkout.status === PaypalCheckoutStatus.COMPLETED) {
       return { ok: true, status: checkout.status };
     }
-    // Never cancel a checkout that already has a provider capture id — fulfill may still run.
     if (checkout.paypalCaptureId) {
       return { ok: true, status: checkout.status };
     }
@@ -179,6 +221,19 @@ export class CheckoutService {
 
   async handleRazorpayWebhook(rawBody: string, signature: string) {
     return this.razorpay.handleWebhook(rawBody, signature);
+  }
+
+  async handlePaypalWebhook(
+    rawBody: string,
+    headers: {
+      authAlgo: string;
+      certUrl: string;
+      transmissionId: string;
+      transmissionSig: string;
+      transmissionTime: string;
+    },
+  ) {
+    return this.paypal.handleWebhook(rawBody, headers);
   }
 }
 

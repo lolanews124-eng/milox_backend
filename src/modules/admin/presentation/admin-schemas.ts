@@ -409,6 +409,16 @@ export const updateRazorpaySettingsSchema = z
   })
   .strict();
 
+export const updatePaypalSettingsSchema = z
+  .object({
+    clientId: z.string().trim().max(255).optional(),
+    clientSecret: z.string().trim().max(2000).optional(),
+    mode: z.enum(["sandbox", "live"]).optional(),
+    webhookId: z.string().trim().max(255).optional(),
+    clearSecret: z.boolean().optional(),
+  })
+  .strict();
+
 export const updateEmailSettingsSchema = z
   .object({
     apiUrl: z.string().trim().url().max(255).optional(),

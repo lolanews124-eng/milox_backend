@@ -162,6 +162,8 @@ enum WalletTransactionType {
   POINT_PURCHASE
   VIDEO_CALL
   DAILY_CHECK_IN
+  DAILY_MISSION
+  STREAK_MILESTONE
 }
 
 enum CallSessionStatus {

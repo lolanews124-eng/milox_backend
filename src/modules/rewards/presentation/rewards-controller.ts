@@ -12,9 +12,15 @@ export class RewardsController {
 
   getWallet = async (request: Request, response: Response): Promise<void> => {
     const userId = requireUserId(request);
+    const syncRaw = request.query.syncEngagement;
+    const syncEngagement =
+      syncRaw === "1" ||
+      syncRaw === "true" ||
+      (Array.isArray(syncRaw) &&
+        (syncRaw[0] === "1" || syncRaw[0] === "true"));
     response.status(200).json({
       success: true,
-      data: await this.rewards.getWallet(userId),
+      data: await this.rewards.getWallet(userId, { syncEngagement }),
       meta: { requestId: request.requestId },
     });
   };
@@ -57,6 +63,18 @@ export class RewardsController {
     response.status(200).json({
       success: true,
       data: result,
+      meta: { requestId: request.requestId },
+    });
+  };
+
+  getDailyEngagement = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const userId = requireUserId(request);
+    response.status(200).json({
+      success: true,
+      data: await this.rewards.getDailyEngagement(userId),
       meta: { requestId: request.requestId },
     });
   };

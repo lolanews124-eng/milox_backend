@@ -25,6 +25,11 @@ export function createRewardsRouter(
     asyncHandler(controller.claimDailyCheckIn),
   );
   router.get(
+    "/daily-engagement",
+    authenticate,
+    asyncHandler(controller.getDailyEngagement),
+  );
+  router.get(
     "/wallet/transactions",
     authenticate,
     asyncHandler(controller.listTransactions),

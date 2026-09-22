@@ -10,6 +10,12 @@ import type { RewardsRepository } from "../ports/rewards-repository.js";
 import { RewardedAdDailyLimitError } from "../ports/rewards-repository.js";
 import { DailyCheckInAlreadyClaimedError } from "../ports/rewards-repository.js";
 import { ensureAppEconomyConfig } from "../../../economy/app-economy-config.js";
+import {
+  awardStreakMilestoneIfNeeded,
+  getDailyEngagement,
+  recordDailyMission,
+  type DailyMissionId,
+} from "../daily-engagement.js";
 
 export class RewardsService {
   constructor(
@@ -18,7 +24,8 @@ export class RewardsService {
     private readonly database: PrismaClient,
   ) {}
 
-  async getWallet(userId: string) {
+  async getWallet(userId: string, options: { syncEngagement?: boolean } = {}) {
+    const syncEngagement = options.syncEngagement === true;
     const wallet = await this.repository.getWalletSummary(userId);
     if (!wallet) {
       throw new AppError("WALLET_NOT_FOUND", "Milox Points not found", 404);
@@ -38,11 +45,39 @@ export class RewardsService {
       }),
       this.repository.getDailyCheckInStatus(userId),
     ]);
+
+    if (syncEngagement && dailyCheckIn.streakDays >= 7) {
+      try {
+        await awardStreakMilestoneIfNeeded(
+          this.database,
+          this.config,
+          userId,
+          dailyCheckIn.streakDays,
+        );
+      } catch {
+        /* optional */
+      }
+    }
+
+    const dailyEngagement = await getDailyEngagement(
+      this.database,
+      this.config,
+      userId,
+      dailyCheckIn.streakDays,
+      { sync: syncEngagement },
+    );
+
+    // Only re-read balance after sync path (may have credited missions/badge).
+    const balanced =
+      syncEngagement
+        ? ((await this.repository.getWalletSummary(userId)) ?? wallet)
+        : wallet;
+
     const freeDailyInterestGrants =
       typeof economy.freeDailyInterestGrants === "number"
         ? Math.max(0, Math.min(100, Math.trunc(economy.freeDailyInterestGrants)))
         : this.config.FREE_DAILY_INTEREST_GRANTS;
-    const baseInterestCost = wallet.interestSendCost;
+    const baseInterestCost = balanced.interestSendCost;
     const nextInterestCost = resolveInterestSendCost(
       entitlements,
       baseInterestCost,
@@ -50,7 +85,7 @@ export class RewardsService {
       freeDailyInterestGrants,
     );
     return presentWallet({
-      ...wallet,
+      ...balanced,
       videoCallEnabled: economy.videoCallEnabled,
       videoCallPointsPerMinute: economy.videoCallPointsPerMinute,
       interestSendCost: nextInterestCost,
@@ -62,12 +97,39 @@ export class RewardsService {
         sentToday,
         freeDailyInterestGrants,
       ),
-      // Sends are unlimited for everyone; null means no hard daily cap in clients.
       dailyInterestLimit: null,
       dailyCheckInAvailable: !dailyCheckIn.claimedToday,
       dailyCheckInStreak: dailyCheckIn.streakDays,
       dailyCheckInPoints: dailyCheckIn.points,
+      dailyEngagement,
     });
+  }
+
+  async getDailyEngagement(userId: string) {
+    const status = await this.repository.getDailyCheckInStatus(userId);
+    if (status.streakDays >= 7) {
+      try {
+        await awardStreakMilestoneIfNeeded(
+          this.database,
+          this.config,
+          userId,
+          status.streakDays,
+        );
+      } catch {
+        /* optional */
+      }
+    }
+    return getDailyEngagement(
+      this.database,
+      this.config,
+      userId,
+      status.streakDays,
+      { sync: true },
+    );
+  }
+
+  recordMission(userId: string, mission: DailyMissionId) {
+    return recordDailyMission(this.database, this.config, userId, mission);
   }
 
   async listTransactions(userId: string, limit: number) {
@@ -113,8 +175,46 @@ export class RewardsService {
     });
   }
 
-  claimDailyCheckIn(userId: string) {
-    return this.repository.claimDailyCheckIn(userId).catch((error) => {
+  async claimDailyCheckIn(userId: string) {
+    try {
+      const result = await this.repository.claimDailyCheckIn(userId);
+      let milestone: { awarded: number; badge: string | null } = {
+        awarded: 0,
+        badge: null,
+      };
+      try {
+        milestone = await awardStreakMilestoneIfNeeded(
+          this.database,
+          this.config,
+          userId,
+          result.streakDays,
+        );
+      } catch (milestoneError) {
+        // Check-in already credited — never fail the claim because the
+        // optional streak badge credit hit a transient/enum issue.
+        const message =
+          milestoneError instanceof Error
+            ? milestoneError.message
+            : String(milestoneError);
+        if (
+          !(
+            message.includes("STREAK_MILESTONE") ||
+            message.includes("invalid input value for enum") ||
+            message.includes("DAILY_MISSION")
+          )
+        ) {
+          // Unexpected — still return check-in success; badge can sync later.
+        }
+      }
+      return {
+        amount: result.amount,
+        checkInAmount: result.amount,
+        balance: result.balance + milestone.awarded,
+        streakDays: result.streakDays,
+        streakBadgeAwarded: milestone.badge,
+        streakBadgePoints: milestone.awarded,
+      };
+    } catch (error) {
       if (error instanceof DailyCheckInAlreadyClaimedError) {
         throw new AppError(
           "DAILY_CHECK_IN_CLAIMED",
@@ -122,8 +222,19 @@ export class RewardsService {
           409,
         );
       }
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.includes("DAILY_CHECK_IN") ||
+        message.includes("invalid input value for enum")
+      ) {
+        throw new AppError(
+          "DAILY_CHECK_IN_UNAVAILABLE",
+          "Daily check-in is temporarily unavailable. Please try again later.",
+          503,
+        );
+      }
       throw error;
-    });
+    }
   }
 
   async listPointPacks() {
@@ -160,6 +271,7 @@ function presentWallet(wallet: {
   dailyCheckInAvailable: boolean;
   dailyCheckInStreak: number;
   dailyCheckInPoints: number;
+  dailyEngagement: Awaited<ReturnType<typeof getDailyEngagement>>;
 }) {
   return {
     balance: wallet.balance,
@@ -180,6 +292,7 @@ function presentWallet(wallet: {
     dailyCheckInAvailable: wallet.dailyCheckInAvailable,
     dailyCheckInStreak: wallet.dailyCheckInStreak,
     dailyCheckInPoints: wallet.dailyCheckInPoints,
+    dailyEngagement: wallet.dailyEngagement,
   };
 }
 

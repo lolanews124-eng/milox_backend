@@ -46,10 +46,17 @@ export class PaypalService {
       | { kind: "POINT_PACK"; packId: string }
       | { kind: "PREMIUM"; planId: string; billingCycle: PremiumBillingCycle }
       | { kind: "VERIFIED_BADGE" },
-    options?: { country?: string | null },
+    options?: {
+      country?: string | null;
+      chargeCurrency?: "INR" | "USD";
+      usdInrRate?: number;
+    },
   ) {
     await this.paypal.requireConfigured();
-    const prepared = await this.prepare(userId, input);
+    const prepared = await this.prepare(userId, input, {
+      chargeCurrency: options?.chargeCurrency,
+      usdInrRate: options?.usdInrRate,
+    });
     const checkoutId = randomUUID();
     const returnUrl = `${this.config.PUBLIC_WEB_ORIGIN.replace(/\/+$/, "")}/checkout/paypal`;
     const created = await this.paypal.createOrder({
@@ -89,6 +96,9 @@ export class PaypalService {
       kind: prepared.kind,
       currency: prepared.currency,
       amountMinor: prepared.amountMinor,
+      amount: prepared.amountMinor,
+      description: prepared.description,
+      name: "Milox",
     };
   }
 

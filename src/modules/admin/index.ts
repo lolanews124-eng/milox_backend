@@ -10,6 +10,7 @@ import { VerifiedBadgeService } from "../premium/application/verified-badge-serv
 import { AdminController } from "./presentation/admin-controller.js";
 import { createAdminRouter } from "./presentation/admin-router.js";
 import type { RazorpayClient } from "../payments/infrastructure/razorpay-client.js";
+import type { PaypalClient } from "../payments/infrastructure/paypal-client.js";
 
 import type { OfficialChatService } from "../official-chat/application/official-chat-service.js";
 import type { CallService } from "../calls/application/call-service.js";
@@ -27,6 +28,7 @@ export function createAdminModule(
   razorpayClient?: RazorpayClient,
   calls?: CallService,
   onEmailSettingsUpdated?: () => void,
+  paypalClient?: PaypalClient,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
   const service = new AdminService(
@@ -37,6 +39,7 @@ export function createAdminModule(
     calls,
     config,
     onEmailSettingsUpdated,
+    paypalClient ? { config, client: paypalClient } : undefined,
   );
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),

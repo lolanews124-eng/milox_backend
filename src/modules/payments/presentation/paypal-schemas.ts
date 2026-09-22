@@ -37,6 +37,19 @@ export const verifyRazorpaySchema = z
     message: "razorpay_order_id, razorpay_payment_id and razorpay_signature required",
   });
 
+export const capturePaypalSchema = z
+  .object({
+    paypalOrderId: z.string().trim().min(1).max(64).optional(),
+    providerOrderId: z.string().trim().min(1).max(64).optional(),
+    token: z.string().trim().min(1).max(64).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Boolean(value.paypalOrderId || value.providerOrderId || value.token),
+    { message: "paypalOrderId required" },
+  );
+
 export const markCheckoutSchema = z
   .object({
     paypalOrderId: z.string().trim().min(1).max(64).optional(),

@@ -4,6 +4,56 @@ import { z } from "zod";
 const nullableTrimmed = (max: number) =>
   z.union([z.string().trim().max(max), z.null()]);
 
+/** Accept handle, @handle, or full Instagram URL → bare handle. */
+export function normalizeInstagramHandle(raw: string): string | null {
+  let value = raw.trim();
+  if (!value) return null;
+  value = value.replace(/^@+/, "");
+
+  const fromUrl = value.match(
+    /(?:https?:\/\/)?(?:www\.)?instagram\.com\/([a-zA-Z0-9._]+)\/?/i,
+  );
+  if (fromUrl?.[1]) {
+    value = fromUrl[1];
+  } else {
+    value = value.split(/[/?#]/)[0] ?? value;
+  }
+
+  value = value.replace(/^@+/, "").trim();
+  if (!value) return null;
+  if (!/^[a-zA-Z0-9._]{1,64}$/.test(value)) {
+    throw new Error("INVALID_INSTAGRAM_HANDLE");
+  }
+  return value;
+}
+
+/** Accept bare domains / www / https → absolute https URL. */
+export function normalizeWebsiteUrl(raw: string): string | null {
+  let value = raw.trim();
+  if (!value) return null;
+
+  if (!/^https?:\/\//i.test(value)) {
+    value = `https://${value.replace(/^\/\//, "")}`;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("INVALID_WEBSITE_URL");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("INVALID_WEBSITE_URL");
+  }
+
+  const href = parsed.toString();
+  if (href.length > 255) {
+    throw new Error("WEBSITE_URL_TOO_LONG");
+  }
+  return href;
+}
+
 export const searchUsersQuerySchema = z.object({
   q: z.string().trim().min(1).max(64),
   cursor: z.string().min(1).max(512).optional(),
@@ -48,16 +98,43 @@ export const updateProfileSchema = z
       .nullable()
       .optional(),
     websiteUrl: z
-      .union([z.string().trim().url().max(255), z.null()])
+      .union([
+        z
+          .string()
+          .trim()
+          .max(255)
+          .transform((value, ctx) => {
+            try {
+              return normalizeWebsiteUrl(value);
+            } catch {
+              ctx.addIssue({
+                code: "custom",
+                message: "Enter a valid website link (e.g. https://example.com)",
+              });
+              return z.NEVER;
+            }
+          }),
+        z.null(),
+      ])
       .optional(),
     instagramHandle: z
       .union([
         z
           .string()
           .trim()
-          .max(64)
-          .regex(/^@?[a-zA-Z0-9._]+$/)
-          .transform((value) => value.replace(/^@/, "")),
+          .max(255)
+          .transform((value, ctx) => {
+            try {
+              return normalizeInstagramHandle(value);
+            } catch {
+              ctx.addIssue({
+                code: "custom",
+                message:
+                  "Enter an Instagram username (e.g. jane_doe) or profile link",
+              });
+              return z.NEVER;
+            }
+          }),
         z.null(),
       ])
       .optional(),
