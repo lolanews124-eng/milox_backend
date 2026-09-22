@@ -11,7 +11,7 @@ import type { AppConfig } from "../../config/env.js";
 import type { ChatIo } from "../../modules/chat/realtime/chat-gateway.js";
 import type { NotificationService } from "../../modules/notifications/application/services/notification-service.js";
 import type { PushSender } from "../../modules/push/application/services/fcm-push-sender.js";
-import { runSerializableTransaction } from "../../shared/prisma-serializable-transaction.js";
+import { claimNextOutboxEvent } from "../../shared/claim-outbox-event.js";
 
 const directPayloadSchema = z.object({
   actorId: z.uuid(),
@@ -105,7 +105,10 @@ export class NotificationOutboxWorker {
         try {
           event = await this.claimNextEvent();
         } catch (error) {
-          console.error("Notification outbox claim failed", error);
+          console.warn(
+            "Notification outbox claim deferred",
+            error instanceof Error ? error.message : error,
+          );
           return;
         }
         if (!event) return;
@@ -208,28 +211,7 @@ export class NotificationOutboxWorker {
   }
 
   private claimNextEvent(): Promise<OutboxEvent | null> {
-    return runSerializableTransaction(this.database, async (transaction) => {
-      const event = await transaction.outboxEvent.findFirst({
-        where: {
-          eventType: { in: NOTIFICATION_EVENTS },
-          status: OutboxStatus.PENDING,
-          availableAt: { lte: new Date() },
-        },
-        orderBy: { createdAt: "asc" },
-      });
-      if (!event) return null;
-      const claimed = await transaction.outboxEvent.updateMany({
-        where: { id: event.id, status: OutboxStatus.PENDING },
-        data: {
-          status: OutboxStatus.PROCESSING,
-          attempts: { increment: 1 },
-        },
-      });
-      if (claimed.count !== 1) return null;
-      return transaction.outboxEvent.findUnique({
-        where: { id: event.id },
-      });
-    });
+    return claimNextOutboxEvent(this.database, NOTIFICATION_EVENTS);
   }
 
   private async failOrRetry(

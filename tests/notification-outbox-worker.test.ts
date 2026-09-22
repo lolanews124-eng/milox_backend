@@ -69,22 +69,12 @@ describe("NotificationOutboxWorker", () => {
 });
 
 function createHarness(event: OutboxEvent) {
-  const transaction = {
-    outboxEvent: {
-      findFirst: vi
-        .fn()
-        .mockResolvedValueOnce(event)
-        .mockResolvedValue(null),
-      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-      findUnique: vi.fn().mockResolvedValue(event),
-    },
-  };
   const update = vi.fn().mockResolvedValue({});
   const database = {
-    $transaction: vi.fn(
-      (callback: (client: typeof transaction) => unknown) =>
-        callback(transaction),
-    ),
+    $queryRaw: vi
+      .fn()
+      .mockResolvedValueOnce([event])
+      .mockResolvedValue([]),
     outboxEvent: { update, updateMany: vi.fn() },
   } as unknown as PrismaClient;
   const emit = vi.fn();
