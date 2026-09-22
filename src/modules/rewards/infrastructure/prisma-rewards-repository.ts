@@ -362,8 +362,9 @@ export class PrismaRewardsRepository implements RewardsRepository {
           type: WalletTransactionType.DAILY_CHECK_IN,
           idempotencyKey,
           referenceType: "daily_check_in",
-          referenceId: todayKey,
-          description: "Daily check-in",
+          // referenceId is @db.Uuid — do not store day keys here.
+          // Streak uses createdAt / idempotencyKey instead.
+          description: `Daily check-in (${todayKey})`,
         });
 
         const wallet = await transaction.wallet.findUnique({

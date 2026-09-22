@@ -88,7 +88,8 @@ async function creditOnce(
     type: WalletTransactionType;
     idempotencyKey: string;
     referenceType: string;
-    referenceId: string;
+    /** Must be a UUID when set — day keys are not valid here. */
+    referenceId?: string | null;
     description: string;
   },
 ): Promise<{ awarded: boolean; balance: number | null; amount: number }> {
@@ -121,7 +122,7 @@ async function creditOnce(
           amount: input.amount,
           balanceAfter: wallet.balance,
           referenceType: input.referenceType,
-          referenceId: input.referenceId,
+          referenceId: input.referenceId ?? null,
           idempotencyKey: input.idempotencyKey,
           description: input.description,
         },
@@ -264,8 +265,9 @@ async function maybeAwardBonus(
     type: WalletTransactionType.DAILY_MISSION,
     idempotencyKey: missionBonusKey(userId, dayKey),
     referenceType: "daily_mission_bonus",
-    referenceId: dayKey,
-    description: "Daily missions complete bonus",
+    // referenceId is @db.Uuid — day keys are not UUIDs; uniqueness is idempotencyKey.
+    referenceId: null,
+    description: `Daily missions complete bonus (${dayKey})`,
   });
   return result.awarded ? result.amount : 0;
 }
@@ -290,8 +292,8 @@ export async function recordDailyMission(
     type: WalletTransactionType.DAILY_MISSION,
     idempotencyKey: missionKey(userId, dayKey, mission),
     referenceType: `daily_mission_${mission.toLowerCase()}`,
-    referenceId: dayKey,
-    description: labels[mission],
+    referenceId: null,
+    description: `${labels[mission]} (${dayKey})`,
   });
 
   const rewarded = await rewardedToday(database, userId, dayKey);
@@ -343,7 +345,7 @@ export async function awardStreakMilestoneIfNeeded(
     type: WalletTransactionType.STREAK_MILESTONE,
     idempotencyKey: `streak-milestone:${cycle}:${userId}`,
     referenceType: "streak_milestone_7",
-    referenceId: `${cycle}`,
+    referenceId: null,
     description: `${cycle}-day streak badge`,
   });
   return {
