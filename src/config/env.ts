@@ -42,16 +42,7 @@ const envSchema = z
     .number()
     .int()
     .positive()
-    .default(30),
-  SMTP_HOST: z.string().default(""),
-  SMTP_PORT: z.coerce.number().int().positive().default(587),
-  SMTP_SECURE: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
-  SMTP_USER: z.string().default(""),
-  SMTP_PASSWORD: z.string().default(""),
-  EMAIL_FROM: z.string().default("no-reply@localhost"),
+    .default(15),
   EMAIL_WORKER_POLL_MS: z.coerce.number().int().positive().default(5_000),
     FEED_SCORE_POLL_MS: z.coerce.number().int().positive().default(300_000),
     SUBSCRIPTION_EXPIRY_POLL_MS: z.coerce

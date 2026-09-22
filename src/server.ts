@@ -68,6 +68,7 @@ async function bootstrap(): Promise<void> {
     signupOfficialChat: officialChat.signupWriter,
     officialChat: officialChat.service,
     calls: callService,
+    onEmailSettingsUpdated: () => emailWorker.invalidateCache(),
   });
   httpServer = createServer(app);
 

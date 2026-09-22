@@ -54,6 +54,12 @@ import {
   updateAdPlacementConfigSchema,
   updateMobileAppConfigSchema,
   updateRazorpaySettingsSchema,
+  updateEmailSettingsSchema,
+  testEmailSettingsSchema,
+  emailCampaignAudienceSchema,
+  createEmailCampaignSchema,
+  emailCampaignIdParamSchema,
+  emailCampaignListQuerySchema,
   adminPaymentFunnelQuerySchema,
   adminIncomeQuerySchema,
   createCmsPageSchema,
@@ -733,6 +739,98 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const data = await this.admin.testRazorpaySettings();
+    response.status(200).json(success(request, data));
+  };
+
+  getEmailSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.getEmailSettings();
+    response.status(200).json(success(request, data));
+  };
+
+  updateEmailSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updateEmailSettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.updateEmailSettings(
+      requireUser(request),
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  testEmailSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = testEmailSettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.testEmailSettings(input.toEmail);
+    response.status(200).json(success(request, data));
+  };
+
+  previewEmailCampaignAudience = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = emailCampaignAudienceSchema.parse(request.body as unknown);
+    const data = await this.admin.previewEmailCampaignAudience(input);
+    response.status(200).json(success(request, data));
+  };
+
+  listEmailCampaigns = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = emailCampaignListQuerySchema.parse(request.query);
+    const data = await this.admin.listEmailCampaigns(query);
+    response.status(200).json(success(request, data));
+  };
+
+  getEmailCampaign = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { campaignId } = emailCampaignIdParamSchema.parse(request.params);
+    const data = await this.admin.getEmailCampaign(campaignId);
+    response.status(200).json(success(request, data));
+  };
+
+  createEmailCampaign = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = createEmailCampaignSchema.parse(request.body as unknown);
+    const data = await this.admin.createEmailCampaign(
+      requireUser(request),
+      input,
+    );
+    response.status(201).json(success(request, data));
+  };
+
+  launchEmailCampaign = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { campaignId } = emailCampaignIdParamSchema.parse(request.params);
+    const data = await this.admin.launchEmailCampaign(
+      requireUser(request),
+      campaignId,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  cancelEmailCampaign = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { campaignId } = emailCampaignIdParamSchema.parse(request.params);
+    const data = await this.admin.cancelEmailCampaign(
+      requireUser(request),
+      campaignId,
+    );
     response.status(200).json(success(request, data));
   };
 

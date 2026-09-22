@@ -464,6 +464,60 @@ export function createAdminRouter(
     asyncHandler(controller.testRazorpaySettings),
   );
   router.get(
+    "/email-settings",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.getEmailSettings),
+  );
+  router.patch(
+    "/email-settings",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.updateEmailSettings),
+  );
+  router.post(
+    "/email-settings/test",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.testEmailSettings),
+  );
+  router.post(
+    "/email-campaigns/preview",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.previewEmailCampaignAudience),
+  );
+  router.get(
+    "/email-campaigns",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.listEmailCampaigns),
+  );
+  router.post(
+    "/email-campaigns",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.createEmailCampaign),
+  );
+  router.get(
+    "/email-campaigns/:campaignId",
+    readLimit,
+    superAdminOnly,
+    asyncHandler(controller.getEmailCampaign),
+  );
+  router.post(
+    "/email-campaigns/:campaignId/launch",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.launchEmailCampaign),
+  );
+  router.post(
+    "/email-campaigns/:campaignId/cancel",
+    mutationLimit,
+    superAdminOnly,
+    asyncHandler(controller.cancelEmailCampaign),
+  );
+  router.get(
     "/income",
     readLimit,
     adminOnly,

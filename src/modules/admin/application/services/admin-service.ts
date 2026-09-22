@@ -63,6 +63,11 @@ import { paymentFunnelReport } from "../../../payments/application/paypal-settin
 import {
   presentRazorpaySettings,
 } from "../../../payments/application/razorpay-settings.js";
+import {
+  presentEmailSettings,
+  resolveEmailRuntime,
+} from "../../../../jobs/email/email-settings.js";
+import { sendViaZeptoMail } from "../../../../jobs/email/zeptomail-client.js";
 import type { RazorpayClient } from "../../../payments/infrastructure/razorpay-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
@@ -71,9 +76,12 @@ import {
   presentEconomyConfig,
   updateAppEconomyConfig,
 } from "../../../economy/app-economy-config.js";
+import { EmailCampaignService } from "../../../email-marketing/email-campaign-service.js";
 import type { CallService } from "../../../calls/application/call-service.js";
 
 export class AdminService {
+  private emailCampaigns: EmailCampaignService | null = null;
+
   constructor(
     private readonly repository: AdminRepository,
     private readonly uploadRoot: string,
@@ -83,7 +91,21 @@ export class AdminService {
     },
     private readonly database?: PrismaClient,
     private readonly calls?: CallService,
+    private readonly appConfig?: AppConfig,
+    private readonly onEmailSettingsUpdated?: () => void,
   ) {}
+
+  private requireEmailCampaigns(): EmailCampaignService {
+    if (!this.emailCampaigns) {
+      const config = this.requireAppConfig();
+      this.emailCampaigns = new EmailCampaignService(
+        this.requireDatabase(),
+        config.JWT_ACCESS_SECRET,
+        config.PUBLIC_WEB_ORIGIN,
+      );
+    }
+    return this.emailCampaigns;
+  }
 
   async economyConfig(): Promise<object> {
     return presentEconomyConfig(
@@ -1230,6 +1252,120 @@ export class AdminService {
   async testRazorpaySettings(): Promise<object> {
     const razorpay = this.requireRazorpay();
     return razorpay.client.verifyCredentials();
+  }
+
+  private requireAppConfig(): AppConfig {
+    if (!this.appConfig) {
+      throw new AppError(
+        "SERVICE_UNAVAILABLE",
+        "App config is not available",
+        503,
+      );
+    }
+    return this.appConfig;
+  }
+
+  async getEmailSettings(): Promise<object> {
+    const config = this.requireAppConfig();
+    const row = await this.repository.getEmailSettings();
+    return presentEmailSettings(row, config.JWT_ACCESS_SECRET);
+  }
+
+  async updateEmailSettings(
+    actorId: string,
+    input: {
+      apiUrl?: string | undefined;
+      apiToken?: string | undefined;
+      fromAddress?: string | undefined;
+      fromName?: string | undefined;
+      bounceAddress?: string | undefined;
+      agentAlias?: string | undefined;
+      clearToken?: boolean | undefined;
+    },
+  ): Promise<object> {
+    const config = this.requireAppConfig();
+    try {
+      const row = await this.repository.updateEmailSettings({
+        actorId,
+        encryptionSecret: config.JWT_ACCESS_SECRET,
+        ...input,
+      });
+      this.onEmailSettingsUpdated?.();
+      return presentEmailSettings(row, config.JWT_ACCESS_SECRET);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async testEmailSettings(toEmail: string): Promise<object> {
+    const config = this.requireAppConfig();
+    const runtime = await resolveEmailRuntime(
+      this.requireDatabase(),
+      config.JWT_ACCESS_SECRET,
+    );
+    if (!runtime.configured) {
+      throw new AppError(
+        "EMAIL_NOT_CONFIGURED",
+        "Save a ZeptoMail token and from address first",
+        400,
+      );
+    }
+    await sendViaZeptoMail(
+      {
+        apiUrl: runtime.apiUrl,
+        apiToken: runtime.apiToken,
+        fromAddress: runtime.fromAddress,
+        fromName: runtime.fromName,
+        bounceAddress: runtime.bounceAddress,
+      },
+      {
+        toEmail,
+        subject: "Milox email test",
+        text: "ZeptoMail is configured correctly for Milox.",
+        html: "<p><b>ZeptoMail is configured correctly for Milox.</b></p><p>Password reset OTPs can be delivered.</p>",
+      },
+    );
+    return { ok: true, toEmail };
+  }
+
+  previewEmailCampaignAudience(input: {
+    inactiveDays: number;
+    requireEmailVerified: boolean;
+  }) {
+    return this.requireEmailCampaigns().previewAudience(input);
+  }
+
+  listEmailCampaigns(options: { page: number; pageSize: number }) {
+    return this.requireEmailCampaigns().listCampaigns(options);
+  }
+
+  getEmailCampaign(campaignId: string) {
+    return this.requireEmailCampaigns().getCampaign(campaignId);
+  }
+
+  createEmailCampaign(
+    actorId: string,
+    input: {
+      name: string;
+      subject: string;
+      htmlBody: string;
+      textBody: string;
+      audienceInactiveDays: number;
+      requireEmailVerified: boolean;
+    },
+  ) {
+    return this.requireEmailCampaigns().createDraft(actorId, input);
+  }
+
+  launchEmailCampaign(actorId: string, campaignId: string) {
+    return this.requireEmailCampaigns().launchCampaign(actorId, campaignId);
+  }
+
+  cancelEmailCampaign(actorId: string, campaignId: string) {
+    return this.requireEmailCampaigns().cancelCampaign(actorId, campaignId);
   }
 
   paypalIncomeReport(options?: {

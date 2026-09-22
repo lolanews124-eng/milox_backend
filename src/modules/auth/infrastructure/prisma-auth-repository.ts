@@ -269,7 +269,7 @@ export class PrismaAuthRepository implements AuthRepository {
     userId: string,
     email: string,
     tokenHash: string,
-    token: string,
+    otp: string,
     expiresAt: Date,
   ): Promise<void> {
     await this.database.$transaction(async (transaction) => {
@@ -284,22 +284,35 @@ export class PrismaAuthRepository implements AuthRepository {
         data: {
           type: EmailJobType.PASSWORD_RESET,
           toEmail: email,
-          payload: { userId, token },
+          payload: { userId, otp },
         },
       });
     });
   }
 
   resetPassword(
-    tokenHash: string,
+    email: string,
+    otpHash: string,
     passwordHash: string,
     now: Date,
   ): Promise<boolean> {
     return this.database.$transaction(async (transaction) => {
-      const token = await transaction.passwordResetToken.findUnique({
-        where: { tokenHash },
+      const user = await transaction.user.findFirst({
+        where: { email: email.toLowerCase() },
+        select: { id: true },
       });
-      if (!token || token.usedAt || token.expiresAt <= now) return false;
+      if (!user) return false;
+
+      const token = await transaction.passwordResetToken.findFirst({
+        where: {
+          userId: user.id,
+          tokenHash: otpHash,
+          usedAt: null,
+          expiresAt: { gt: now },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!token) return false;
 
       const claimed = await transaction.passwordResetToken.updateMany({
         where: { id: token.id, usedAt: null, expiresAt: { gt: now } },
@@ -308,11 +321,11 @@ export class PrismaAuthRepository implements AuthRepository {
       if (claimed.count !== 1) return false;
 
       await transaction.user.update({
-        where: { id: token.userId },
+        where: { id: user.id },
         data: { passwordHash },
       });
       await transaction.refreshSession.updateMany({
-        where: { userId: token.userId, revokedAt: null },
+        where: { userId: user.id, revokedAt: null },
         data: { revokedAt: now },
       });
       return true;

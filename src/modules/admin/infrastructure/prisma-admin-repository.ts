@@ -35,6 +35,10 @@ import {
   ensureRazorpaySettings,
   saveRazorpaySettings,
 } from "../../payments/application/razorpay-settings.js";
+import {
+  ensureEmailSettings,
+  saveEmailSettings,
+} from "../../../jobs/email/email-settings.js";
 import { consumerPlatformUserWhere, recentPresenceWhere, stalePresenceWhere } from "../../../shared/user-visibility.js";
 import {
   creditWallet,
@@ -99,6 +103,7 @@ import type {
   UpdateMobileAppConfigData,
   UpdatePaypalSettingsData,
   UpdateRazorpaySettingsData,
+  UpdateEmailSettingsData,
   AdminPaypalIncomeRecord,
 } from "../application/ports/admin-repository.js";
 import {
@@ -2321,6 +2326,42 @@ export class PrismaAdminRepository implements AdminRepository {
           hasKeyId: Boolean(updated.keyId),
           hasSecret: Boolean(updated.keySecret),
           hasWebhookSecret: Boolean(updated.webhookSecret),
+        },
+      );
+      return updated;
+    });
+  }
+
+  getEmailSettings() {
+    return ensureEmailSettings(this.database);
+  }
+
+  updateEmailSettings(data: UpdateEmailSettingsData) {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      const updated = await saveEmailSettings(
+        transaction,
+        data.encryptionSecret,
+        {
+          apiUrl: data.apiUrl,
+          apiToken: data.apiToken,
+          fromAddress: data.fromAddress,
+          fromName: data.fromName,
+          bounceAddress: data.bounceAddress,
+          agentAlias: data.agentAlias,
+          clearToken: data.clearToken,
+        },
+      );
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.email_settings.updated",
+        "email_settings",
+        updated.id,
+        {
+          fromAddress: updated.fromAddress,
+          hasToken: Boolean(updated.apiToken),
+          agentAlias: updated.agentAlias || null,
         },
       );
       return updated;

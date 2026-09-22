@@ -26,6 +26,7 @@ export function createAdminModule(
   officialChat?: OfficialChatService,
   razorpayClient?: RazorpayClient,
   calls?: CallService,
+  onEmailSettingsUpdated?: () => void,
 ): AdminModule {
   const repository = new PrismaAdminRepository(database);
   const service = new AdminService(
@@ -34,6 +35,8 @@ export function createAdminModule(
     razorpayClient ? { config, client: razorpayClient } : undefined,
     database,
     calls,
+    config,
+    onEmailSettingsUpdated,
   );
   const mediaService = new MediaService(
     new PrismaMediaRepository(database),

@@ -12,6 +12,7 @@ import {
 } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { createAdminModule } from "./modules/admin/index.js";
+import { createEmailMarketingPublicRouter } from "./modules/email-marketing/public-router.js";
 import { createAuthModule } from "./modules/auth/index.js";
 import type { SignupOfficialChatWriter } from "./modules/official-chat/infrastructure/prisma-official-chat-repository.js";
 import type { OfficialChatService } from "./modules/official-chat/application/official-chat-service.js";
@@ -48,6 +49,7 @@ export interface AppDependencies {
   signupOfficialChat?: SignupOfficialChatWriter;
   officialChat?: OfficialChatService;
   calls?: CallService;
+  onEmailSettingsUpdated?: () => void;
 }
 
 export function createApp(dependencies: AppDependencies = {}): Express {
@@ -82,6 +84,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     dependencies.officialChat,
     razorpayClient,
     dependencies.calls,
+    dependencies.onEmailSettingsUpdated,
   );
   const blog = createBlogModule(database);
   const posts = createPostModule(
@@ -292,6 +295,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/app", createAppReleaseRouter(database));
   app.use("/api/v1/admin", admin.router);
   app.use("/api/v1/blog", blog.router);
+  app.use("/api/v1/email", createEmailMarketingPublicRouter(config, database));
   app.use(notFoundHandler);
   app.use(errorHandler);
 

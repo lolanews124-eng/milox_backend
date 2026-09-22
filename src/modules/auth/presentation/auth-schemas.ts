@@ -54,7 +54,11 @@ export const forgotPasswordSchema = z
 
 export const resetPasswordSchema = z
   .object({
-    token: z.string().min(32),
+    email,
+    otp: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "OTP must be a 6-digit code"),
     password,
   })
   .strict();

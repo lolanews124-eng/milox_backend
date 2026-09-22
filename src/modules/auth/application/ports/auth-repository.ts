@@ -78,11 +78,12 @@ export interface AuthRepository {
     userId: string,
     email: string,
     tokenHash: string,
-    token: string,
+    otp: string,
     expiresAt: Date,
   ): Promise<void>;
   resetPassword(
-    tokenHash: string,
+    email: string,
+    otpHash: string,
     passwordHash: string,
     now: Date,
   ): Promise<boolean>;

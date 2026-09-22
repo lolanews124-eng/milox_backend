@@ -103,7 +103,7 @@ export class AuthController {
       .json(
         messageEnvelope(
           request,
-          "If the account exists, a reset email has been queued",
+          "If the account exists, a reset code has been emailed",
         ),
       );
   };
@@ -113,7 +113,7 @@ export class AuthController {
     response: Response,
   ): Promise<void> => {
     const input = resetPasswordSchema.parse(request.body);
-    await this.auth.resetPassword(input.token, input.password);
+    await this.auth.resetPassword(input.email, input.otp, input.password);
     response
       .status(200)
       .json(messageEnvelope(request, "Password reset successfully"));

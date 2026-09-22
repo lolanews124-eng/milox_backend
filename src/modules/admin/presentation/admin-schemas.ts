@@ -409,6 +409,51 @@ export const updateRazorpaySettingsSchema = z
   })
   .strict();
 
+export const updateEmailSettingsSchema = z
+  .object({
+    apiUrl: z.string().trim().url().max(255).optional(),
+    apiToken: z.string().trim().max(4000).optional(),
+    fromAddress: z.string().trim().email().max(255).optional(),
+    fromName: z.string().trim().max(120).optional(),
+    bounceAddress: z.string().trim().max(255).optional(),
+    agentAlias: z.string().trim().max(120).optional(),
+    clearToken: z.boolean().optional(),
+  })
+  .strict();
+
+export const testEmailSettingsSchema = z
+  .object({
+    toEmail: z.string().trim().email().max(255),
+  })
+  .strict();
+
+export const emailCampaignAudienceSchema = z
+  .object({
+    inactiveDays: z.coerce.number().int().min(1).max(365).default(14),
+    requireEmailVerified: z.boolean().default(true),
+  })
+  .strict();
+
+export const createEmailCampaignSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    subject: z.string().trim().min(3).max(200),
+    htmlBody: z.string().trim().min(20).max(50_000),
+    textBody: z.string().trim().min(20).max(20_000),
+    audienceInactiveDays: z.coerce.number().int().min(1).max(365).default(14),
+    requireEmailVerified: z.boolean().default(true),
+  })
+  .strict();
+
+export const emailCampaignIdParamSchema = z.object({
+  campaignId: z.uuid(),
+});
+
+export const emailCampaignListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 export const adminPaymentFunnelQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
   page: z.coerce.number().int().min(1).default(1),

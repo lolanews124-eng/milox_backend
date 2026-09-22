@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
@@ -229,27 +231,38 @@ export class AuthService {
     const user = await this.repository.findUserByEmail(normalizeEmail(email));
     if (!user || user.status !== "ACTIVE") return;
 
-    const token = this.crypto.createOpaqueToken();
+    const otp = String(randomInt(100_000, 1_000_000));
+    const otpHash = this.crypto.hashOpaqueToken(`${user.id}:${otp}`);
     await this.repository.createPasswordReset(
       user.id,
       user.email,
-      token.hash,
-      token.raw,
+      otpHash,
+      otp,
       addMinutes(new Date(), this.config.PASSWORD_RESET_TTL_MINUTES),
     );
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<void> {
+  async resetPassword(
+    email: string,
+    otp: string,
+    newPassword: string,
+  ): Promise<void> {
+    const normalizedEmail = normalizeEmail(email);
+    const user = await this.repository.findUserByEmail(normalizedEmail);
+    const otpHash = user
+      ? this.crypto.hashOpaqueToken(`${user.id}:${otp.trim()}`)
+      : this.crypto.hashOpaqueToken(`missing:${otp.trim()}`);
     const passwordHash = await this.crypto.hashPassword(newPassword);
     const reset = await this.repository.resetPassword(
-      this.crypto.hashOpaqueToken(token),
+      normalizedEmail,
+      otpHash,
       passwordHash,
       new Date(),
     );
     if (!reset) {
       throw new AppError(
         "INVALID_TOKEN",
-        "Reset token is invalid or expired",
+        "Reset code is invalid or expired",
         400,
       );
     }

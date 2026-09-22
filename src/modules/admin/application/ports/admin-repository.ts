@@ -600,6 +600,10 @@ export interface AdminRepository {
   updateRazorpaySettings(
     data: UpdateRazorpaySettingsData,
   ): Promise<import("@prisma/client").RazorpaySettings>;
+  getEmailSettings(): Promise<import("@prisma/client").EmailSettings>;
+  updateEmailSettings(
+    data: UpdateEmailSettingsData,
+  ): Promise<import("@prisma/client").EmailSettings>;
   paypalIncomeReport(options?: {
     page?: number;
     limit?: number;
@@ -625,6 +629,18 @@ export interface UpdateRazorpaySettingsData {
   mode?: "test" | "live" | undefined;
   clearSecret?: boolean | undefined;
   clearWebhookSecret?: boolean | undefined;
+}
+
+export interface UpdateEmailSettingsData {
+  actorId: string;
+  encryptionSecret: string;
+  apiUrl?: string | undefined;
+  apiToken?: string | undefined;
+  fromAddress?: string | undefined;
+  fromName?: string | undefined;
+  bounceAddress?: string | undefined;
+  agentAlias?: string | undefined;
+  clearToken?: boolean | undefined;
 }
 
 export interface AdminPaypalIncomeRecord {

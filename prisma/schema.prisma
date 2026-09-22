@@ -252,6 +252,23 @@ enum EmailJobType {
   EMAIL_VERIFICATION
   PASSWORD_RESET
   SECURITY_ALERT
+  MARKETING
+}
+
+enum EmailCampaignStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum EmailCampaignRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
 }
 
 enum AuditActorType {
@@ -336,6 +353,8 @@ model User {
   hideOnline          Boolean           @default(false)
   /// Admin-approved: user may create WhatsApp-style broadcast lists.
   broadcastEnabled    Boolean           @default(false)
+  /// When true, skip marketing / win-back email campaigns.
+  marketingEmailOptOut Boolean          @default(false)
   profilePhotoMediaId String?           @unique @db.Uuid
   coverPhotoMediaId   String?           @unique @db.Uuid
   followerCount       Int               @default(0)
@@ -401,6 +420,7 @@ model User {
   moderationActions   ModerationAction[]       @relation("ModerationTargetUser")
   moderationActionsBy ModerationAction[]       @relation("ModerationActor")
   idempotencyRecords  IdempotencyRecord[]
+  emailCampaignRecipients EmailCampaignRecipient[]
   wallet              Wallet?
   referralCode        ReferralCode?
   referralsMade       Referral[]          @relation("ReferralsMade")
@@ -1190,6 +1210,55 @@ model EmailJob {
   @@map("email_jobs")
 }
 
+/// Admin-composed marketing / win-back campaigns (Phase 1).
+model EmailCampaign {
+  id                     String              @id @default(uuid()) @db.Uuid
+  name                   String              @db.VarChar(120)
+  subject                String              @db.VarChar(200)
+  htmlBody               String              @db.Text
+  textBody               String              @db.Text
+  /// Users with lastSeenAt older than this many days (or never seen after signup age).
+  audienceInactiveDays   Int                 @default(14)
+  requireEmailVerified   Boolean             @default(true)
+  status                 EmailCampaignStatus @default(DRAFT)
+  createdByAdminId       String?             @db.Uuid
+  queuedAt               DateTime?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  totalRecipients        Int                 @default(0)
+  sentCount              Int                 @default(0)
+  failedCount            Int                 @default(0)
+  skippedCount           Int                 @default(0)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  recipients EmailCampaignRecipient[]
+
+  @@index([status, createdAt])
+  @@map("email_campaigns")
+}
+
+model EmailCampaignRecipient {
+  id         String                       @id @default(uuid()) @db.Uuid
+  campaignId String                       @db.Uuid
+  userId     String                       @db.Uuid
+  toEmail    String                       @db.VarChar(255)
+  status     EmailCampaignRecipientStatus @default(PENDING)
+  emailJobId String?                      @db.Uuid
+  lastError  String?                      @db.VarChar(1000)
+  sentAt     DateTime?
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId, status])
+  @@index([status, createdAt])
+  @@map("email_campaign_recipients")
+}
+
 model IdempotencyRecord {
   id              String   @id @default(uuid()) @db.Uuid
   userId          String   @db.Uuid
@@ -1568,6 +1637,20 @@ model RazorpaySettings {
   updatedAt     DateTime @updatedAt
 
   @@map("razorpay_settings")
+}
+
+/// Super-admin ZeptoMail / transactional email settings. Token stored encrypted.
+model EmailSettings {
+  id            String   @id @default("default") @db.VarChar(32)
+  apiUrl        String   @default("https://api.zeptomail.in/v1.1/email") @db.VarChar(255)
+  apiToken      String   @default("") @db.Text
+  fromAddress   String   @default("noreply@milox.in") @db.VarChar(255)
+  fromName      String   @default("Milox") @db.VarChar(120)
+  bounceAddress String   @default("") @db.VarChar(255)
+  agentAlias    String   @default("") @db.VarChar(120)
+  updatedAt     DateTime @updatedAt
+
+  @@map("email_settings")
 }
 
 /// Singleton row (id = default) controlling mobile force-update from admin.
