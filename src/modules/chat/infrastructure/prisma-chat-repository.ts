@@ -67,18 +67,31 @@ export class PrismaChatRepository implements ChatRepository {
   async listConversations(
     query: ConversationPageQuery,
   ): Promise<ConversationViewRecord[]> {
+    const memberFilter =
+      query.filter === "archived"
+        ? { isArchived: true as const }
+        : query.filter === "pinned"
+          ? { isPinned: true as const, isArchived: false as const }
+          : query.filter === "unread"
+            ? { isArchived: false as const, unreadCount: { gt: 0 } }
+            : { isArchived: false as const };
+
+    const kindFilter =
+      query.filter === "groups"
+        ? { kind: ConversationKind.GROUP }
+        : query.filter === "broadcasts"
+          ? { kind: ConversationKind.BROADCAST }
+          : {};
+
     const rows = await this.database.conversation.findMany({
       where: {
         ...activeConversationWhere(query.userId),
+        ...kindFilter,
         members: {
           some: {
             userId: query.userId,
             leftAt: null,
-            ...(query.filter === "archived"
-              ? { isArchived: true }
-              : query.filter === "pinned"
-                ? { isPinned: true, isArchived: false }
-                : { isArchived: false }),
+            ...memberFilter,
           },
         },
         ...conversationCursorWhere(query.before),
@@ -90,7 +103,37 @@ export class PrismaChatRepository implements ChatRepository {
       take: query.limit + 1,
       select: conversationViewSelect(query.userId),
     });
-    return rows.map((row) => mapConversation(row, query.userId));
+    const mapped = rows.map((row) => mapConversation(row, query.userId));
+
+    // First inbox page: keep Milox Official at the front so pagination /
+    // recency sorting never hides it under Groups or older chats.
+    if (query.filter === "all" && !query.before) {
+      const officialIndex = mapped.findIndex((entry) => entry.isOfficial);
+      if (officialIndex > 0) {
+        const [official] = mapped.splice(officialIndex, 1);
+        mapped.unshift(official!);
+      } else if (officialIndex < 0) {
+        const official = await this.database.conversation.findFirst({
+          where: {
+            ...activeConversationWhere(query.userId),
+            kind: ConversationKind.OFFICIAL,
+            members: {
+              some: {
+                userId: query.userId,
+                leftAt: null,
+                isArchived: false,
+              },
+            },
+          },
+          select: conversationViewSelect(query.userId),
+        });
+        if (official) {
+          mapped.unshift(mapConversation(official, query.userId));
+        }
+      }
+    }
+
+    return mapped;
   }
 
   async findConversation(

@@ -51,7 +51,7 @@ export class ChatService {
   async listConversations(
     userId: string,
     options: {
-      filter: "all" | "archived" | "pinned";
+      filter: "all" | "archived" | "pinned" | "unread" | "groups" | "broadcasts";
       cursor?: string;
       limit: number;
     },

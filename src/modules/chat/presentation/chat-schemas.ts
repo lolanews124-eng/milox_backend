@@ -16,7 +16,14 @@ export const chatMediaParamSchema = z.object({
 export const idempotencyKeySchema = z.uuid();
 
 export const conversationPageQuerySchema = z.object({
-  filter: z.enum(["all", "archived", "pinned"]).default("all"),
+  filter: z.enum([
+    "all",
+    "archived",
+    "pinned",
+    "unread",
+    "groups",
+    "broadcasts",
+  ]).default("all"),
   cursor: z.string().min(1).max(2_048).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });

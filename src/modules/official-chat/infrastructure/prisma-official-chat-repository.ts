@@ -337,7 +337,9 @@ export class PrismaOfficialChatRepository implements SignupOfficialChatWriter {
       data: {
         conversationId,
         senderId: officialUserId,
-        type: MessageType.SYSTEM,
+        // TEXT so clients render a proper bubble + action buttons
+        // (SYSTEM chips are for short call/group notices only).
+        type: MessageType.TEXT,
         body: welcomeBody,
         metadata: metadata as Prisma.InputJsonValue,
       },

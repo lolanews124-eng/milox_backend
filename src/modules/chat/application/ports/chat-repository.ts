@@ -8,7 +8,7 @@ import type {
 
 export interface ConversationPageQuery {
   userId: string;
-  filter: "all" | "archived" | "pinned";
+  filter: "all" | "archived" | "pinned" | "unread" | "groups" | "broadcasts";
   limit: number;
   before?: { id: string; updatedAt: Date };
 }
