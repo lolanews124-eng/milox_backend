@@ -73,7 +73,7 @@ function notificationAction(notification: PresentedNotification): string {
   const payload = asRecord(notification.payload);
 
   if (notification.type === "SYSTEM") {
-    return switchSystemAction(payload.code);
+    return switchSystemAction(payload);
   }
   if (
     notification.type === "NEW_LIKE" &&
@@ -89,22 +89,40 @@ function notificationAction(notification: PresentedNotification): string {
   }
 
   const mapping: Record<string, string> = {
-    NEW_LIKE: "liked your post",
-    NEW_COMMENT: "commented on your post",
+    NEW_LIKE:
+      typeof payload.reelId === "string" && typeof payload.commentId !== "string"
+        ? "liked your reel"
+        : "liked your post",
+    NEW_COMMENT:
+      typeof payload.reelId === "string" && typeof payload.parentId !== "string"
+        ? "commented on your reel"
+        : "commented on your post",
     NEW_FOLLOWER: "started following you",
     FOLLOW_REQUEST: "requested to follow you",
     INTEREST_RECEIVED: "sent you an interest",
     INTEREST_ACCEPTED: "accepted your interest",
     MATCH_CREATED: "matched with you",
     NEW_MESSAGE: "sent you a message",
-    POST_MENTION: "mentioned you in a post",
+    POST_MENTION:
+      typeof payload.reelId === "string"
+        ? "mentioned you in a reel"
+        : "mentioned you in a post",
   };
   return mapping[notification.type] ?? "sent you an update";
 }
 
-function switchSystemAction(code: unknown): string {
+function switchSystemAction(payload: Record<string, unknown>): string {
+  const code = payload.code;
   if (code === "POST_SHARED") return "shared your post";
+  if (code === "REEL_SHARED") return "shared your reel";
   if (code === "FOLLOW_ACCEPTED") return "accepted your follow request";
+  if (code === "REEL_REJECTED") {
+    const label =
+      typeof payload.reasonLabel === "string" && payload.reasonLabel.trim()
+        ? payload.reasonLabel.trim()
+        : "it breaks the community rules";
+    return `Your reel was rejected: ${label}`;
+  }
   return "sent you an update";
 }
 

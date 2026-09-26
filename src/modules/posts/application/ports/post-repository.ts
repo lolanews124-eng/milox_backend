@@ -31,6 +31,7 @@ export interface SavedPostRecord {
 export interface HashtagRecord {
   tag: string;
   postCount: number;
+  reelCount: number;
 }
 
 export interface HashtagPageQuery {

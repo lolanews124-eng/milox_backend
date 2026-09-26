@@ -75,6 +75,7 @@ enum MediaKind {
   POST_IMAGE
   CHAT_IMAGE
   STORY_IMAGE
+  REEL_VIDEO
   OTHER
 }
 
@@ -387,6 +388,14 @@ model User {
   interests           UserInterest[]
   posts               Post[]
   stories             Story[]
+  reels               Reel[]               @relation("ReelAuthor")
+  reviewedReels       Reel[]               @relation("ReelReviewer")
+  reelLikes           ReelLike[]
+  reelSaves           ReelSave[]
+  reelComments        ReelComment[]
+  reelCommentLikes    ReelCommentLike[]
+  reelShares          ReelShare[]
+  reelViews           ReelView[]
   storyViews          StoryView[]
   postViews           PostView[]
   postLikes           PostLike[]
@@ -553,6 +562,8 @@ model MediaAsset {
   postMedia          PostMedia[]
   messages           Message[]
   stories            Story[]
+  reel               Reel?  @relation("ReelVideo")
+  reelPoster         Reel?  @relation("ReelPoster")
 
   @@index([ownerUserId, kind])
   @@index([deletedAt])
@@ -593,6 +604,130 @@ model StoryView {
   @@id([storyId, viewerId])
   @@index([viewerId])
   @@map("story_views")
+}
+
+// -----------------------------------------------------------------------------
+// Reels (short vertical videos, kept until the author deletes them)
+// -----------------------------------------------------------------------------
+
+enum ReelReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Reel {
+  id            String           @id @default(uuid()) @db.Uuid
+  authorId      String           @db.Uuid
+  mediaAssetId  String           @unique @db.Uuid
+  posterMediaId String?          @unique @db.Uuid
+  caption       String?          @db.VarChar(300)
+  durationMs    Int              @default(0)
+  likeCount     Int              @default(0)
+  commentCount  Int              @default(0)
+  shareCount    Int              @default(0)
+  viewCount     Int              @default(0)
+  status        ReelReviewStatus @default(PENDING)
+  reviewedAt    DateTime?
+  reviewedById  String?          @db.Uuid
+  rejectReason  String?          @db.VarChar(300)
+  deletedAt     DateTime?
+  createdAt     DateTime         @default(now())
+
+  author      User        @relation("ReelAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  reviewedBy  User?       @relation("ReelReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  mediaAsset  MediaAsset  @relation("ReelVideo", fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  posterAsset MediaAsset? @relation("ReelPoster", fields: [posterMediaId], references: [id], onDelete: SetNull)
+  likes      ReelLike[]
+  saves      ReelSave[]
+  shares     ReelShare[]
+  comments   ReelComment[]
+  views      ReelView[]
+  hashtags   ReelHashtag[]
+
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+  @@index([deletedAt, createdAt])
+  @@index([status, deletedAt, createdAt])
+  @@map("reels")
+}
+
+model ReelLike {
+  reelId    String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([reelId, userId])
+  @@index([userId])
+  @@map("reel_likes")
+}
+
+model ReelSave {
+  reelId    String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([reelId, userId])
+  @@index([userId])
+  @@map("reel_saves")
+}
+
+model ReelComment {
+  id         String    @id @default(uuid()) @db.Uuid
+  reelId     String    @db.Uuid
+  authorId   String    @db.Uuid
+  parentId   String?   @db.Uuid
+  body       String    @db.VarChar(1000)
+  likeCount  Int       @default(0)
+  replyCount Int       @default(0)
+  /// 0 = top-level, 1 = reply.
+  depth      Int       @default(0)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  reel    Reel              @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  author  User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent  ReelComment?      @relation("ReelCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ReelComment[]     @relation("ReelCommentReplies")
+  likes   ReelCommentLike[]
+
+  @@index([reelId, createdAt])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("reel_comments")
+}
+
+model ReelCommentLike {
+  commentId String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  comment ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("reel_comment_likes")
+}
+
+model ReelShare {
+  id        String   @id @default(uuid()) @db.Uuid
+  reelId    String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reelId, createdAt])
+  @@index([userId, createdAt])
+  @@map("reel_shares")
 }
 
 // -----------------------------------------------------------------------------
@@ -659,13 +794,42 @@ model Hashtag {
   /// Normalized: lowercase, no leading '#'.
   tag        String   @unique @db.VarChar(64)
   postCount  Int      @default(0)
+  reelCount  Int      @default(0)
   lastUsedAt DateTime @default(now())
   createdAt  DateTime @default(now())
 
   posts PostHashtag[]
+  reels ReelHashtag[]
 
   @@index([postCount, lastUsedAt])
+  @@index([reelCount, lastUsedAt])
   @@map("hashtags")
+}
+
+model ReelView {
+  reelId    String   @db.Uuid
+  viewerId  String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  reel   Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  viewer User @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@id([reelId, viewerId])
+  @@index([viewerId])
+  @@map("reel_views")
+}
+
+model ReelHashtag {
+  reelId    String   @db.Uuid
+  hashtagId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  reel    Reel    @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  hashtag Hashtag @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@id([reelId, hashtagId])
+  @@index([hashtagId, createdAt])
+  @@map("reel_hashtags")
 }
 
 model PostHashtag {
@@ -1666,6 +1830,8 @@ model MobileAppConfig {
   iosStoreUrl       String   @default("") @db.VarChar(500)
   title             String   @default("Update required") @db.VarChar(120)
   message           String   @default("A new version of Milox is available. Please update to continue.") @db.VarChar(500)
+  /// When false, the app hides the Reels tab and the API rejects new uploads.
+  reelsEnabled      Boolean  @default(true)
   updatedAt         DateTime @updatedAt
 
   @@map("mobile_app_configs")

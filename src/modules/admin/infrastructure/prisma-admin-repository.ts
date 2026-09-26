@@ -13,6 +13,7 @@ import {
   OutboxStatus,
   Prisma,
   PremiumBillingCycle,
+  ReelReviewStatus,
   ReportStatus,
   SubscriptionStatus,
   UserRole,
@@ -26,6 +27,8 @@ import {
   ensureMobileAppConfig,
   MOBILE_APP_CONFIG_ID,
 } from "../../app-release/mobile-app-config.js";
+import { reelRejectReasonLabel } from "../../reels/application/reel-reject-reasons.js";
+import { enqueueReelMentions } from "../../reels/infrastructure/prisma-reel-repository.js";
 import {
   ensurePaypalSettings,
   paypalIncomeReport,
@@ -78,6 +81,9 @@ import type {
   DeleteCommentData,
   DeletePostData,
   DeleteStoryData,
+  AdminReelQuery,
+  ReviewReelData,
+  UpdateReelSettingsData,
   GrantSubscriptionData,
   ResolveReportData,
   SetVerifiedBadgeData,
@@ -122,6 +128,7 @@ import type {
   AdminPostsStatsRecord,
   AdminStoryRecord,
   AdminStoriesStatsRecord,
+  AdminReelRecord,
   AdminPremiumPlanRecord,
   AdminPlanPriceRecord,
   AdminAdRecord,
@@ -2262,6 +2269,191 @@ export class PrismaAdminRepository implements AdminRepository {
         },
       );
       return updated;
+    });
+  }
+
+  async getReelSettings() {
+    const config = await ensureMobileAppConfig(this.database);
+    const pendingCount = await this.database.reel.count({
+      where: { status: ReelReviewStatus.PENDING, deletedAt: null },
+    });
+    return { reelsEnabled: config.reelsEnabled, pendingCount };
+  }
+
+  updateReelSettings(data: UpdateReelSettingsData) {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await this.requireAdminActor(transaction, data.actorId);
+      await ensureMobileAppConfig(transaction);
+      const updated = await transaction.mobileAppConfig.update({
+        where: { id: MOBILE_APP_CONFIG_ID },
+        data: { reelsEnabled: data.reelsEnabled },
+      });
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        "admin.reels.settings_updated",
+        "mobile_app_config",
+        updated.id,
+        { reelsEnabled: updated.reelsEnabled },
+      );
+      const pendingCount = await transaction.reel.count({
+        where: { status: ReelReviewStatus.PENDING, deletedAt: null },
+      });
+      return { reelsEnabled: updated.reelsEnabled, pendingCount };
+    });
+  }
+
+  async listReels(query: AdminReelQuery) {
+    const where = {
+      deletedAt: null,
+      status: query.status,
+    };
+    const skip = (query.page - 1) * query.pageSize;
+    const [rows, total] = await Promise.all([
+      this.database.reel.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip,
+        take: query.pageSize,
+        select: {
+          id: true,
+          authorId: true,
+          caption: true,
+          mediaAssetId: true,
+          posterMediaId: true,
+          durationMs: true,
+          status: true,
+          rejectReason: true,
+          createdAt: true,
+          author: {
+            select: { username: true, displayName: true },
+          },
+        },
+      }),
+      this.database.reel.count({ where }),
+    ]);
+    const items: AdminReelRecord[] = rows.map((row) => ({
+      id: row.id,
+      authorId: row.authorId,
+      authorUsername: row.author.username,
+      authorDisplayName: row.author.displayName,
+      caption: row.caption,
+      mediaAssetId: row.mediaAssetId,
+      posterMediaId: row.posterMediaId,
+      durationMs: row.durationMs,
+      status: row.status,
+      rejectReason: row.rejectReason,
+      createdAt: row.createdAt,
+    }));
+    return { items, total };
+  }
+
+  reviewReel(data: ReviewReelData): Promise<AdminReelRecord | null> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await transaction.user.findFirst({
+        where: {
+          id: data.actorId,
+          status: UserStatus.ACTIVE,
+          role: {
+            in: [UserRole.MODERATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN],
+          },
+        },
+        select: { id: true },
+      });
+      if (!actor) throw new AdminHierarchyError();
+      const existing = await transaction.reel.findFirst({
+        where: { id: data.reelId, deletedAt: null },
+        select: {
+          id: true,
+          authorId: true,
+          caption: true,
+          mediaAssetId: true,
+          posterMediaId: true,
+          durationMs: true,
+          status: true,
+          rejectReason: true,
+          createdAt: true,
+          author: { select: { username: true, displayName: true } },
+        },
+      });
+      if (!existing) return null;
+      const reason =
+        data.decision === ReelReviewStatus.REJECTED ? data.reason : null;
+      const reasonChanged =
+        data.decision === ReelReviewStatus.REJECTED &&
+        (existing.status !== ReelReviewStatus.REJECTED ||
+          existing.rejectReason !== reason);
+      const updated = await transaction.reel.update({
+        where: { id: existing.id },
+        data: {
+          status: data.decision,
+          reviewedAt: new Date(),
+          reviewedById: actor.id,
+          rejectReason: reason,
+        },
+        select: {
+          id: true,
+          authorId: true,
+          caption: true,
+          mediaAssetId: true,
+          posterMediaId: true,
+          durationMs: true,
+          status: true,
+          rejectReason: true,
+          createdAt: true,
+          author: { select: { username: true, displayName: true } },
+        },
+      });
+      if (
+        data.decision === ReelReviewStatus.APPROVED &&
+        existing.status !== ReelReviewStatus.APPROVED
+      ) {
+        await enqueueReelMentions(
+          transaction,
+          existing.id,
+          existing.authorId,
+          existing.caption,
+        );
+      }
+      if (reasonChanged && reason) {
+        await transaction.outboxEvent.create({
+          data: {
+            eventType: "reel.rejected",
+            aggregateType: "reel",
+            aggregateId: updated.id,
+            payload: {
+              recipientId: updated.authorId,
+              reelId: updated.id,
+              reason,
+              reasonLabel: reelRejectReasonLabel(reason),
+            },
+            status: OutboxStatus.PENDING,
+          },
+        });
+      }
+      await this.writeAudit(
+        transaction,
+        actor.id,
+        data.decision === ReelReviewStatus.APPROVED
+          ? "admin.reel.approved"
+          : "admin.reel.rejected",
+        "reel",
+        updated.id,
+        { status: updated.status, reason },
+      );
+      return {
+        id: updated.id,
+        authorId: updated.authorId,
+        authorUsername: updated.author.username,
+        authorDisplayName: updated.author.displayName,
+        caption: updated.caption,
+        mediaAssetId: updated.mediaAssetId,
+        posterMediaId: updated.posterMediaId,
+        durationMs: updated.durationMs,
+        status: updated.status,
+        rejectReason: updated.rejectReason,
+        createdAt: updated.createdAt,
+      };
     });
   }
 

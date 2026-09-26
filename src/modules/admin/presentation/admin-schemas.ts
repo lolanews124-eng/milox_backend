@@ -1,3 +1,4 @@
+import { REEL_REJECT_REASON_CODES } from "../../reels/application/reel-reject-reasons.js";
 import {
   AdPlacement,
   CmsPageStatus,
@@ -126,6 +127,37 @@ export const adminStoryQuerySchema = z.object({
   createdTo: z.coerce.date().optional(),
   ...offsetPageSchema,
 });
+
+export const adminReelQuerySchema = z.object({
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).default("PENDING"),
+  ...offsetPageSchema,
+});
+
+export const adminReelIdParamSchema = z.object({
+  reelId: z.uuid(),
+});
+
+export const reviewReelSchema = z
+  .object({
+    decision: z.enum(["APPROVED", "REJECTED"]),
+    reason: z.enum(REEL_REJECT_REASON_CODES).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.decision === "REJECTED" && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "Choose why this reel is being rejected",
+      });
+    }
+  });
+
+export const updateReelSettingsSchema = z
+  .object({
+    reelsEnabled: z.boolean(),
+  })
+  .strict();
 
 export const adminStoryIdParamSchema = z.object({
   storyId: z.uuid(),

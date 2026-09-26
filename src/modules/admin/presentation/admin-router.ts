@@ -175,6 +175,30 @@ export function createAdminRouter(
     asyncHandler(controller.deleteStory),
   );
   router.get(
+    "/reels/settings",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.getReelSettings),
+  );
+  router.patch(
+    "/reels/settings",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.updateReelSettings),
+  );
+  router.get(
+    "/reels",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.listReels),
+  );
+  router.post(
+    "/reels/:reelId/review",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.reviewReel),
+  );
+  router.get(
     "/comments/stats",
     readLimit,
     moderationStaff,

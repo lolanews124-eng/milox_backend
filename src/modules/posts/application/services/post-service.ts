@@ -256,22 +256,22 @@ export class PostService implements ProfileUpdatePostWriter {
 
   async listTrendingHashtags(
     limit: number,
-  ): Promise<{ tag: string; postCount: number }[]> {
+  ): Promise<{ tag: string; postCount: number; reelCount: number }[]> {
     return this.repository.listTrendingHashtags(limit);
   }
 
   async searchHashtags(
     term: string,
     limit: number,
-  ): Promise<{ tag: string; postCount: number }[]> {
+  ): Promise<{ tag: string; postCount: number; reelCount: number }[]> {
     return this.repository.searchHashtags(term.trim().replace(/^#/, ""), limit);
   }
 
   async getHashtag(
     tag: string,
-  ): Promise<{ tag: string; postCount: number }> {
+  ): Promise<{ tag: string; postCount: number; reelCount: number }> {
     const record = await this.repository.findHashtag(tag.toLowerCase());
-    return record ?? { tag: tag.toLowerCase(), postCount: 0 };
+    return record ?? { tag: tag.toLowerCase(), postCount: 0, reelCount: 0 };
   }
 
   async listByHashtag(

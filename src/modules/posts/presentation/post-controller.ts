@@ -124,6 +124,7 @@ export class PostController {
       ...success(request, {
         tag,
         postCount: hashtag.postCount,
+        reelCount: hashtag.reelCount,
         items: page.items,
       }),
       meta: {

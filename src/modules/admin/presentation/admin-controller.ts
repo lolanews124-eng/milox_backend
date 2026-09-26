@@ -37,6 +37,10 @@ import {
   adminPostQuerySchema,
   adminStoryIdParamSchema,
   adminStoryQuerySchema,
+  adminReelIdParamSchema,
+  adminReelQuerySchema,
+  reviewReelSchema,
+  updateReelSettingsSchema,
   adminReportIdParamSchema,
   adminReportQuerySchema,
   adminSubscriptionIdParamSchema,
@@ -335,6 +339,42 @@ export class AdminController {
     response: Response,
   ): Promise<void> => {
     const data = await this.admin.storiesStats();
+    response.status(200).json(success(request, data));
+  };
+
+  getReelSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const data = await this.admin.getReelSettings();
+    response.status(200).json(success(request, data));
+  };
+
+  updateReelSettings = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const input = updateReelSettingsSchema.parse(request.body as unknown);
+    const data = await this.admin.updateReelSettings(
+      requireUser(request),
+      input.reelsEnabled,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  listReels = async (request: Request, response: Response): Promise<void> => {
+    const query = adminReelQuerySchema.parse(request.query);
+    const data = await this.admin.listReels(query);
+    response.status(200).json(success(request, data));
+  };
+
+  reviewReel = async (request: Request, response: Response): Promise<void> => {
+    const { reelId } = adminReelIdParamSchema.parse(request.params);
+    const input = reviewReelSchema.parse(request.body as unknown);
+    const data = await this.admin.reviewReel(requireUser(request), reelId, {
+      decision: input.decision,
+      reason: input.decision === "REJECTED" ? (input.reason ?? null) : null,
+    });
     response.status(200).json(success(request, data));
   };
 

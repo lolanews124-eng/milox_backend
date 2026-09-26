@@ -26,6 +26,7 @@ import {
   presentAdminPostsStats,
   presentAdminStory,
   presentAdminStoriesStats,
+  presentAdminReel,
   presentAdminPremiumPlan,
   presentAdminAd,
   presentAdminAdPlacementConfig,
@@ -511,6 +512,63 @@ export class AdminService {
       pageSize: options.pageSize,
       totalPages: Math.ceil(result.total / options.pageSize),
     };
+  }
+
+  async getReelSettings(): Promise<object> {
+    return this.repository.getReelSettings();
+  }
+
+  async updateReelSettings(
+    actorId: string,
+    reelsEnabled: boolean,
+  ): Promise<object> {
+    try {
+      return await this.repository.updateReelSettings({ actorId, reelsEnabled });
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      throw error;
+    }
+  }
+
+  async listReels(options: {
+    status: "PENDING" | "APPROVED" | "REJECTED";
+    page: number;
+    pageSize: number;
+  }): Promise<object> {
+    const result = await this.repository.listReels(options);
+    return {
+      items: result.items.map(presentAdminReel),
+      total: result.total,
+      page: options.page,
+      pageSize: options.pageSize,
+      totalPages: Math.ceil(result.total / options.pageSize),
+    };
+  }
+
+  async reviewReel(
+    actorId: string,
+    reelId: string,
+    input: { decision: "APPROVED" | "REJECTED"; reason: string | null },
+  ): Promise<object> {
+    try {
+      const reel = await this.repository.reviewReel({
+        actorId,
+        reelId,
+        decision: input.decision,
+        reason: input.reason,
+      });
+      if (!reel) {
+        throw new AppError("NOT_FOUND", "Reel not found", 404);
+      }
+      return presentAdminReel(reel);
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError("FORBIDDEN", "Insufficient moderation authority", 403);
+      }
+      throw error;
+    }
   }
 
   async storiesStats(): Promise<object> {

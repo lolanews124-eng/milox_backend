@@ -340,10 +340,10 @@ export class PrismaPostRepository implements PostRepository {
 
   async listTrendingHashtags(limit: number): Promise<HashtagRecord[]> {
     const rows = await this.database.hashtag.findMany({
-      where: { postCount: { gt: 0 } },
-      orderBy: [{ postCount: "desc" }, { lastUsedAt: "desc" }],
+      where: { OR: [{ postCount: { gt: 0 } }, { reelCount: { gt: 0 } }] },
+      orderBy: [{ postCount: "desc" }, { reelCount: "desc" }, { lastUsedAt: "desc" }],
       take: limit,
-      select: { tag: true, postCount: true },
+      select: { tag: true, postCount: true, reelCount: true },
     });
     return rows;
   }
@@ -354,12 +354,12 @@ export class PrismaPostRepository implements PostRepository {
   ): Promise<HashtagRecord[]> {
     const rows = await this.database.hashtag.findMany({
       where: {
-        postCount: { gt: 0 },
+        OR: [{ postCount: { gt: 0 } }, { reelCount: { gt: 0 } }],
         tag: { contains: term.toLowerCase() },
       },
-      orderBy: [{ postCount: "desc" }, { lastUsedAt: "desc" }],
+      orderBy: [{ postCount: "desc" }, { reelCount: "desc" }, { lastUsedAt: "desc" }],
       take: limit,
-      select: { tag: true, postCount: true },
+      select: { tag: true, postCount: true, reelCount: true },
     });
     return rows;
   }
@@ -367,7 +367,7 @@ export class PrismaPostRepository implements PostRepository {
   findHashtag(tag: string): Promise<HashtagRecord | null> {
     return this.database.hashtag.findUnique({
       where: { tag },
-      select: { tag: true, postCount: true },
+      select: { tag: true, postCount: true, reelCount: true },
     });
   }
 

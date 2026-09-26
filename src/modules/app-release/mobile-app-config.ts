@@ -12,6 +12,7 @@ export function presentMobileAppConfig(config: MobileAppConfig): object {
     iosStoreUrl: config.iosStoreUrl,
     title: config.title,
     message: config.message,
+    reelsEnabled: config.reelsEnabled,
     updatedAt: config.updatedAt.toISOString(),
   };
 }

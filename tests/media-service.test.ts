@@ -175,5 +175,7 @@ function createRepository(): MediaRepository {
       }),
     ),
     findPublicById: vi.fn(),
+    findOwnedById: vi.fn(),
+    hardDelete: vi.fn(),
   };
 }

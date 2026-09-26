@@ -203,6 +203,20 @@ export interface AdminStoryRecord {
   createdAt: Date;
 }
 
+export interface AdminReelRecord {
+  id: string;
+  authorId: string;
+  authorUsername: string;
+  authorDisplayName: string | null;
+  caption: string | null;
+  mediaAssetId: string;
+  posterMediaId: string | null;
+  durationMs: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  rejectReason: string | null;
+  createdAt: Date;
+}
+
 export interface AdminPostRecord {
   id: string;
   authorId: string;
@@ -615,6 +629,22 @@ export function presentAdminPost(post: AdminPostRecord): object {
     isHidden: post.isHidden,
     deletedAt: post.deletedAt?.toISOString() ?? null,
     createdAt: post.createdAt.toISOString(),
+  };
+}
+
+export function presentAdminReel(reel: AdminReelRecord): object {
+  return {
+    id: reel.id,
+    authorId: reel.authorId,
+    authorUsername: reel.authorUsername,
+    authorDisplayName: reel.authorDisplayName,
+    caption: reel.caption,
+    mediaAssetId: reel.mediaAssetId,
+    posterMediaId: reel.posterMediaId,
+    durationMs: reel.durationMs,
+    status: reel.status,
+    rejectReason: reel.rejectReason,
+    createdAt: reel.createdAt.toISOString(),
   };
 }
 

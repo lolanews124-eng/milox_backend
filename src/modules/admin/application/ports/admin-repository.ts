@@ -11,6 +11,7 @@ import type {
   AdminPostsStatsRecord,
   AdminStoryRecord,
   AdminStoriesStatsRecord,
+  AdminReelRecord,
   AdminPremiumPlanRecord,
   AdminAdRecord,
   AdminAdPlacementConfigRecord,
@@ -97,6 +98,29 @@ export interface DeleteStoryData {
   actorId: string;
   storyId: string;
   note: string | null;
+}
+
+export type ReelReviewDecision = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface AdminReelSettingsRecord {
+  reelsEnabled: boolean;
+  pendingCount: number;
+}
+
+export interface UpdateReelSettingsData {
+  actorId: string;
+  reelsEnabled: boolean;
+}
+
+export interface AdminReelQuery extends OffsetPage {
+  status: ReelReviewDecision;
+}
+
+export interface ReviewReelData {
+  actorId: string;
+  reelId: string;
+  decision: "APPROVED" | "REJECTED";
+  reason: string | null;
 }
 
 export interface UpdatePostVisibilityData {
@@ -479,6 +503,12 @@ export interface AdminRepository {
   listStories(query: AdminStoryQuery): Promise<AdminPage<AdminStoryRecord>>;
   storiesStats(now: Date): Promise<AdminStoriesStatsRecord>;
   deleteStory(data: DeleteStoryData): Promise<AdminStoryRecord | null>;
+  getReelSettings(): Promise<AdminReelSettingsRecord>;
+  updateReelSettings(
+    data: UpdateReelSettingsData,
+  ): Promise<AdminReelSettingsRecord>;
+  listReels(query: AdminReelQuery): Promise<AdminPage<AdminReelRecord>>;
+  reviewReel(data: ReviewReelData): Promise<AdminReelRecord | null>;
   listComments(
     query: AdminCommentQuery,
   ): Promise<AdminPage<AdminCommentRecord>>;

@@ -8,8 +8,8 @@ export interface CreateMediaData {
   storageKey: string;
   mimeType: string;
   byteSize: number;
-  width: number;
-  height: number;
+  width: number | null;
+  height: number | null;
   checksumSha256: string;
 }
 
@@ -30,4 +30,6 @@ export interface MediaRecord {
 export interface MediaRepository {
   create(data: CreateMediaData): Promise<MediaRecord>;
   findPublicById(mediaId: string): Promise<MediaRecord | null>;
+  findOwnedById(mediaId: string, ownerUserId: string): Promise<MediaRecord | null>;
+  hardDelete(mediaId: string): Promise<void>;
 }

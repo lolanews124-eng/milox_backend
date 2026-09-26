@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { copyFile, mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { MediaKind, MediaVisibility } from "@prisma/client";
@@ -9,6 +10,8 @@ import sharp from "sharp";
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import type { MediaRepository } from "../ports/media-repository.js";
+
+const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -145,6 +148,62 @@ export class MediaService {
     }
   }
 
+  /**
+   * Stores an already-playable MP4. No transcode — the file is public as soon
+   * as this returns.
+   */
+  async uploadReelVideo(
+    ownerUserId: string,
+    tempPath: string,
+  ): Promise<{ id: string; url: string; byteSize: number }> {
+    const info = await stat(tempPath);
+    if (info.size <= 0 || info.size > MAX_VIDEO_BYTES) {
+      throw new AppError(
+        "PAYLOAD_TOO_LARGE",
+        "Video must be 10 MB or smaller",
+        413,
+      );
+    }
+    await assertMp4(tempPath);
+
+    const id = randomUUID();
+    const storageKey = `public/reels/${id}.mp4`;
+    const absolutePath = path.resolve(this.config.UPLOAD_ROOT, storageKey);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await moveFile(tempPath, absolutePath);
+
+    try {
+      const record = await this.repository.create({
+        id,
+        ownerUserId,
+        kind: MediaKind.REEL_VIDEO,
+        visibility: MediaVisibility.PUBLIC,
+        storageKey,
+        mimeType: "video/mp4",
+        byteSize: info.size,
+        width: null,
+        height: null,
+        checksumSha256: await sha256File(absolutePath),
+      });
+      return {
+        id: record.id,
+        url: `${this.config.API_PUBLIC_URL.replace(/\/$/, "")}/api/v1/media/${record.id}`,
+        byteSize: record.byteSize,
+      };
+    } catch (error: unknown) {
+      await unlink(absolutePath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async discardUpload(mediaId: string, ownerUserId: string): Promise<void> {
+    const record = await this.repository.findOwnedById(mediaId, ownerUserId);
+    if (!record) return;
+    const absolutePath = path.resolve(this.config.UPLOAD_ROOT, record.storageKey);
+    await unlink(absolutePath).catch(() => undefined);
+    await this.repository.hardDelete(mediaId).catch(() => undefined);
+  }
+
   async resolvePublicMedia(mediaId: string): Promise<{
     absolutePath: string;
     mimeType: string;
@@ -231,7 +290,49 @@ function kindDirectory(kind: MediaKind): string {
       return "stories";
     case MediaKind.CHAT_IMAGE:
       return "chat";
+    case MediaKind.REEL_VIDEO:
+      return "reels";
     default:
       throw new Error(`Unsupported upload media kind: ${kind}`);
+  }
+}
+
+async function assertMp4(filePath: string): Promise<void> {
+  const handle = await open(filePath, "r");
+  try {
+    const header = Buffer.alloc(16);
+    const { bytesRead } = await handle.read(header, 0, 16, 0);
+    const brand = bytesRead >= 8 ? header.subarray(4, 8).toString("ascii") : "";
+    if (brand !== "ftyp") {
+      throw new AppError(
+        "UNSUPPORTED_MEDIA_TYPE",
+        "Only MP4 videos are supported",
+        415,
+      );
+    }
+  } finally {
+    await handle.close();
+  }
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => {
+      hash.update(chunk);
+    });
+    stream.on("error", reject);
+    stream.on("end", () => resolve());
+  });
+  return hash.digest("hex");
+}
+
+async function moveFile(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to);
+  } catch {
+    await copyFile(from, to);
+    await unlink(from).catch(() => undefined);
   }
 }

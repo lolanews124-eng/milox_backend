@@ -12,19 +12,7 @@ export class PrismaMediaRepository implements MediaRepository {
   create(data: CreateMediaData): Promise<MediaRecord> {
     return this.database.mediaAsset.create({
       data,
-      select: {
-        id: true,
-        ownerUserId: true,
-        kind: true,
-        visibility: true,
-        storageKey: true,
-        mimeType: true,
-        byteSize: true,
-        width: true,
-        height: true,
-        checksumSha256: true,
-        createdAt: true,
-      },
+      select: mediaSelect,
     });
   }
 
@@ -35,19 +23,35 @@ export class PrismaMediaRepository implements MediaRepository {
         visibility: "PUBLIC",
         deletedAt: null,
       },
-      select: {
-        id: true,
-        ownerUserId: true,
-        kind: true,
-        visibility: true,
-        storageKey: true,
-        mimeType: true,
-        byteSize: true,
-        width: true,
-        height: true,
-        checksumSha256: true,
-        createdAt: true,
-      },
+      select: mediaSelect,
     });
   }
+
+  findOwnedById(
+    mediaId: string,
+    ownerUserId: string,
+  ): Promise<MediaRecord | null> {
+    return this.database.mediaAsset.findFirst({
+      where: { id: mediaId, ownerUserId, deletedAt: null },
+      select: mediaSelect,
+    });
+  }
+
+  async hardDelete(mediaId: string): Promise<void> {
+    await this.database.mediaAsset.delete({ where: { id: mediaId } });
+  }
 }
+
+const mediaSelect = {
+  id: true,
+  ownerUserId: true,
+  kind: true,
+  visibility: true,
+  storageKey: true,
+  mimeType: true,
+  byteSize: true,
+  width: true,
+  height: true,
+  checksumSha256: true,
+  createdAt: true,
+} as const;

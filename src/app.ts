@@ -35,6 +35,7 @@ import { resolvePaypalCredentials } from "./modules/payments/application/paypal-
 import { createPostModule } from "./modules/posts/index.js";
 import { createRewardsModule } from "./modules/rewards/index.js";
 import { PrismaRewardsRepository } from "./modules/rewards/infrastructure/prisma-rewards-repository.js";
+import { createReelModule } from "./modules/reels/index.js";
 import { createStoryModule } from "./modules/stories/index.js";
 import { createAdsModule } from "./modules/ads/index.js";
 import { createAppReleaseRouter } from "./modules/app-release/app-release-router.js";
@@ -137,6 +138,15 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     authenticate: auth.authenticate,
     requireVerified: auth.requireVerified,
   });
+  const reels = createReelModule(
+    config,
+    database,
+    {
+      authenticate: auth.authenticate,
+      requireVerified: auth.requireVerified,
+    },
+    media.service,
+  );
   const comments = createCommentModule(config, database, {
     authenticate: auth.authenticate,
     optionalAuthenticate: auth.optionalAuthenticate,
@@ -280,6 +290,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/users", moderation.userBlocksRouter);
   app.use("/api/v1/users", follows.userRouter);
   app.use("/api/v1/users", posts.userPostsRouter);
+  app.use("/api/v1/users", reels.userRouter);
   app.use("/api/v1/users", users.router);
   app.use("/api/v1/media", media.router);
   app.use("/api/v1/feed", feed.router);
@@ -291,6 +302,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/hashtags", posts.hashtags);
   app.use("/api/v1/comments", comments.router);
   app.use("/api/v1/stories", stories.router);
+  app.use("/api/v1/reels", reels.router);
   app.use("/api/v1/follow-requests", follows.router);
   app.use("/api/v1/interests", interests.router);
   app.use("/api/v1/matches", interests.matchesRouter);

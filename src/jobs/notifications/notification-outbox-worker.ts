@@ -22,6 +22,7 @@ const directPayloadSchema = z.object({
   followId: z.uuid().optional(),
   interestId: z.uuid().optional(),
   matchId: z.uuid().optional(),
+  reelId: z.uuid().optional(),
 });
 const matchPayloadSchema = z.object({
   matchId: z.uuid(),
@@ -33,6 +34,12 @@ const messagePayloadSchema = z.object({
   conversationId: z.uuid(),
   senderId: z.uuid(),
   previewText: z.string().optional(),
+});
+const reelRejectedPayloadSchema = z.object({
+  recipientId: z.uuid(),
+  reelId: z.uuid(),
+  reason: z.string().min(1).max(64),
+  reasonLabel: z.string().min(1).max(160),
 });
 const NOTIFICATION_EVENTS = [
   "post.liked",
@@ -48,6 +55,13 @@ const NOTIFICATION_EVENTS = [
   "interest.accepted",
   "match.created",
   "message.created",
+  "reel.rejected",
+  "reel.mentioned",
+  "reel.liked",
+  "reel.shared",
+  "reel.commented",
+  "reel.comment.replied",
+  "reel.comment.liked",
 ];
 
 interface NotificationJob {
@@ -173,6 +187,22 @@ export class NotificationOutboxWorker {
         },
       ];
     }
+    if (event.eventType === "reel.rejected") {
+      const payload = reelRejectedPayloadSchema.parse(event.payload);
+      return [
+        {
+          recipientId: payload.recipientId,
+          actorId: null,
+          type: NotificationType.SYSTEM,
+          payload: {
+            code: "REEL_REJECTED",
+            reelId: payload.reelId,
+            reason: payload.reason,
+            reasonLabel: payload.reasonLabel,
+          },
+        },
+      ];
+    }
     if (event.eventType === "message.created") {
       const payload = messagePayloadSchema.parse(event.payload);
       const target = await this.notifications.resolveMessageTarget(
@@ -254,6 +284,12 @@ function notificationTypeFor(eventType: string): NotificationType | null {
     "post.shared": NotificationType.SYSTEM,
     "post.commented": NotificationType.NEW_COMMENT,
     "post.mentioned": NotificationType.POST_MENTION,
+    "reel.mentioned": NotificationType.POST_MENTION,
+    "reel.liked": NotificationType.NEW_LIKE,
+    "reel.shared": NotificationType.SYSTEM,
+    "reel.commented": NotificationType.NEW_COMMENT,
+    "reel.comment.replied": NotificationType.NEW_COMMENT,
+    "reel.comment.liked": NotificationType.NEW_LIKE,
     "comment.replied": NotificationType.NEW_COMMENT,
     "comment.liked": NotificationType.NEW_LIKE,
     "user.followed": NotificationType.NEW_FOLLOWER,
@@ -276,9 +312,11 @@ function directNotificationPayload(
     ...(payload.followId ? { followId: payload.followId } : {}),
     ...(payload.interestId ? { interestId: payload.interestId } : {}),
     ...(payload.matchId ? { matchId: payload.matchId } : {}),
+    ...(payload.reelId ? { reelId: payload.reelId } : {}),
     ...(eventType === "follow.accepted"
       ? { code: "FOLLOW_ACCEPTED" }
       : {}),
     ...(eventType === "post.shared" ? { code: "POST_SHARED" } : {}),
+    ...(eventType === "reel.shared" ? { code: "REEL_SHARED" } : {}),
   };
 }
