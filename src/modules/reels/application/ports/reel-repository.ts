@@ -8,6 +8,10 @@ export interface ReelAuthorRecord {
   premiumTier: PremiumTier;
   profilePhoto: { id: string } | null;
   followers?: Array<{ status: string }>;
+  interestsReceived?: Array<{ id: string }>;
+  interestsSent?: Array<{ id: string }>;
+  matchesAsUserA?: Array<{ id: string }>;
+  matchesAsUserB?: Array<{ id: string }>;
 }
 
 export interface ReelRecord {

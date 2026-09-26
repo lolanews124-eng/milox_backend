@@ -5,10 +5,20 @@ import type { FeedCursorCodec } from "../../../feed/application/services/feed-cu
 import type { MediaService } from "../../../media/application/services/media-service.js";
 import { REELS_PER_DAY, startOfIstDay } from "../reel-day.js";
 import type {
+  ReelAuthorRecord,
   ReelCommentRecord,
   ReelRecord,
   ReelRepository,
 } from "../ports/reel-repository.js";
+
+function canSendReelInterest(author: ReelAuthorRecord): boolean {
+  const alreadySent = (author.interestsReceived?.length ?? 0) > 0;
+  const alreadyReceived = (author.interestsSent?.length ?? 0) > 0;
+  const matched =
+    (author.matchesAsUserA?.length ?? 0) > 0 ||
+    (author.matchesAsUserB?.length ?? 0) > 0;
+  return !alreadySent && !alreadyReceived && !matched;
+}
 
 export class ReelService {
   constructor(
@@ -415,6 +425,7 @@ export class ReelService {
             ),
           }
         : {}),
+      canSendInterest: canSendReelInterest(author),
     };
   }
 

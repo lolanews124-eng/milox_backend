@@ -1,5 +1,7 @@
 import {
   FollowStatus,
+  InterestStatus,
+  MatchStatus,
   MediaKind,
   OutboxStatus,
   ReelReviewStatus,
@@ -714,6 +716,26 @@ function reelAuthorSelect(viewerId: string) {
     followers: {
       where: { followerId: viewerId },
       select: { status: true },
+      take: 1,
+    },
+    interestsReceived: {
+      where: { senderId: viewerId, status: InterestStatus.PENDING },
+      select: { id: true },
+      take: 1,
+    },
+    interestsSent: {
+      where: { recipientId: viewerId, status: InterestStatus.PENDING },
+      select: { id: true },
+      take: 1,
+    },
+    matchesAsUserA: {
+      where: { userBId: viewerId, status: MatchStatus.ACTIVE },
+      select: { id: true },
+      take: 1,
+    },
+    matchesAsUserB: {
+      where: { userAId: viewerId, status: MatchStatus.ACTIVE },
+      select: { id: true },
       take: 1,
     },
   };
