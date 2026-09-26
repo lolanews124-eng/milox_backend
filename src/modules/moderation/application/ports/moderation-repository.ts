@@ -22,6 +22,7 @@ export interface CreateReportData {
   commentId: string | null;
   messageId: string | null;
   storyId: string | null;
+  reelId: string | null;
   reasonCode: string;
   details: string | null;
 }

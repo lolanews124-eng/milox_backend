@@ -62,6 +62,7 @@ const NOTIFICATION_EVENTS = [
   "reel.commented",
   "reel.comment.replied",
   "reel.comment.liked",
+  "reel.comment.mentioned",
 ];
 
 interface NotificationJob {
@@ -290,6 +291,7 @@ function notificationTypeFor(eventType: string): NotificationType | null {
     "reel.commented": NotificationType.NEW_COMMENT,
     "reel.comment.replied": NotificationType.NEW_COMMENT,
     "reel.comment.liked": NotificationType.NEW_LIKE,
+    "reel.comment.mentioned": NotificationType.POST_MENTION,
     "comment.replied": NotificationType.NEW_COMMENT,
     "comment.liked": NotificationType.NEW_LIKE,
     "user.followed": NotificationType.NEW_FOLLOWER,

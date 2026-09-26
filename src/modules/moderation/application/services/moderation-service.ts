@@ -96,6 +96,7 @@ export class ModerationService {
       commentId?: string | null;
       messageId?: string | null;
       storyId?: string | null;
+      reelId?: string | null;
       reasonCode: string;
       details?: string | null;
     },
@@ -110,6 +111,7 @@ export class ModerationService {
         commentId: input.commentId ?? null,
         messageId: input.messageId ?? null,
         storyId: input.storyId ?? null,
+        reelId: input.reelId ?? null,
         reasonCode: input.reasonCode,
         details: input.details?.trim() || null,
       });
@@ -151,6 +153,7 @@ function assertTargetShape(input: {
   commentId?: string | null;
   messageId?: string | null;
   storyId?: string | null;
+  reelId?: string | null;
 }): void {
   const ids = {
     reportedUserId: Boolean(input.reportedUserId),
@@ -158,38 +161,17 @@ function assertTargetShape(input: {
     commentId: Boolean(input.commentId),
     messageId: Boolean(input.messageId),
     storyId: Boolean(input.storyId),
+    reelId: Boolean(input.reelId),
   };
+  const only = (key: keyof typeof ids) =>
+    ids[key] && Object.entries(ids).every(([name, set]) => name === key || !set);
   const valid =
-    (input.targetType === "USER" &&
-      ids.reportedUserId &&
-      !ids.postId &&
-      !ids.commentId &&
-      !ids.messageId &&
-      !ids.storyId) ||
-    (input.targetType === "POST" &&
-      ids.postId &&
-      !ids.reportedUserId &&
-      !ids.commentId &&
-      !ids.messageId &&
-      !ids.storyId) ||
-    (input.targetType === "COMMENT" &&
-      ids.commentId &&
-      !ids.reportedUserId &&
-      !ids.postId &&
-      !ids.messageId &&
-      !ids.storyId) ||
-    (input.targetType === "MESSAGE" &&
-      ids.messageId &&
-      !ids.reportedUserId &&
-      !ids.postId &&
-      !ids.commentId &&
-      !ids.storyId) ||
-    (input.targetType === "STORY" &&
-      ids.storyId &&
-      !ids.reportedUserId &&
-      !ids.postId &&
-      !ids.commentId &&
-      !ids.messageId);
+    (input.targetType === "USER" && only("reportedUserId")) ||
+    (input.targetType === "POST" && only("postId")) ||
+    (input.targetType === "COMMENT" && only("commentId")) ||
+    (input.targetType === "MESSAGE" && only("messageId")) ||
+    (input.targetType === "STORY" && only("storyId")) ||
+    (input.targetType === "REEL" && only("reelId"));
 
   if (!valid) {
     throw new AppError(

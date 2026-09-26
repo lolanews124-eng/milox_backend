@@ -1,7 +1,11 @@
+import type { PremiumTier } from "@prisma/client";
+
 export interface ReelAuthorRecord {
   id: string;
   username: string;
   displayName: string | null;
+  isVerifiedBadge: boolean;
+  premiumTier: PremiumTier;
   profilePhoto: { id: string } | null;
   followers?: Array<{ status: string }>;
 }

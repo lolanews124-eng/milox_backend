@@ -70,6 +70,7 @@ describe("AdminService", () => {
       commentId: null,
       messageId: null,
       storyId: null,
+      reelId: null,
       reasonCode: "HARASSMENT",
       details: null,
       status: "RESOLVED",

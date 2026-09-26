@@ -79,6 +79,7 @@ export interface AdminReportRecord {
   commentId: string | null;
   messageId: string | null;
   storyId: string | null;
+  reelId: string | null;
   reasonCode: string;
   details: string | null;
   status: ReportStatus;
@@ -140,6 +141,7 @@ export function presentAdminReport(report: AdminReportRecord): object {
     commentId: report.commentId,
     messageId: report.messageId,
     storyId: report.storyId,
+    reelId: report.reelId,
     reasonCode: report.reasonCode,
     details: report.details,
     status: report.status,

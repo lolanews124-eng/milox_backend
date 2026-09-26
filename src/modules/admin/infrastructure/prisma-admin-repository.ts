@@ -203,6 +203,7 @@ const adminReportSelect = {
   commentId: true,
   messageId: true,
   storyId: true,
+  reelId: true,
   reasonCode: true,
   details: true,
   status: true,

@@ -27,6 +27,8 @@ const authorSelect = {
   id: true,
   username: true,
   displayName: true,
+  isVerifiedBadge: true,
+  premiumTier: true,
   profilePhoto: { select: { id: true } },
 } as const;
 
@@ -247,7 +249,15 @@ export class PrismaReelRepository implements ReelRepository {
 
   findVisible(reelId: string, viewerId: string): Promise<ReelRecord | null> {
     return this.database.reel.findFirst({
-      where: approvedReelWhere(reelId, viewerId),
+      where: {
+        id: reelId,
+        deletedAt: null,
+        author: { is: visibleAuthorWhere(viewerId) },
+        OR: [
+          { status: ReelReviewStatus.APPROVED },
+          { authorId: viewerId },
+        ],
+      },
       select: reelSelect(viewerId),
     });
   }
@@ -406,6 +416,13 @@ export class PrismaReelRepository implements ReelRepository {
           },
         });
       }
+      await enqueueReelCommentMentions(tx, {
+        reelId: input.reelId,
+        commentId: created.id,
+        authorId: input.authorId,
+        body: input.body,
+        skipUserIds: recipientId ? [recipientId] : [],
+      });
       return tx.reelComment.findUniqueOrThrow({
         where: { id: created.id },
         select: commentSelect(input.authorId),
@@ -719,6 +736,61 @@ async function syncReelHashtags(
       data: { reelId, hashtagId: hashtag.id },
     });
   }
+}
+
+async function enqueueReelCommentMentions(
+  tx: Prisma.TransactionClient,
+  input: {
+    reelId: string;
+    commentId: string;
+    authorId: string;
+    body: string;
+    skipUserIds: string[];
+  },
+): Promise<void> {
+  const usernames = extractMentions(input.body);
+  if (usernames.length === 0) return;
+  const users = await tx.user.findMany({
+    where: {
+      usernameNormalized: { in: usernames },
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  const skip = new Set([input.authorId, ...input.skipUserIds]);
+  const candidateIds = users.map((user) => user.id).filter((id) => !skip.has(id));
+  if (candidateIds.length === 0) return;
+  const blocks = await tx.block.findMany({
+    where: {
+      OR: [
+        { blockerId: input.authorId, blockedId: { in: candidateIds } },
+        { blockerId: { in: candidateIds }, blockedId: input.authorId },
+      ],
+    },
+    select: { blockerId: true, blockedId: true },
+  });
+  const blocked = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockerId === input.authorId) blocked.add(block.blockedId);
+    if (block.blockedId === input.authorId) blocked.add(block.blockerId);
+  }
+  const recipientIds = candidateIds.filter((id) => !blocked.has(id));
+  if (recipientIds.length === 0) return;
+  await tx.outboxEvent.createMany({
+    data: recipientIds.map((recipientId) => ({
+      eventType: "reel.comment.mentioned",
+      aggregateType: "reel_comment",
+      aggregateId: input.commentId,
+      payload: {
+        reelId: input.reelId,
+        commentId: input.commentId,
+        actorId: input.authorId,
+        recipientId,
+      },
+      status: OutboxStatus.PENDING,
+    })),
+  });
 }
 
 export async function enqueueReelMentions(

@@ -104,9 +104,11 @@ function notificationAction(notification: PresentedNotification): string {
     MATCH_CREATED: "matched with you",
     NEW_MESSAGE: "sent you a message",
     POST_MENTION:
-      typeof payload.reelId === "string"
-        ? "mentioned you in a reel"
-        : "mentioned you in a post",
+      typeof payload.reelId === "string" && typeof payload.commentId === "string"
+        ? "mentioned you in a comment"
+        : typeof payload.reelId === "string"
+          ? "mentioned you in a reel"
+          : "mentioned you in a post",
   };
   return mapping[notification.type] ?? "sent you an update";
 }

@@ -406,6 +406,8 @@ export class ReelService {
       profilePhotoUrl: author.profilePhoto
         ? this.mediaUrl(author.profilePhoto.id)
         : null,
+      isVerifiedBadge: author.isVerifiedBadge,
+      premiumTier: author.premiumTier,
       ...(author.followers
         ? {
             viewerFollowState: viewerFollowStateFromStatus(

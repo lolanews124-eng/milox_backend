@@ -228,6 +228,7 @@ enum ReportTargetType {
   MESSAGE
   CONVERSATION
   STORY
+  REEL
 }
 
 enum ReportStatus {
@@ -644,6 +645,7 @@ model Reel {
   comments   ReelComment[]
   views      ReelView[]
   hashtags   ReelHashtag[]
+  reports    Report[]
 
   @@index([authorId, createdAt])
   @@index([createdAt])
@@ -1291,6 +1293,7 @@ model Report {
   commentId      String?          @db.Uuid
   messageId      String?          @db.Uuid
   storyId        String?          @db.Uuid
+  reelId         String?          @db.Uuid
   reasonCode     String           @db.VarChar(64)
   details        String?          @db.VarChar(1000)
   status         ReportStatus     @default(OPEN)
@@ -1305,6 +1308,7 @@ model Report {
   comment           Comment?           @relation(fields: [commentId], references: [id], onDelete: SetNull)
   message           Message?           @relation(fields: [messageId], references: [id], onDelete: SetNull)
   story             Story?             @relation(fields: [storyId], references: [id], onDelete: SetNull)
+  reel              Reel?              @relation(fields: [reelId], references: [id], onDelete: SetNull)
   moderationActions ModerationAction[]
 
   @@index([status, createdAt])
@@ -1312,6 +1316,7 @@ model Report {
   @@index([reportedUserId, createdAt])
   @@index([targetType, status])
   @@index([storyId])
+  @@index([reelId])
   @@map("reports")
 }
 

@@ -6,6 +6,7 @@ import {
   MatchStatus,
   Prisma,
   ReportStatus,
+  ReelReviewStatus,
   ReportTargetType,
   UserStatus,
   type PrismaClient,
@@ -128,6 +129,9 @@ export class PrismaModerationRepository implements ModerationRepository {
     if (data.targetType === ReportTargetType.STORY && !data.storyId) {
       throw new ReportTargetInvalidError();
     }
+    if (data.targetType === ReportTargetType.REEL && !data.reelId) {
+      throw new ReportTargetInvalidError();
+    }
 
     try {
       return await this.database.$transaction(async (transaction) => {
@@ -167,6 +171,12 @@ export class PrismaModerationRepository implements ModerationRepository {
                   storyId: resolved.storyId,
                 }
               : {}),
+            ...(data.targetType === ReportTargetType.REEL
+              ? {
+                  targetType: ReportTargetType.REEL,
+                  reelId: resolved.reelId,
+                }
+              : {}),
           },
           select: { id: true },
         });
@@ -181,6 +191,7 @@ export class PrismaModerationRepository implements ModerationRepository {
             commentId: resolved.commentId,
             messageId: resolved.messageId,
             storyId: resolved.storyId,
+            reelId: resolved.reelId,
             reasonCode: data.reasonCode,
             details: data.details,
           },
@@ -296,6 +307,7 @@ async function resolveReportTarget(
   commentId: string | null;
   messageId: string | null;
   storyId: string | null;
+  reelId: string | null;
 } | null> {
   if (data.targetType === ReportTargetType.USER) {
     if (!data.reportedUserId) throw new ReportTargetInvalidError();
@@ -314,6 +326,7 @@ async function resolveReportTarget(
       commentId: null,
       messageId: null,
       storyId: null,
+      reelId: null,
     };
   }
 
@@ -330,6 +343,7 @@ async function resolveReportTarget(
       commentId: null,
       messageId: null,
       storyId: null,
+      reelId: null,
     };
   }
 
@@ -346,6 +360,7 @@ async function resolveReportTarget(
       commentId: comment.id,
       messageId: null,
       storyId: null,
+      reelId: null,
     };
   }
 
@@ -370,6 +385,7 @@ async function resolveReportTarget(
       commentId: null,
       messageId: message.id,
       storyId: null,
+      reelId: null,
     };
   }
 
@@ -390,6 +406,28 @@ async function resolveReportTarget(
       commentId: null,
       messageId: null,
       storyId: story.id,
+      reelId: null,
+    };
+  }
+
+  if (data.targetType === ReportTargetType.REEL) {
+    if (!data.reelId) throw new ReportTargetInvalidError();
+    const reel = await transaction.reel.findFirst({
+      where: {
+        id: data.reelId,
+        deletedAt: null,
+        status: ReelReviewStatus.APPROVED,
+      },
+      select: { id: true, authorId: true },
+    });
+    if (!reel) return null;
+    return {
+      reportedUserId: reel.authorId,
+      postId: null,
+      commentId: null,
+      messageId: null,
+      storyId: null,
+      reelId: reel.id,
     };
   }
 
