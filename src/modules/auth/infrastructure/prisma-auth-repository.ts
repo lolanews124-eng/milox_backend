@@ -15,6 +15,7 @@ import type {
 } from "../application/ports/auth-repository.js";
 import { DuplicateAccountError } from "../application/ports/auth-repository.js";
 import type { SignupRewardsWriter } from "../../rewards/application/ports/rewards-repository.js";
+import { runTransactionWithRetry } from "../../../shared/prisma-serializable-transaction.js";
 
 const authUserSelect = {
   id: true,
@@ -145,7 +146,10 @@ export class PrismaAuthRepository implements AuthRepository {
   rotateRefreshSession(
     data: RotateRefreshSessionData,
   ): Promise<RotateRefreshSessionResult> {
-    return this.database.$transaction(
+    // Read Committed plus a conditional claim. Serializable made every
+    // concurrent refresh (app reopen, two devices) abort with P2034.
+    return runTransactionWithRetry(
+      this.database,
       async (transaction): Promise<RotateRefreshSessionResult> => {
         const current = await transaction.refreshSession.findUnique({
           where: { tokenHash: data.currentTokenHash },
@@ -174,12 +178,10 @@ export class PrismaAuthRepository implements AuthRepository {
           data: { revokedAt: now },
         });
 
+        // Another request already rotated this token. Do not kill that
+        // new session; only a later reuse of the old token does that.
         if (claimed.count !== 1) {
-          await transaction.refreshSession.updateMany({
-            where: { familyId: current.familyId, revokedAt: null },
-            data: { revokedAt: now, reuseDetectedAt: now },
-          });
-          return { status: "reused" };
+          return { status: "invalid" };
         }
 
         await transaction.refreshSession.create({
@@ -200,7 +202,6 @@ export class PrismaAuthRepository implements AuthRepository {
 
         return { status: "rotated", user: current.user };
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
 

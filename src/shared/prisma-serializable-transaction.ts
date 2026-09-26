@@ -18,12 +18,31 @@ export async function runSerializableTransaction<T>(
   operation: (transaction: Prisma.TransactionClient) => Promise<T>,
   attempts = 8,
 ): Promise<T> {
+  return runTransactionWithRetry(database, operation, {
+    attempts,
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  });
+}
+
+/** Retries Postgres write conflicts and deadlocks (Prisma P2034). */
+export async function runTransactionWithRetry<T>(
+  database: PrismaClient,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+  options: {
+    attempts?: number;
+    isolationLevel?: Prisma.TransactionIsolationLevel;
+  } = {},
+): Promise<T> {
+  const attempts = options.attempts ?? 5;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await database.$transaction(operation, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      });
+      return await database.$transaction(
+        operation,
+        options.isolationLevel
+          ? { isolationLevel: options.isolationLevel }
+          : undefined,
+      );
     } catch (error) {
       lastError = error;
       if (attempt < attempts && isRetryableSerializationError(error)) {
@@ -37,5 +56,5 @@ export async function runSerializableTransaction<T>(
   }
   throw lastError instanceof Error
     ? lastError
-    : new Error("Serializable transaction retry exhausted");
+    : new Error("Transaction retry exhausted");
 }
