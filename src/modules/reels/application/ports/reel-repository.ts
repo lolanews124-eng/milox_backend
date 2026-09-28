@@ -74,6 +74,11 @@ export interface ReelRepository {
     cursor?: ReelPageCursor | undefined;
     friendsOnly?: boolean | undefined;
   }): Promise<ReelRecord[]>;
+  listSaved(input: {
+    viewerId: string;
+    limit: number;
+    cursor?: ReelPageCursor | undefined;
+  }): Promise<Array<{ reel: ReelRecord; savedAt: Date }>>;
   listByHashtag(input: {
     tag: string;
     viewerId: string;

@@ -29,6 +29,7 @@ export function createReelRouter(
     asyncHandler(controller.byHashtag),
   );
   router.get("/", authenticate, asyncHandler(controller.list));
+  router.get("/saved", authenticate, asyncHandler(controller.saved));
   router.get("/:reelId", authenticate, asyncHandler(controller.one));
   router.post(
     "/",

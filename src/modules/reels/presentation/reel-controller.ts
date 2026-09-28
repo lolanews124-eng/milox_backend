@@ -103,6 +103,15 @@ export class ReelController {
     });
   };
 
+  saved = async (request: Request, response: Response): Promise<void> => {
+    const query = pageSchema.parse(request.query);
+    const page = await this.reels.listSaved(requireUser(request), {
+      limit: query.limit,
+      ...(query.cursor ? { cursor: query.cursor } : {}),
+    });
+    response.status(200).json(pageResponse(request, page));
+  };
+
   save = async (request: Request, response: Response): Promise<void> => {
     const { reelId } = reelIdSchema.parse(request.params);
     const result = await this.reels.toggleSave(reelId, requireUser(request));

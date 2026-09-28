@@ -126,6 +126,43 @@ export class ReelService {
     return this.page(rows, input.limit);
   }
 
+  async listSaved(
+    viewerId: string,
+    input: { limit: number; cursor?: string | undefined },
+  ): Promise<{ items: object[]; nextCursor: string | null; hasMore: boolean }> {
+    const decoded = input.cursor ? this.cursors.decode(input.cursor) : null;
+    if (decoded && decoded.kind !== "chronological") {
+      throw new AppError(
+        "INVALID_CURSOR",
+        "The pagination cursor is invalid or expired",
+        400,
+      );
+    }
+    const rows = await this.repository.listSaved({
+      viewerId,
+      limit: input.limit + 1,
+      ...(decoded
+        ? { cursor: { id: decoded.id, createdAt: new Date(decoded.createdAt) } }
+        : {}),
+    });
+    const hasMore = rows.length > input.limit;
+    const items = hasMore ? rows.slice(0, input.limit) : rows;
+    const last = items.at(-1);
+    return {
+      items: items.map((row) => this.present(row.reel)),
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? this.cursors.encode({
+              version: 1,
+              kind: "chronological",
+              id: last.reel.id,
+              createdAt: last.savedAt.toISOString(),
+            })
+          : null,
+    };
+  }
+
   private page(
     rows: ReelRecord[],
     limit: number,

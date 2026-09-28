@@ -134,6 +134,44 @@ export class PrismaReelRepository implements ReelRepository {
     });
   }
 
+  async listSaved(input: {
+    viewerId: string;
+    limit: number;
+    cursor?: ReelPageCursor | undefined;
+  }): Promise<Array<{ reel: ReelRecord; savedAt: Date }>> {
+    const cursorWhere: Prisma.ReelSaveWhereInput | undefined = input.cursor
+      ? {
+          OR: [
+            { createdAt: { lt: input.cursor.createdAt } },
+            {
+              AND: [
+                { createdAt: input.cursor.createdAt },
+                { reelId: { lt: input.cursor.id } },
+              ],
+            },
+          ],
+        }
+      : undefined;
+    const rows = await this.database.reelSave.findMany({
+      where: {
+        userId: input.viewerId,
+        ...cursorWhere,
+        reel: {
+          deletedAt: null,
+          status: ReelReviewStatus.APPROVED,
+          author: { is: visibleAuthorWhere(input.viewerId) },
+        },
+      },
+      orderBy: [{ createdAt: "desc" }, { reelId: "desc" }],
+      take: input.limit,
+      select: {
+        createdAt: true,
+        reel: { select: reelSelect(input.viewerId) },
+      },
+    });
+    return rows.map((row) => ({ reel: row.reel, savedAt: row.createdAt }));
+  }
+
   async toggleLike(
     reelId: string,
     userId: string,
