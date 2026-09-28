@@ -359,94 +359,114 @@ const conversationAdminSelect = {
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private readonly database: PrismaClient) {}
 
-  dashboard(now: Date): Promise<AdminDashboardRecord> {
+  async dashboard(now: Date): Promise<AdminDashboardRecord> {
     const dayStart = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
-    return this.database.$transaction(async (transaction) => {
-      const [
-        totalUsers,
-        dailyActiveUsers,
-        newUsersToday,
-        deletedUsers,
-        totalPosts,
-        totalComments,
-        totalMessages,
-        openReports,
-        commerceRows,
-      ] = await Promise.all([
-        transaction.user.count({
-          where: {
-            status: { not: UserStatus.DELETED },
-            deletedAt: null,
-            ...consumerPlatformUserWhere(),
-          },
-        }),
-        transaction.user.count({
-          where: {
-            status: UserStatus.ACTIVE,
-            deletedAt: null,
-            ...consumerPlatformUserWhere(),
-            OR: [
-              { lastSeenAt: { gte: dayStart } },
-              { lastLoginAt: { gte: dayStart } },
-            ],
-          },
-        }),
-        transaction.user.count({
-          where: {
-            createdAt: { gte: dayStart },
-            deletedAt: null,
-            ...consumerPlatformUserWhere(),
-          },
-        }),
-        transaction.user.count({
-          where: {
-            deletedAt: { not: null },
-            ...consumerPlatformUserWhere(),
-          },
-        }),
-        transaction.post.count({ where: { deletedAt: null } }),
-        transaction.comment.count({ where: { deletedAt: null } }),
-        transaction.message.count({
-          where: { deletedForEveryoneAt: null },
-        }),
-        transaction.report.count({
-          where: {
-            status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
-          },
-        }),
-        transaction.$queryRaw<
-          Array<{ premiumUsers: bigint; revenueCents: bigint }>
-        >`
-          SELECT
-            COUNT(DISTINCT s."userId") FILTER (
-              WHERE s.status = 'ACTIVE'
-                AND s."startsAt" <= ${now}
-                AND s."endsAt" > ${now}
-            )::bigint AS "premiumUsers",
-            COALESCE(SUM(p."priceCents") FILTER (
-              WHERE s.status = 'ACTIVE'
-                AND s."startsAt" <= ${now}
-                AND s."endsAt" > ${now}
-            ), 0)::bigint AS "revenueCents"
-          FROM user_subscriptions s
-          INNER JOIN premium_plans p ON p.id = s."planId"
-        `,
-      ]);
-      return {
-        totalUsers,
-        dailyActiveUsers,
-        newUsersToday,
-        deletedUsers,
-        totalPosts,
-        totalComments,
-        totalMessages,
-        openReports,
-        premiumUsers: Number(commerceRows[0]?.premiumUsers ?? 0),
-        revenueCents: Number(commerceRows[0]?.revenueCents ?? 0),
-      };
-    });
+    const [
+      totalUsers,
+      dailyActiveUsers,
+      newUsersToday,
+      deletedUsers,
+      totalPosts,
+      totalComments,
+      totalMessages,
+      openReports,
+      commerceRows,
+    ] = await Promise.all([
+      this.database.user.count({
+        where: {
+          status: { not: UserStatus.DELETED },
+          deletedAt: null,
+          ...consumerPlatformUserWhere(),
+        },
+      }),
+      this.database.user.count({
+        where: {
+          status: UserStatus.ACTIVE,
+          deletedAt: null,
+          ...consumerPlatformUserWhere(),
+          OR: [
+            { lastSeenAt: { gte: dayStart } },
+            { lastLoginAt: { gte: dayStart } },
+          ],
+        },
+      }),
+      this.database.user.count({
+        where: {
+          createdAt: { gte: dayStart },
+          deletedAt: null,
+          ...consumerPlatformUserWhere(),
+        },
+      }),
+      this.database.user.count({
+        where: {
+          deletedAt: { not: null },
+          ...consumerPlatformUserWhere(),
+        },
+      }),
+      this.database.post.count({ where: { deletedAt: null } }),
+      this.database.comment.count({ where: { deletedAt: null } }),
+      this.database.message.count({
+        where: { deletedForEveryoneAt: null },
+      }),
+      this.database.report.count({
+        where: {
+          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+        },
+      }),
+      this.database.$queryRaw<
+        Array<{ premiumUsers: bigint; revenueCents: bigint }>
+      >`
+        SELECT
+          COUNT(DISTINCT s."userId") FILTER (
+            WHERE s.status = 'ACTIVE'
+              AND s."startsAt" <= ${now}
+              AND s."endsAt" > ${now}
+          )::bigint AS "premiumUsers",
+          COALESCE(SUM(p."priceCents") FILTER (
+            WHERE s.status = 'ACTIVE'
+              AND s."startsAt" <= ${now}
+              AND s."endsAt" > ${now}
+          ), 0)::bigint AS "revenueCents"
+        FROM user_subscriptions s
+        INNER JOIN premium_plans p ON p.id = s."planId"
+      `,
+    ]);
+    return {
+      totalUsers,
+      dailyActiveUsers,
+      newUsersToday,
+      deletedUsers,
+      totalPosts,
+      totalComments,
+      totalMessages,
+      openReports,
+      premiumUsers: Number(commerceRows[0]?.premiumUsers ?? 0),
+      revenueCents: Number(commerceRows[0]?.revenueCents ?? 0),
+    };
+  }
+
+  async navBadges(): Promise<{
+    openReports: number;
+    pendingVerification: number;
+  }> {
+    const [openReports, pendingVerification] = await Promise.all([
+      this.database.report.count({
+        where: {
+          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+        },
+      }),
+      this.database.user.count({
+        where: {
+          deletedAt: null,
+          status: UserStatus.ACTIVE,
+          ...consumerPlatformUserWhere(),
+          isVerifiedBadge: false,
+        },
+      }),
+    ]);
+    return { openReports, pendingVerification };
   }
 
   async usersStats(now: Date): Promise<AdminUsersStatsRecord> {
@@ -3702,20 +3722,29 @@ export class PrismaAdminRepository implements AdminRepository {
       status: { not: UserStatus.DELETED },
     } as const;
 
-    const [users, posts, reports, genderGroups, ageGroups, countryGroups, demographicsTotal] =
+    const [userDays, postDays, reportDays, genderGroups, ageGroups, countryGroups, demographicsTotal] =
       await Promise.all([
-      this.database.user.findMany({
-        where: { createdAt: { gte: start }, deletedAt: null },
-        select: { createdAt: true },
-      }),
-      this.database.post.findMany({
-        where: { createdAt: { gte: start }, deletedAt: null },
-        select: { createdAt: true },
-      }),
-      this.database.report.findMany({
-        where: { createdAt: { gte: start } },
-        select: { createdAt: true },
-      }),
+      this.database.$queryRaw<Array<{ day: string; count: number }>>`
+        SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+               COUNT(*)::int AS count
+        FROM users
+        WHERE "createdAt" >= ${start} AND "deletedAt" IS NULL
+        GROUP BY 1
+      `,
+      this.database.$queryRaw<Array<{ day: string; count: number }>>`
+        SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+               COUNT(*)::int AS count
+        FROM posts
+        WHERE "createdAt" >= ${start} AND "deletedAt" IS NULL
+        GROUP BY 1
+      `,
+      this.database.$queryRaw<Array<{ day: string; count: number }>>`
+        SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+               COUNT(*)::int AS count
+        FROM reports
+        WHERE "createdAt" >= ${start}
+        GROUP BY 1
+      `,
       this.database.user.groupBy({
         by: ["gender"],
         where: demographicsWhere,
@@ -3737,9 +3766,9 @@ export class PrismaAdminRepository implements AdminRepository {
     ]);
 
     return {
-      userSignups: buildDailySeries(start, days, users.map((row) => row.createdAt)),
-      postsCreated: buildDailySeries(start, days, posts.map((row) => row.createdAt)),
-      reportsFiled: buildDailySeries(start, days, reports.map((row) => row.createdAt)),
+      userSignups: seriesFromCounts(start, days, userDays),
+      postsCreated: seriesFromCounts(start, days, postDays),
+      reportsFiled: seriesFromCounts(start, days, reportDays),
       demographics: {
         totalUsers: demographicsTotal,
         gender: buildDemographicBuckets(
@@ -4691,6 +4720,24 @@ function mapBlogPost(post: {
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
   };
+}
+
+function seriesFromCounts(
+  start: Date,
+  days: number,
+  rows: Array<{ day: string; count: number }>,
+): Array<{ date: string; count: number }> {
+  const buckets = new Map<string, number>();
+  for (let index = 0; index < days; index += 1) {
+    const day = new Date(start);
+    day.setUTCDate(start.getUTCDate() + index);
+    buckets.set(day.toISOString().slice(0, 10), 0);
+  }
+  for (const row of rows) {
+    const key = String(row.day).slice(0, 10);
+    if (buckets.has(key)) buckets.set(key, Number(row.count));
+  }
+  return [...buckets.entries()].map(([date, count]) => ({ date, count }));
 }
 
 function buildDailySeries(

@@ -173,6 +173,10 @@ export class AdminService {
     return this.repository.dashboard(new Date());
   }
 
+  navBadges(): ReturnType<AdminRepository["navBadges"]> {
+    return this.repository.navBadges();
+  }
+
   async usersStats(): Promise<object> {
     const stats = await this.repository.usersStats(new Date());
     return presentAdminUsersStats(stats);

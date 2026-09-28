@@ -474,6 +474,10 @@ export class AdminStateConflictError extends Error {}
 
 export interface AdminRepository {
   dashboard(now: Date): Promise<AdminDashboardRecord>;
+  navBadges(): Promise<{
+    openReports: number;
+    pendingVerification: number;
+  }>;
   usersStats(now: Date): Promise<AdminUsersStatsRecord>;
   verificationStats(): Promise<AdminVerificationStatsRecord>;
   listUsers(query: AdminUserQuery): Promise<AdminPage<AdminUserRecord>>;

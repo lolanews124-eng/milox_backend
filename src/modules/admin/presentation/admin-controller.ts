@@ -200,6 +200,11 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
+  navBadges = async (request: Request, response: Response): Promise<void> => {
+    const data = await this.admin.navBadges();
+    response.status(200).json(success(request, data));
+  };
+
   listUsers = async (request: Request, response: Response): Promise<void> => {
     const query = adminUserQuerySchema.parse(request.query);
     const data = await this.admin.listUsers(query);

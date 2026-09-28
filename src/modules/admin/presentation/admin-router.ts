@@ -79,6 +79,12 @@ export function createAdminRouter(
     asyncHandler(controller.dashboard),
   );
   router.get(
+    "/nav-badges",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.navBadges),
+  );
+  router.get(
     "/users",
     readLimit,
     adminOnly,

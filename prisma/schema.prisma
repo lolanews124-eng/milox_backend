@@ -1183,6 +1183,9 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([senderId, createdAt])
   @@index([replyToId])
+  /// Partial index messages_not_deleted_everyone_idx
+  /// (WHERE "deletedForEveryoneAt" IS NULL) lives only in SQL.
+  /// Prisma cannot express WHERE clauses. Do not drop it.
   @@map("messages")
 }
 

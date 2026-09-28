@@ -115,6 +115,7 @@ describe("AdminService", () => {
 function createRepository(): AdminRepository {
   return {
     dashboard: vi.fn(),
+    navBadges: vi.fn(),
     listUsers: vi.fn(),
     getUserById: vi.fn(),
     listUserModerationHistory: vi.fn(),
