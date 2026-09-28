@@ -811,6 +811,8 @@ model Hashtag {
 model ReelView {
   reelId    String   @db.Uuid
   viewerId  String   @db.Uuid
+  /// Longest stretch this viewer actually played, capped at the reel duration.
+  watchedMs Int      @default(0)
   createdAt DateTime @default(now())
 
   reel   Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)

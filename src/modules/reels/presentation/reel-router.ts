@@ -20,6 +20,7 @@ export function createReelRouter(
   const router = Router();
   const createLimit = createRateLimit(20, 10 * 60 * 1000);
   const actionLimit = createRateLimit(240, 10 * 60 * 1000);
+  const previewLimit = createRateLimit(120, 10 * 60 * 1000);
   const videoUpload = createVideoUpload(config.UPLOAD_ROOT);
 
   router.get("/quota", authenticate, asyncHandler(controller.quota));
@@ -30,6 +31,11 @@ export function createReelRouter(
   );
   router.get("/", authenticate, asyncHandler(controller.list));
   router.get("/saved", authenticate, asyncHandler(controller.saved));
+  router.get(
+    "/:reelId/preview",
+    previewLimit,
+    asyncHandler(controller.preview),
+  );
   router.get("/:reelId", authenticate, asyncHandler(controller.one));
   router.post(
     "/",

@@ -16,6 +16,11 @@ const pageSchema = z.object({
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(24).default(8),
   scope: z.enum(["reels", "friends"]).default("reels"),
+  order: z.enum(["ranked", "latest"]).optional(),
+});
+
+const viewSchema = z.object({
+  watchedMs: z.coerce.number().int().min(0).max(180_000).optional(),
 });
 
 const reelIdSchema = z.object({ reelId: z.string().uuid() });
@@ -89,6 +94,7 @@ export class ReelController {
     const page = await this.reels.list(requireUser(request), {
       limit: query.limit,
       friendsOnly: query.scope === "friends",
+      latest: query.scope === "friends" || query.order === "latest",
       ...(query.cursor ? { cursor: query.cursor } : {}),
     });
     response.status(200).json({
@@ -139,8 +145,19 @@ export class ReelController {
 
   view = async (request: Request, response: Response): Promise<void> => {
     const { reelId } = reelIdSchema.parse(request.params);
-    const result = await this.reels.recordView(reelId, requireUser(request));
+    const body = viewSchema.parse(request.body ?? {});
+    const result = await this.reels.recordView(
+      reelId,
+      requireUser(request),
+      body.watchedMs ?? 0,
+    );
     response.status(200).json(success(request, result));
+  };
+
+  preview = async (request: Request, response: Response): Promise<void> => {
+    const { reelId } = reelIdSchema.parse(request.params);
+    const reel = await this.reels.publicPreview(reelId);
+    response.status(200).json(success(request, reel));
   };
 
   one = async (request: Request, response: Response): Promise<void> => {

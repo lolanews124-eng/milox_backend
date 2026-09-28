@@ -50,6 +50,27 @@ export interface ReelPageCursor {
   createdAt: Date;
 }
 
+export interface ReelRankViewer {
+  country: string;
+  interestSlugs: string[];
+  engagedHashtags: string[];
+}
+
+export interface ReelRankCandidate {
+  reel: ReelRecord;
+  saveCount: number;
+  avgWatchedMs: number;
+  measuredWatchCount: number;
+  seenByViewer: boolean;
+  hashtags: string[];
+  followerCount: number;
+  country: string;
+  authorInterestSlugs: string[];
+  following: boolean;
+  matched: boolean;
+  interestPending: boolean;
+}
+
 export interface ReelRepository {
   countSince(authorId: string, since: Date): Promise<number>;
   reelsEnabled(): Promise<boolean>;
@@ -85,10 +106,22 @@ export interface ReelRepository {
     limit: number;
     cursor?: ReelPageCursor | undefined;
   }): Promise<ReelRecord[]>;
+  loadRankPool(input: {
+    viewerId: string;
+    since: Date;
+    take: number;
+    tag?: string | undefined;
+  }): Promise<{ viewer: ReelRankViewer; candidates: ReelRankCandidate[] }>;
   findVisible(
     reelId: string,
     viewerId: string,
   ): Promise<ReelRecord | null>;
+  findPublicPreview(reelId: string): Promise<{
+    id: string;
+    caption: string | null;
+    posterMediaId: string | null;
+    authorName: string;
+  } | null>;
   toggleLike(
     reelId: string,
     userId: string,
@@ -133,5 +166,6 @@ export interface ReelRepository {
   recordView(
     reelId: string,
     viewerId: string,
+    watchedMs: number,
   ): Promise<{ viewCount: number } | null>;
 }

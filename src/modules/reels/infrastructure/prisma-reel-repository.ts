@@ -18,9 +18,12 @@ import {
   visibleUserCardWhere,
 } from "../../posts/infrastructure/post-query-policy.js";
 import { REELS_PER_DAY } from "../application/reel-day.js";
+import { isLongReelWatch } from "../application/reel-ranking.js";
 import type {
   ReelCommentRecord,
   ReelPageCursor,
+  ReelRankCandidate,
+  ReelRankViewer,
   ReelRecord,
   ReelRepository,
 } from "../application/ports/reel-repository.js";
@@ -285,6 +288,36 @@ export class PrismaReelRepository implements ReelRepository {
       }
       return { shareCount: updated.shareCount };
     });
+  }
+
+  async findPublicPreview(reelId: string): Promise<{
+    id: string;
+    caption: string | null;
+    posterMediaId: string | null;
+    authorName: string;
+  } | null> {
+    const reel = await this.database.reel.findFirst({
+      where: {
+        id: reelId,
+        deletedAt: null,
+        status: ReelReviewStatus.APPROVED,
+        author: { is: visibleAuthorWhere() },
+      },
+      select: {
+        id: true,
+        caption: true,
+        posterMediaId: true,
+        author: { select: { displayName: true, username: true } },
+      },
+    });
+    if (!reel) return null;
+    const authorName = reel.author.displayName?.trim() || reel.author.username;
+    return {
+      id: reel.id,
+      caption: reel.caption,
+      posterMediaId: reel.posterMediaId,
+      authorName,
+    };
   }
 
   findVisible(reelId: string, viewerId: string): Promise<ReelRecord | null> {
@@ -662,9 +695,145 @@ export class PrismaReelRepository implements ReelRepository {
     });
   }
 
+  async loadRankPool(input: {
+    viewerId: string;
+    since: Date;
+    take: number;
+    tag?: string | undefined;
+  }): Promise<{ viewer: ReelRankViewer; candidates: ReelRankCandidate[] }> {
+    const tagSelect = {
+      select: { hashtag: { select: { tag: true } } },
+    } as const;
+    const [viewerRow, likes, saves, watches, rows] = await Promise.all([
+      this.database.user.findUnique({
+        where: { id: input.viewerId },
+        select: {
+          country: true,
+          interests: { select: { tag: { select: { slug: true } } } },
+        },
+      }),
+      this.database.reelLike.findMany({
+        where: { userId: input.viewerId },
+        orderBy: { createdAt: "desc" },
+        take: 80,
+        select: { reel: { select: { hashtags: tagSelect } } },
+      }),
+      this.database.reelSave.findMany({
+        where: { userId: input.viewerId },
+        orderBy: { createdAt: "desc" },
+        take: 80,
+        select: { reel: { select: { hashtags: tagSelect } } },
+      }),
+      this.database.reelView.findMany({
+        where: { viewerId: input.viewerId, watchedMs: { gt: 0 } },
+        orderBy: { createdAt: "desc" },
+        take: 80,
+        select: {
+          watchedMs: true,
+          reel: { select: { durationMs: true, hashtags: tagSelect } },
+        },
+      }),
+      this.database.reel.findMany({
+        where: {
+          deletedAt: null,
+          status: ReelReviewStatus.APPROVED,
+          createdAt: { gte: input.since },
+          author: { is: visibleAuthorWhere(input.viewerId) },
+          ...(input.tag
+            ? { hashtags: { some: { hashtag: { tag: input.tag } } } }
+            : {}),
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: input.take,
+        select: {
+          ...reelSelect(input.viewerId),
+          hashtags: tagSelect,
+          author: {
+            select: {
+              ...reelAuthorSelect(input.viewerId),
+              country: true,
+              followerCount: true,
+              interests: { select: { tag: { select: { slug: true } } } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const engaged = new Set<string>();
+    for (const row of likes) addTags(engaged, row.reel.hashtags);
+    for (const row of saves) addTags(engaged, row.reel.hashtags);
+    for (const row of watches) {
+      if (!isLongReelWatch(row.watchedMs, row.reel.durationMs)) continue;
+      addTags(engaged, row.reel.hashtags);
+    }
+    const viewer: ReelRankViewer = {
+      country: viewerRow?.country ?? "",
+      interestSlugs: (viewerRow?.interests ?? []).map((entry) =>
+        entry.tag.slug.toLowerCase(),
+      ),
+      engagedHashtags: [...engaged],
+    };
+    if (rows.length === 0) return { viewer, candidates: [] };
+
+    const ids = rows.map((row) => row.id);
+    const [saveCounts, watchStats, seenRows] = await Promise.all([
+      this.database.reelSave.groupBy({
+        by: ["reelId"],
+        where: { reelId: { in: ids } },
+        _count: { _all: true },
+      }),
+      this.database.reelView.groupBy({
+        by: ["reelId"],
+        where: { reelId: { in: ids }, watchedMs: { gt: 0 } },
+        _avg: { watchedMs: true },
+        _count: { _all: true },
+      }),
+      this.database.reelView.findMany({
+        where: { viewerId: input.viewerId, reelId: { in: ids } },
+        select: { reelId: true },
+      }),
+    ]);
+    const savesByReel = new Map(saveCounts.map((row) => [row.reelId, row._count._all]));
+    const watchByReel = new Map(
+      watchStats.map((row) => [
+        row.reelId,
+        { avg: row._avg.watchedMs ?? 0, count: row._count._all },
+      ]),
+    );
+    const seen = new Set(seenRows.map((row) => row.reelId));
+
+    return {
+      viewer,
+      candidates: rows.map((row) => ({
+        reel: toReelRecord(row),
+        saveCount: savesByReel.get(row.id) ?? 0,
+        avgWatchedMs: watchByReel.get(row.id)?.avg ?? 0,
+        measuredWatchCount: watchByReel.get(row.id)?.count ?? 0,
+        seenByViewer: seen.has(row.id),
+        hashtags: row.hashtags.map((link) => link.hashtag.tag.toLowerCase()),
+        followerCount: row.author.followerCount,
+        country: row.author.country,
+        authorInterestSlugs: row.author.interests.map((entry) =>
+          entry.tag.slug.toLowerCase(),
+        ),
+        following: row.author.followers.some(
+          (follow) => follow.status === FollowStatus.ACTIVE,
+        ),
+        matched:
+          row.author.matchesAsUserA.length > 0 ||
+          row.author.matchesAsUserB.length > 0,
+        interestPending:
+          row.author.interestsReceived.length > 0 ||
+          row.author.interestsSent.length > 0,
+      })),
+    };
+  }
+
   async recordView(
     reelId: string,
     viewerId: string,
+    watchedMs: number,
   ): Promise<{ viewCount: number } | null> {
     return this.database.$transaction(async (tx) => {
       const reel = await tx.reel.findFirst({
@@ -674,23 +843,33 @@ export class PrismaReelRepository implements ReelRepository {
           status: ReelReviewStatus.APPROVED,
           author: { is: visibleAuthorWhere(viewerId) },
         },
-        select: { id: true, authorId: true, viewCount: true },
+        select: { id: true, authorId: true, viewCount: true, durationMs: true },
       });
       if (!reel) return null;
       if (reel.authorId === viewerId) return { viewCount: reel.viewCount };
 
+      const requested = Math.max(0, Math.min(180_000, Math.floor(watchedMs)));
+      const capped =
+        reel.durationMs > 0 ? Math.min(requested, reel.durationMs) : requested;
       const created = await tx.reelView.createMany({
-        data: [{ reelId, viewerId }],
+        data: [{ reelId, viewerId, watchedMs: capped }],
         skipDuplicates: true,
       });
-      if (created.count === 0) return { viewCount: reel.viewCount };
-
-      const updated = await tx.reel.update({
-        where: { id: reelId },
-        data: { viewCount: { increment: 1 } },
-        select: { viewCount: true },
-      });
-      return { viewCount: updated.viewCount };
+      if (created.count > 0) {
+        const updated = await tx.reel.update({
+          where: { id: reelId },
+          data: { viewCount: { increment: 1 } },
+          select: { viewCount: true },
+        });
+        return { viewCount: updated.viewCount };
+      }
+      if (capped > 0) {
+        await tx.reelView.updateMany({
+          where: { reelId, viewerId, watchedMs: { lt: capped } },
+          data: { watchedMs: capped },
+        });
+      }
+      return { viewCount: reel.viewCount };
     });
   }
 
@@ -717,6 +896,71 @@ export class PrismaReelRepository implements ReelRepository {
       return true;
     });
   }
+}
+
+function addTags(
+  target: Set<string>,
+  links: ReadonlyArray<{ hashtag: { tag: string } }>,
+): void {
+  for (const link of links) target.add(link.hashtag.tag.toLowerCase());
+}
+
+function toReelRecord(row: {
+  id: string;
+  authorId: string;
+  mediaAssetId: string;
+  posterMediaId: string | null;
+  caption: string | null;
+  durationMs: number;
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+  viewCount: number;
+  status: ReelRecord["status"];
+  rejectReason: string | null;
+  createdAt: Date;
+  likes: Array<{ userId: string }>;
+  saves: Array<{ userId: string }>;
+  author: ReelRecord["author"];
+}): ReelRecord {
+  return {
+    id: row.id,
+    authorId: row.authorId,
+    mediaAssetId: row.mediaAssetId,
+    posterMediaId: row.posterMediaId,
+    caption: row.caption,
+    durationMs: row.durationMs,
+    likeCount: row.likeCount,
+    commentCount: row.commentCount,
+    shareCount: row.shareCount,
+    viewCount: row.viewCount,
+    status: row.status,
+    rejectReason: row.rejectReason,
+    createdAt: row.createdAt,
+    likes: row.likes,
+    saves: row.saves,
+    author: {
+      id: row.author.id,
+      username: row.author.username,
+      displayName: row.author.displayName,
+      isVerifiedBadge: row.author.isVerifiedBadge,
+      premiumTier: row.author.premiumTier,
+      profilePhoto: row.author.profilePhoto,
+      ...(row.author.followers ? { followers: row.author.followers } : {}),
+      ...(row.author.interestsReceived
+        ? { interestsReceived: row.author.interestsReceived }
+        : {}),
+      ...(row.author.interestsSent
+        ? { interestsSent: row.author.interestsSent }
+        : {}),
+      ...(row.author.matchesAsUserA
+        ? { matchesAsUserA: row.author.matchesAsUserA }
+        : {}),
+      ...(row.author.matchesAsUserB
+        ? { matchesAsUserB: row.author.matchesAsUserB }
+        : {}),
+    },
+  };
 }
 
 function reelSelect(viewerId: string) {
