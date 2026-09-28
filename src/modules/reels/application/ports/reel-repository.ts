@@ -120,8 +120,28 @@ export interface ReelRepository {
     id: string;
     caption: string | null;
     posterMediaId: string | null;
+    mediaAssetId: string;
     authorName: string;
+    authorUsername: string;
+    authorPhotoId: string | null;
+    likeCount: number;
+    commentCount: number;
+    viewCount: number;
+    shareCount: number;
+    createdAt: Date;
   } | null>;
+  listPublicByUsername(
+    username: string,
+    limit: number,
+  ): Promise<
+    | Array<{
+        id: string;
+        caption: string | null;
+        posterMediaId: string | null;
+        viewCount: number;
+      }>
+    | null
+  >;
   toggleLike(
     reelId: string,
     userId: string,

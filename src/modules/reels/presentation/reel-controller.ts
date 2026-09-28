@@ -127,6 +127,17 @@ export class ReelController {
   byUsername = async (request: Request, response: Response): Promise<void> => {
     const { username } = usernameSchema.parse(request.params);
     const query = pageSchema.parse(request.query);
+    if (!request.auth) {
+      const page = await this.reels.listPublicByUsername(username, query.limit);
+      response.status(200).json({
+        ...success(request, page),
+        meta: {
+          requestId: request.requestId,
+          pagination: { nextCursor: null, hasMore: false },
+        },
+      });
+      return;
+    }
     const page = await this.reels.listByUsername(username, requireUser(request), {
       limit: query.limit,
       ...(query.cursor ? { cursor: query.cursor } : {}),

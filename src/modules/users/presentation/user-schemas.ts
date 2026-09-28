@@ -163,6 +163,11 @@ export const privacySettingsSchema = z
     message: "At least one privacy setting is required",
   });
 
+export const publicSitemapQuerySchema = z.object({
+  kind: z.enum(["counts", "profiles", "posts", "reels"]).default("counts"),
+  page: z.coerce.number().int().min(1).max(500).default(1),
+});
+
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1).max(128),

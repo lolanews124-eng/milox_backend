@@ -60,6 +60,7 @@ export function createUserRouter(
     security.optionalAuthenticate,
     asyncHandler(controller.search),
   );
+  router.get("/public-sitemap", asyncHandler(controller.publicSitemap));
 
   // Keep dynamic username route last so it never captures /me or /search.
   router.get(

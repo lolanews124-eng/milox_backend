@@ -290,12 +290,9 @@ export class PrismaReelRepository implements ReelRepository {
     });
   }
 
-  async findPublicPreview(reelId: string): Promise<{
-    id: string;
-    caption: string | null;
-    posterMediaId: string | null;
-    authorName: string;
-  } | null> {
+  async findPublicPreview(
+    reelId: string,
+  ): ReturnType<ReelRepository["findPublicPreview"]> {
     const reel = await this.database.reel.findFirst({
       where: {
         id: reelId,
@@ -307,7 +304,19 @@ export class PrismaReelRepository implements ReelRepository {
         id: true,
         caption: true,
         posterMediaId: true,
-        author: { select: { displayName: true, username: true } },
+        mediaAssetId: true,
+        likeCount: true,
+        commentCount: true,
+        viewCount: true,
+        shareCount: true,
+        createdAt: true,
+        author: {
+          select: {
+            displayName: true,
+            username: true,
+            profilePhoto: { select: { id: true } },
+          },
+        },
       },
     });
     if (!reel) return null;
@@ -316,8 +325,54 @@ export class PrismaReelRepository implements ReelRepository {
       id: reel.id,
       caption: reel.caption,
       posterMediaId: reel.posterMediaId,
+      mediaAssetId: reel.mediaAssetId,
       authorName,
+      authorUsername: reel.author.username,
+      authorPhotoId: reel.author.profilePhoto?.id ?? null,
+      likeCount: reel.likeCount,
+      commentCount: reel.commentCount,
+      viewCount: reel.viewCount,
+      shareCount: reel.shareCount,
+      createdAt: reel.createdAt,
     };
+  }
+
+  async listPublicByUsername(
+    username: string,
+    limit: number,
+  ): Promise<
+    | Array<{
+        id: string;
+        caption: string | null;
+        posterMediaId: string | null;
+        viewCount: number;
+      }>
+    | null
+  > {
+    const author = await this.database.user.findFirst({
+      where: {
+        username: { equals: username, mode: "insensitive" },
+        deletedAt: null,
+        ...visibleAuthorWhere(),
+      },
+      select: { id: true },
+    });
+    if (!author) return null;
+    return this.database.reel.findMany({
+      where: {
+        deletedAt: null,
+        authorId: author.id,
+        status: ReelReviewStatus.APPROVED,
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit,
+      select: {
+        id: true,
+        caption: true,
+        posterMediaId: true,
+        viewCount: true,
+      },
+    });
   }
 
   findVisible(reelId: string, viewerId: string): Promise<ReelRecord | null> {

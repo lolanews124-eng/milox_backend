@@ -110,12 +110,12 @@ export function createReelRouter(
 
 export function createUserReelsRouter(
   controller: ReelController,
-  authenticate: RequestHandler,
+  optionalAuthenticate: RequestHandler,
 ): Router {
   const router = Router();
   router.get(
     "/:username/reels",
-    authenticate,
+    optionalAuthenticate,
     asyncHandler(controller.byUsername),
   );
   return router;

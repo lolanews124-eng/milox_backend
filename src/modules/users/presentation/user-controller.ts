@@ -6,6 +6,7 @@ import {
   changePasswordSchema,
   privacySettingsSchema,
   profileViewsQuerySchema,
+  publicSitemapQuerySchema,
   searchUsersQuerySchema,
   updateProfileSchema,
   usernameParamSchema,
@@ -31,6 +32,16 @@ export class UserController {
     const userId = requireUserId(request);
     response.status(200).json(
       successEnvelope(request, await this.users.getEntitlements(userId)),
+    );
+  };
+
+  publicSitemap = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const query = publicSitemapQuerySchema.parse(request.query);
+    response.status(200).json(
+      successEnvelope(request, await this.users.publicSitemap(query)),
     );
   };
 

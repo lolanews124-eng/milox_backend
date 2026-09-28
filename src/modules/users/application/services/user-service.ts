@@ -5,9 +5,15 @@ import {
   canChangeUsername,
   usernameChangeAvailableAt,
 } from "../../../../shared/contracts/profile-completion.js";
-import type { AgeRange, PremiumTier, RelationshipGoal } from "@prisma/client";
-
-import type { PrismaClient } from "@prisma/client";
+import {
+  ReelReviewStatus,
+  UserRole,
+  UserStatus,
+  type AgeRange,
+  type PremiumTier,
+  type PrismaClient,
+  type RelationshipGoal,
+} from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
@@ -60,6 +66,9 @@ export interface UpdateProfileInput {
   interestSlugs?: string[] | undefined;
 }
 
+/** Google allows 50,000 URLs per file. Stay under that so one response stays small. */
+const PUBLIC_SITEMAP_PAGE_SIZE = 10_000;
+
 export class UserService {
   constructor(
     private readonly repository: UserRepository,
@@ -87,6 +96,119 @@ export class UserService {
       this.config.INTEREST_DAILY_LIMIT,
     );
     return mapPrivateProfile(user, this.config, entitlements);
+  }
+
+  async publicSitemap(query: {
+    kind: "counts" | "profiles" | "posts" | "reels";
+    page: number;
+  }): Promise<
+    | {
+        profiles: number;
+        posts: number;
+        reels: number;
+        pageSize: number;
+      }
+    | {
+        kind: "profiles" | "posts" | "reels";
+        page: number;
+        pageSize: number;
+        total: number;
+        items: Array<{ username?: string; id?: string; updatedAt: string }>;
+      }
+  > {
+    const author = {
+      deletedAt: null,
+      status: UserStatus.ACTIVE,
+      isPrivateAccount: false,
+      role: UserRole.USER,
+      isSystemAccount: false,
+    };
+    const postWhere = { deletedAt: null, isHidden: false, author };
+    const reelWhere = {
+      deletedAt: null,
+      status: ReelReviewStatus.APPROVED,
+      author,
+    };
+    if (query.kind === "counts") {
+      const [profiles, posts, reels] = await Promise.all([
+        this.database.user.count({ where: author }),
+        this.database.post.count({ where: postWhere }),
+        this.database.reel.count({ where: reelWhere }),
+      ]);
+      return {
+        profiles,
+        posts,
+        reels,
+        pageSize: PUBLIC_SITEMAP_PAGE_SIZE,
+      };
+    }
+
+    const skip = (query.page - 1) * PUBLIC_SITEMAP_PAGE_SIZE;
+    const pageSize = PUBLIC_SITEMAP_PAGE_SIZE;
+    if (query.kind === "profiles") {
+      const [total, rows] = await Promise.all([
+        this.database.user.count({ where: author }),
+        this.database.user.findMany({
+          where: author,
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          skip,
+          take: pageSize,
+          select: { username: true, updatedAt: true },
+        }),
+      ]);
+      return {
+        kind: "profiles",
+        page: query.page,
+        pageSize,
+        total,
+        items: rows.map((row) => ({
+          username: row.username,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+      };
+    }
+    if (query.kind === "posts") {
+      const [total, rows] = await Promise.all([
+        this.database.post.count({ where: postWhere }),
+        this.database.post.findMany({
+          where: postWhere,
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          skip,
+          take: pageSize,
+          select: { id: true, updatedAt: true },
+        }),
+      ]);
+      return {
+        kind: "posts",
+        page: query.page,
+        pageSize,
+        total,
+        items: rows.map((row) => ({
+          id: row.id,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+      };
+    }
+    const [total, rows] = await Promise.all([
+      this.database.reel.count({ where: reelWhere }),
+      this.database.reel.findMany({
+        where: reelWhere,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        skip,
+        take: pageSize,
+        select: { id: true, createdAt: true },
+      }),
+    ]);
+    return {
+      kind: "reels",
+      page: query.page,
+      pageSize,
+      total,
+      items: rows.map((row) => ({
+        id: row.id,
+        updatedAt: row.createdAt.toISOString(),
+      })),
+    };
   }
 
   async getPublicProfile(

@@ -23,6 +23,7 @@ export function createReelModule(
   database: PrismaClient,
   middleware: {
     authenticate: RequestHandler;
+    optionalAuthenticate: RequestHandler;
     requireVerified: RequestHandler;
   },
   media: MediaService,
@@ -40,7 +41,10 @@ export function createReelModule(
       middleware.authenticate,
       middleware.requireVerified,
     ),
-    userRouter: createUserReelsRouter(controller, middleware.authenticate),
+    userRouter: createUserReelsRouter(
+      controller,
+      middleware.optionalAuthenticate,
+    ),
     service,
   };
 }

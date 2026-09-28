@@ -143,6 +143,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     database,
     {
       authenticate: auth.authenticate,
+      optionalAuthenticate: auth.optionalAuthenticate,
       requireVerified: auth.requireVerified,
     },
     media.service,

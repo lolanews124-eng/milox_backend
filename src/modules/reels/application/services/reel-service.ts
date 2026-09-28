@@ -351,9 +351,37 @@ export class ReelService {
     }
     const caption = reel.caption?.replace(/\s+/g, " ").trim() ?? "";
     return {
+      id: reel.id,
       caption: caption.length > 160 ? `${caption.slice(0, 157)}...` : caption,
+      fullCaption: reel.caption,
       posterUrl: reel.posterMediaId ? this.mediaUrl(reel.posterMediaId) : null,
+      mediaUrl: this.mediaUrl(reel.mediaAssetId),
       authorName: reel.authorName,
+      authorUsername: reel.authorUsername,
+      authorPhotoUrl: reel.authorPhotoId ? this.mediaUrl(reel.authorPhotoId) : null,
+      likeCount: reel.likeCount,
+      commentCount: reel.commentCount,
+      viewCount: reel.viewCount,
+      shareCount: reel.shareCount,
+      createdAt: reel.createdAt.toISOString(),
+    };
+  }
+
+  async listPublicByUsername(
+    username: string,
+    limit: number,
+  ): Promise<{ items: object[] }> {
+    const rows = await this.repository.listPublicByUsername(username, limit);
+    if (!rows) {
+      throw new AppError("NOT_FOUND", "User not found", 404);
+    }
+    return {
+      items: rows.map((reel) => ({
+        id: reel.id,
+        caption: reel.caption,
+        posterUrl: reel.posterMediaId ? this.mediaUrl(reel.posterMediaId) : null,
+        viewCount: reel.viewCount,
+      })),
     };
   }
 
