@@ -743,7 +743,7 @@ export class PrismaReelRepository implements ReelRepository {
 
   async loadRankPool(input: {
     viewerId: string;
-    since: Date;
+    since?: Date | undefined;
     take?: number | undefined;
     tag?: string | undefined;
   }): Promise<{ viewer: ReelRankViewer; candidates: ReelRankCandidate[] }> {
@@ -783,7 +783,7 @@ export class PrismaReelRepository implements ReelRepository {
         where: {
           deletedAt: null,
           status: ReelReviewStatus.APPROVED,
-          createdAt: { gte: input.since },
+          ...(input.since ? { createdAt: { gte: input.since } } : {}),
           author: { is: visibleAuthorWhere(input.viewerId) },
           ...(input.tag
             ? { hashtags: { some: { hashtag: { tag: input.tag } } } }

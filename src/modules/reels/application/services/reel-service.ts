@@ -8,7 +8,6 @@ import type { MediaService } from "../../../media/application/services/media-ser
 import { REELS_PER_DAY, startOfIstDay } from "../reel-day.js";
 import {
   REEL_HASHTAG_WINDOW_DAYS,
-  REEL_RANK_WINDOW_DAYS,
   scoreReel,
   sliceRankedPage,
   spreadReelPages,
@@ -164,8 +163,11 @@ export class ReelService {
       );
     }
 
-    const windowDays = input.tag ? REEL_HASHTAG_WINDOW_DAYS : REEL_RANK_WINDOW_DAYS;
-    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    // Hashtags stay on a recent window. The main Reels tab ranks every
+    // visible approved reel, otherwise older approvals never appear.
+    const since = input.tag
+      ? new Date(Date.now() - REEL_HASHTAG_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+      : undefined;
     const ordered = await this.rankWindow(viewerId, since, input.limit, input.tag);
     const page = sliceRankedPage(
       ordered,
@@ -192,6 +194,14 @@ export class ReelService {
               score: last.score,
             })
           : null,
+      };
+    }
+
+    if (!since) {
+      return {
+        items: presentRanked,
+        hasMore: false,
+        nextCursor: null,
       };
     }
 
@@ -236,13 +246,13 @@ export class ReelService {
 
   private async rankWindow(
     viewerId: string,
-    since: Date,
+    since: Date | undefined,
     pageSize: number,
     tag?: string,
   ) {
     const pool = await this.repository.loadRankPool({
       viewerId,
-      since,
+      ...(since ? { since } : {}),
       ...(tag ? { tag } : {}),
     });
     const interest = new Set(pool.viewer.interestSlugs);

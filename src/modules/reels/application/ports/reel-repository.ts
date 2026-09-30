@@ -110,7 +110,7 @@ export interface ReelRepository {
   }): Promise<ReelRecord[]>;
   loadRankPool(input: {
     viewerId: string;
-    since: Date;
+    since?: Date | undefined;
     take?: number | undefined;
     tag?: string | undefined;
   }): Promise<{ viewer: ReelRankViewer; candidates: ReelRankCandidate[] }>;
