@@ -18,6 +18,14 @@ const cursorSchema = z.discriminatedUnion("kind", [
     createdAt: z.string().datetime(),
     score: z.number().finite(),
   }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal("discover"),
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    discoverBoost: z.number().int(),
+    followerCount: z.number().int().nonnegative(),
+  }),
 ]);
 
 export type FeedCursor = z.infer<typeof cursorSchema>;

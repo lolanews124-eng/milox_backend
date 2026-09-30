@@ -94,6 +94,7 @@ export interface ReelRepository {
     limit: number;
     cursor?: ReelPageCursor | undefined;
     friendsOnly?: boolean | undefined;
+    before?: Date | undefined;
   }): Promise<ReelRecord[]>;
   listSaved(input: {
     viewerId: string;
@@ -105,11 +106,12 @@ export interface ReelRepository {
     viewerId: string;
     limit: number;
     cursor?: ReelPageCursor | undefined;
+    before?: Date | undefined;
   }): Promise<ReelRecord[]>;
   loadRankPool(input: {
     viewerId: string;
     since: Date;
-    take: number;
+    take?: number | undefined;
     tag?: string | undefined;
   }): Promise<{ viewer: ReelRankViewer; candidates: ReelRankCandidate[] }>;
   findVisible(

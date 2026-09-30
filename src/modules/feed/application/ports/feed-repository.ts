@@ -27,8 +27,9 @@ export interface RankedFeedPost {
 
 export interface RankedDiscoverPerson {
   person: PostAuthorViewRecord;
-  /** Light personalization score used for Discover cursors. */
-  score: number;
+  /** Sort keys for keyset pagination across every eligible profile. */
+  discoverBoost: number;
+  followerCount: number;
 }
 
 export interface FeedRepository {

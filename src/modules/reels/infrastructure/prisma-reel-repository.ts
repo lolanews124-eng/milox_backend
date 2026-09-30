@@ -95,20 +95,9 @@ export class PrismaReelRepository implements ReelRepository {
     limit: number;
     cursor?: ReelPageCursor | undefined;
     friendsOnly?: boolean | undefined;
+    before?: Date | undefined;
   }): Promise<ReelRecord[]> {
-    const cursorWhere: Prisma.ReelWhereInput | undefined = input.cursor
-      ? {
-          OR: [
-            { createdAt: { lt: input.cursor.createdAt } },
-            {
-              AND: [
-                { createdAt: input.cursor.createdAt },
-                { id: { lt: input.cursor.id } },
-              ],
-            },
-          ],
-        }
-      : undefined;
+    const bounds = reelBounds(input.before, input.cursor);
     const author: Prisma.UserWhereInput = input.friendsOnly
       ? {
           AND: [
@@ -129,7 +118,7 @@ export class PrismaReelRepository implements ReelRepository {
         deletedAt: null,
         status: ReelReviewStatus.APPROVED,
         author: { is: author },
-        ...cursorWhere,
+        ...(bounds.length > 0 ? { AND: bounds } : {}),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: input.limit,
@@ -395,14 +384,16 @@ export class PrismaReelRepository implements ReelRepository {
     viewerId: string;
     limit: number;
     cursor?: ReelPageCursor | undefined;
+    before?: Date | undefined;
   }): Promise<ReelRecord[]> {
+    const bounds = reelBounds(input.before, input.cursor);
     return this.database.reel.findMany({
       where: {
         deletedAt: null,
         status: ReelReviewStatus.APPROVED,
         author: { is: visibleAuthorWhere(input.viewerId) },
         hashtags: { some: { hashtag: { tag: input.tag } } },
-        ...reelCursorWhere(input.cursor),
+        ...(bounds.length > 0 ? { AND: bounds } : {}),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: input.limit,
@@ -753,7 +744,7 @@ export class PrismaReelRepository implements ReelRepository {
   async loadRankPool(input: {
     viewerId: string;
     since: Date;
-    take: number;
+    take?: number | undefined;
     tag?: string | undefined;
   }): Promise<{ viewer: ReelRankViewer; candidates: ReelRankCandidate[] }> {
     const tagSelect = {
@@ -799,7 +790,7 @@ export class PrismaReelRepository implements ReelRepository {
             : {}),
         },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: input.take,
+        ...(input.take !== undefined ? { take: input.take } : {}),
         select: {
           ...reelSelect(input.viewerId),
           hashtags: tagSelect,
@@ -1204,6 +1195,17 @@ function approvedReelWhere(reelId: string, viewerId: string): Prisma.ReelWhereIn
     status: ReelReviewStatus.APPROVED,
     author: { is: visibleAuthorWhere(viewerId) },
   };
+}
+
+function reelBounds(
+  before: Date | undefined,
+  cursor: { id: string; createdAt: Date } | undefined,
+): Prisma.ReelWhereInput[] {
+  const bounds: Prisma.ReelWhereInput[] = [];
+  if (before) bounds.push({ createdAt: { lt: before } });
+  const cursorWhere = reelCursorWhere(cursor);
+  if (cursorWhere) bounds.push(cursorWhere);
+  return bounds;
 }
 
 function reelCursorWhere(

@@ -134,6 +134,8 @@ export interface DeletePostData {
   actorId: string;
   postId: string;
   note?: string | null;
+  removeProfileMedia?: boolean;
+  reason?: string | null;
 }
 
 export interface AdminCommentQuery extends OffsetPage {
@@ -301,6 +303,13 @@ export interface CancelSubscriptionData {
   subscriptionId: string;
 }
 
+export interface AdMediaInput {
+  kind: "IMAGE" | "VIDEO";
+  url: string;
+  posterUrl?: string | null;
+  targetUrl?: string | null;
+}
+
 export interface CreateAdData {
   actorId: string;
   title: string;
@@ -308,7 +317,10 @@ export interface CreateAdData {
   imageUrl?: string | null;
   targetUrl?: string | null;
   ctaLabel?: string | null;
-  placement: string;
+  format?: "IMAGE" | "CAROUSEL" | "VIDEO";
+  placement?: string;
+  placements?: string[];
+  media?: AdMediaInput[];
   priority?: number;
   insertEvery?: number | null;
   isActive?: boolean;
@@ -324,7 +336,10 @@ export interface UpdateAdData {
   imageUrl?: string | null;
   targetUrl?: string | null;
   ctaLabel?: string | null;
+  format?: "IMAGE" | "CAROUSEL" | "VIDEO";
   placement?: string;
+  placements?: string[];
+  media?: AdMediaInput[];
   priority?: number;
   insertEvery?: number | null;
   isActive?: boolean;
@@ -425,6 +440,7 @@ export interface UpdateMediaData {
   deleted: boolean;
   /** When true with deleted, caller should unlink the file from UPLOAD_ROOT. */
   purgeStorage?: boolean;
+  reason?: string | null;
 }
 
 export interface AdminMediaUpdateResult {
@@ -498,6 +514,34 @@ export interface AdminRepository {
   resolveReport(
     data: ResolveReportData,
   ): Promise<AdminReportRecord | null>;
+  getReportDetail(reportId: string): Promise<object | null>;
+  warnUser(data: {
+    actorId: string;
+    userId: string;
+    reasonCode: string;
+    note: string | null;
+  }): Promise<object | null>;
+  listUserPhotos(userId: string): Promise<object | null>;
+  removeUserPhoto(data: {
+    actorId: string;
+    userId: string;
+    mediaId: string;
+    reason: string;
+  }): Promise<object | null>;
+  moderateReport(data: {
+    actorId: string;
+    reportId: string;
+    action:
+      | "DISMISS"
+      | "WARN"
+      | "REMOVE"
+      | "REMOVE_AND_WARN"
+      | "RESTRICT"
+      | "SUSPEND";
+    reasonCode?: string | undefined;
+    note: string | null;
+    removeProfileMedia?: boolean | undefined;
+  }): Promise<object | null>;
   listPosts(query: AdminPostQuery): Promise<AdminPage<AdminPostRecord>>;
   postsStats(): Promise<AdminPostsStatsRecord>;
   updatePostVisibility(

@@ -41,6 +41,11 @@ const reelRejectedPayloadSchema = z.object({
   reason: z.string().min(1).max(64),
   reasonLabel: z.string().min(1).max(160),
 });
+const profileWarnedPayloadSchema = z.object({
+  recipientId: z.uuid(),
+  warningId: z.uuid(),
+  message: z.string().min(1).max(500),
+});
 const NOTIFICATION_EVENTS = [
   "post.liked",
   "post.shared",
@@ -56,6 +61,7 @@ const NOTIFICATION_EVENTS = [
   "match.created",
   "message.created",
   "reel.rejected",
+  "profile.warned",
   "reel.mentioned",
   "reel.liked",
   "reel.shared",
@@ -200,6 +206,21 @@ export class NotificationOutboxWorker {
             reelId: payload.reelId,
             reason: payload.reason,
             reasonLabel: payload.reasonLabel,
+          },
+        },
+      ];
+    }
+    if (event.eventType === "profile.warned") {
+      const payload = profileWarnedPayloadSchema.parse(event.payload);
+      return [
+        {
+          recipientId: payload.recipientId,
+          actorId: null,
+          type: NotificationType.SYSTEM,
+          payload: {
+            code: "PROFILE_WARNING",
+            warningId: payload.warningId,
+            message: payload.message,
           },
         },
       ];

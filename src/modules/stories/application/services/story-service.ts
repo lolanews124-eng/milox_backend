@@ -1,4 +1,6 @@
 import type { AppConfig } from "../../../../config/env.js";
+import { prisma } from "../../../../infrastructure/prisma/client.js";
+import { assertCanCreateContent } from "../../../moderation/application/profile-health.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { presentPublicAuthor } from "../../../posts/application/post-view.js";
 import type {
@@ -19,6 +21,7 @@ export class StoryService {
     authorId: string,
     input: { mediaId: string; caption?: string | undefined },
   ): Promise<object> {
+    await assertCanCreateContent(prisma, authorId);
     const media = await this.repository.findOwnedMedia(
       input.mediaId,
       authorId,

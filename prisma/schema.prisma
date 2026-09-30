@@ -310,6 +310,19 @@ enum AdPlacement {
   MATCHES
   INTERESTS
   PROFILE
+  REELS
+  STORIES
+}
+
+enum AdFormat {
+  IMAGE
+  CAROUSEL
+  VIDEO
+}
+
+enum AdMediaKind {
+  IMAGE
+  VIDEO
 }
 
 enum CmsPageStatus {
@@ -424,6 +437,8 @@ model User {
   profileViewsMade     ProfileView[]           @relation("ProfileViewsMade")
   reportsFiled        Report[]                 @relation("ReportReporter")
   reportsAgainst      Report[]                 @relation("ReportReportedUser")
+  profileWarnings     ProfileWarning[]         @relation("ProfileWarningSubject")
+  profileWarningsIssued ProfileWarning[]       @relation("ProfileWarningActor")
   auditLogs           AuditLog[]
   subscriptions       UserSubscription[]
   verifiedBadgeOrders VerifiedBadgeOrder[] @relation("VerifiedBadgeBuyer")
@@ -1315,6 +1330,7 @@ model Report {
   story             Story?             @relation(fields: [storyId], references: [id], onDelete: SetNull)
   reel              Reel?              @relation(fields: [reelId], references: [id], onDelete: SetNull)
   moderationActions ModerationAction[]
+  profileWarnings   ProfileWarning[]
 
   @@index([status, createdAt])
   @@index([reporterId, createdAt])
@@ -1342,6 +1358,41 @@ model ModerationAction {
   @@index([targetUserId, createdAt])
   @@index([actorId, createdAt])
   @@map("moderation_actions")
+}
+
+enum ProfileWarningKind {
+  WARN
+  CONTENT_REMOVED
+  RESTRICT
+  SUSPEND
+}
+
+/// Staff warning that changes the owner's profile health. Score is computed
+/// from these rows; it is not stored on the user.
+model ProfileWarning {
+  id            String             @id @default(uuid()) @db.Uuid
+  userId        String             @db.Uuid
+  actorId       String?            @db.Uuid
+  reportId      String?            @db.Uuid
+  kind          ProfileWarningKind
+  reasonCode    String             @db.VarChar(64)
+  message       String             @db.VarChar(500)
+  scoreDelta    Int
+  restrictUntil DateTime?
+  postId        String?            @db.Uuid
+  storyId       String?            @db.Uuid
+  reelId        String?            @db.Uuid
+  commentId     String?            @db.Uuid
+  createdAt     DateTime           @default(now())
+
+  user   User    @relation("ProfileWarningSubject", fields: [userId], references: [id], onDelete: Cascade)
+  actor  User?   @relation("ProfileWarningActor", fields: [actorId], references: [id], onDelete: SetNull)
+  report Report? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([userId, restrictUntil])
+  @@index([userId, reasonCode, createdAt])
+  @@map("profile_warnings")
 }
 
 // -----------------------------------------------------------------------------
@@ -1610,6 +1661,7 @@ model Advertisement {
   imageUrl        String?     @db.VarChar(512)
   targetUrl       String?     @db.VarChar(512)
   ctaLabel        String?     @db.VarChar(40)
+  format          AdFormat    @default(IMAGE)
   placement       AdPlacement
   priority        Int         @default(0)
   /// Override placement default frequency; null uses [AdPlacementConfig.insertEvery].
@@ -1622,9 +1674,38 @@ model Advertisement {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  placementLinks AdvertisementPlacement[]
+  assets         AdvertisementAsset[]
+
   @@index([placement, isActive, startsAt, endsAt])
   @@index([placement, priority(sort: Desc)])
   @@map("advertisements")
+}
+
+model AdvertisementPlacement {
+  adId      String      @db.Uuid
+  placement AdPlacement
+
+  ad Advertisement @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@id([adId, placement])
+  @@index([placement])
+  @@map("advertisement_placements")
+}
+
+model AdvertisementAsset {
+  id        String       @id @default(uuid()) @db.Uuid
+  adId      String       @db.Uuid
+  kind      AdMediaKind
+  url       String       @db.VarChar(512)
+  posterUrl String?      @db.VarChar(512)
+  targetUrl String?      @db.VarChar(512)
+  sortOrder Int          @default(0)
+
+  ad Advertisement @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@index([adId, sortOrder])
+  @@map("advertisement_assets")
 }
 
 model AdPlacementConfig {

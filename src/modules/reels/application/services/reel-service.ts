@@ -1,4 +1,6 @@
 import type { AppConfig } from "../../../../config/env.js";
+import { prisma } from "../../../../infrastructure/prisma/client.js";
+import { assertCanCreateContent } from "../../../moderation/application/profile-health.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { viewerFollowStateFromStatus } from "../../../posts/application/post-view.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
@@ -6,7 +8,6 @@ import type { MediaService } from "../../../media/application/services/media-ser
 import { REELS_PER_DAY, startOfIstDay } from "../reel-day.js";
 import {
   REEL_HASHTAG_WINDOW_DAYS,
-  REEL_RANK_POOL,
   REEL_RANK_WINDOW_DAYS,
   scoreReel,
   sliceRankedPage,
@@ -81,6 +82,7 @@ export class ReelService {
     },
   ): Promise<object> {
     await this.assertEnabled();
+    await assertCanCreateContent(prisma, authorId);
     const posterMediaId = await this.checkedPoster(authorId, input.posterMediaId);
     let videoId: string | null = null;
     try {
@@ -112,7 +114,7 @@ export class ReelService {
     },
   ): Promise<{ items: object[]; nextCursor: string | null; hasMore: boolean }> {
     if (!input.friendsOnly && !input.latest) {
-      return this.rankedPage(viewerId, input);
+      return this.rankedThenOlder(viewerId, input);
     }
     const decoded = input.cursor ? this.cursors.decode(input.cursor) : null;
     if (decoded && decoded.kind !== "chronological") {
@@ -136,6 +138,180 @@ export class ReelService {
         : {}),
     });
     return this.page(rows, input.limit);
+  }
+
+  /**
+   * Rank every approved reel from the recent window, then keep paging older
+   * reels in time order so the scroll never stops at a fixed pool.
+   */
+  private async rankedThenOlder(
+    viewerId: string,
+    input: { limit: number; cursor?: string | undefined; tag?: string | undefined },
+  ): Promise<{ items: object[]; nextCursor: string | null; hasMore: boolean }> {
+    const decoded = input.cursor ? this.cursors.decode(input.cursor) : null;
+    if (decoded?.kind === "chronological") {
+      const rows = await this.olderReels(viewerId, input.tag, input.limit + 1, {
+        id: decoded.id,
+        createdAt: new Date(decoded.createdAt),
+      });
+      return this.page(rows, input.limit);
+    }
+    if (decoded && decoded.kind !== "ranked") {
+      throw new AppError(
+        "INVALID_CURSOR",
+        "The pagination cursor is invalid or expired",
+        400,
+      );
+    }
+
+    const windowDays = input.tag ? REEL_HASHTAG_WINDOW_DAYS : REEL_RANK_WINDOW_DAYS;
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    const ordered = await this.rankWindow(viewerId, since, input.limit, input.tag);
+    const page = sliceRankedPage(
+      ordered,
+      decoded
+        ? { id: decoded.id, score: decoded.score, createdAt: decoded.createdAt }
+        : null,
+      input.limit,
+    );
+    const rankedHasMore = page.length > input.limit;
+    const ranked = rankedHasMore ? page.slice(0, input.limit) : page;
+    const presentRanked = ranked.map((row) => this.present(row.reel));
+
+    if (rankedHasMore) {
+      const last = ranked.at(-1);
+      return {
+        items: presentRanked,
+        hasMore: true,
+        nextCursor: last
+          ? this.cursors.encode({
+              version: 1,
+              kind: "ranked",
+              id: last.id,
+              createdAt: last.createdAt.toISOString(),
+              score: last.score,
+            })
+          : null,
+      };
+    }
+
+    if (ranked.length === input.limit) {
+      const peek = await this.olderReels(viewerId, input.tag, 1, undefined, since);
+      const last = ranked.at(-1);
+      return {
+        items: presentRanked,
+        hasMore: peek.length > 0,
+        nextCursor:
+          peek.length > 0 && last
+            ? this.cursors.encode({
+                version: 1,
+                kind: "ranked",
+                id: last.id,
+                createdAt: last.createdAt.toISOString(),
+                score: last.score,
+              })
+            : null,
+      };
+    }
+
+    const need = input.limit - ranked.length;
+    const older = await this.olderReels(viewerId, input.tag, need + 1, undefined, since);
+    const olderHasMore = older.length > need;
+    const olderItems = olderHasMore ? older.slice(0, need) : older;
+    const lastOlder = olderItems.at(-1);
+    return {
+      items: [...presentRanked, ...olderItems.map((reel) => this.present(reel))],
+      hasMore: olderHasMore,
+      nextCursor:
+        olderHasMore && lastOlder
+          ? this.cursors.encode({
+              version: 1,
+              kind: "chronological",
+              id: lastOlder.id,
+              createdAt: lastOlder.createdAt.toISOString(),
+            })
+          : null,
+    };
+  }
+
+  private async rankWindow(
+    viewerId: string,
+    since: Date,
+    pageSize: number,
+    tag?: string,
+  ) {
+    const pool = await this.repository.loadRankPool({
+      viewerId,
+      since,
+      ...(tag ? { tag } : {}),
+    });
+    const interest = new Set(pool.viewer.interestSlugs);
+    const viewerCountry = pool.viewer.country.trim().toLowerCase();
+    const ranked = pool.candidates.map((candidate) => {
+      const authorCountry = candidate.country.trim().toLowerCase();
+      return {
+        reel: candidate.reel,
+        id: candidate.reel.id,
+        createdAt: candidate.reel.createdAt,
+        authorId: candidate.reel.authorId,
+        score: scoreReel({
+          viewCount: candidate.reel.viewCount,
+          likeCount: candidate.reel.likeCount,
+          commentCount: candidate.reel.commentCount,
+          shareCount: candidate.reel.shareCount,
+          saveCount: candidate.saveCount,
+          durationMs: candidate.reel.durationMs,
+          avgWatchedMs: candidate.avgWatchedMs,
+          measuredWatchCount: candidate.measuredWatchCount,
+          followerCount: candidate.followerCount,
+          createdAt: candidate.reel.createdAt,
+          matched: candidate.matched,
+          interestPending: candidate.interestPending,
+          following: candidate.following,
+          sharedProfileInterest: candidate.authorInterestSlugs.some((slug) =>
+            interest.has(slug),
+          ),
+          sameCountry: viewerCountry.length > 0 && viewerCountry === authorCountry,
+          hashtags: candidate.hashtags,
+          viewerInterestHashtags: pool.viewer.interestSlugs,
+          engagedHashtags: pool.viewer.engagedHashtags,
+          seen: candidate.seenByViewer,
+          own: candidate.reel.authorId === viewerId,
+        }),
+      };
+    });
+    ranked.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+      if (byTime !== 0) return byTime;
+      return b.id.localeCompare(a.id);
+    });
+    return spreadReelPages(ranked, (item) => item.authorId, pageSize);
+  }
+
+  private olderReels(
+    viewerId: string,
+    tag: string | undefined,
+    limit: number,
+    cursor?: { id: string; createdAt: Date },
+    before?: Date,
+  ) {
+    if (tag) {
+      return this.repository.listByHashtag({
+        tag,
+        viewerId,
+        limit,
+        ...(cursor ? { cursor } : {}),
+        ...(before ? { before } : {}),
+      });
+    }
+    return this.repository.list({
+      viewerId,
+      limit,
+      friendsOnly: false,
+      ...(cursor ? { cursor } : {}),
+      ...(before ? { before } : {}),
+    });
   }
 
   async listSaved(
@@ -170,94 +346,6 @@ export class ReelService {
               kind: "chronological",
               id: last.reel.id,
               createdAt: last.savedAt.toISOString(),
-            })
-          : null,
-    };
-  }
-
-  private async rankedPage(
-    viewerId: string,
-    input: { limit: number; cursor?: string | undefined; tag?: string | undefined },
-  ): Promise<{ items: object[]; nextCursor: string | null; hasMore: boolean }> {
-    const cursor = input.cursor ? this.cursors.decode(input.cursor) : null;
-    if (cursor && cursor.kind !== "ranked") {
-      throw new AppError(
-        "INVALID_CURSOR",
-        "The pagination cursor is invalid or expired",
-        400,
-      );
-    }
-    const windowDays = input.tag ? REEL_HASHTAG_WINDOW_DAYS : REEL_RANK_WINDOW_DAYS;
-    const pool = await this.repository.loadRankPool({
-      viewerId,
-      since: new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000),
-      take: REEL_RANK_POOL,
-      ...(input.tag ? { tag: input.tag } : {}),
-    });
-    const interest = new Set(pool.viewer.interestSlugs);
-    const viewerCountry = pool.viewer.country.trim().toLowerCase();
-    const ranked = pool.candidates.map((candidate) => {
-      const authorCountry = candidate.country.trim().toLowerCase();
-      return {
-        reel: candidate.reel,
-        id: candidate.reel.id,
-        createdAt: candidate.reel.createdAt,
-        authorId: candidate.reel.authorId,
-        score: scoreReel({
-          viewCount: candidate.reel.viewCount,
-          likeCount: candidate.reel.likeCount,
-          commentCount: candidate.reel.commentCount,
-          shareCount: candidate.reel.shareCount,
-          saveCount: candidate.saveCount,
-          durationMs: candidate.reel.durationMs,
-          avgWatchedMs: candidate.avgWatchedMs,
-          measuredWatchCount: candidate.measuredWatchCount,
-          followerCount: candidate.followerCount,
-          createdAt: candidate.reel.createdAt,
-          matched: candidate.matched,
-          interestPending: candidate.interestPending,
-          following: candidate.following,
-          sharedProfileInterest: candidate.authorInterestSlugs.some((slug) =>
-            interest.has(slug),
-          ),
-          sameCountry:
-            viewerCountry.length > 0 && viewerCountry === authorCountry,
-          hashtags: candidate.hashtags,
-          viewerInterestHashtags: pool.viewer.interestSlugs,
-          engagedHashtags: pool.viewer.engagedHashtags,
-          seen: candidate.seenByViewer,
-          own: candidate.reel.authorId === viewerId,
-        }),
-      };
-    });
-    ranked.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      const byTime = b.createdAt.getTime() - a.createdAt.getTime();
-      if (byTime !== 0) return byTime;
-      return b.id.localeCompare(a.id);
-    });
-    const ordered = spreadReelPages(ranked, (item) => item.authorId, input.limit);
-    const page = sliceRankedPage(
-      ordered,
-      cursor
-        ? { id: cursor.id, score: cursor.score, createdAt: cursor.createdAt }
-        : null,
-      input.limit,
-    );
-    const hasMore = page.length > input.limit;
-    const items = hasMore ? page.slice(0, input.limit) : page;
-    const last = items.at(-1);
-    return {
-      items: items.map((row) => this.present(row.reel)),
-      hasMore,
-      nextCursor:
-        hasMore && last
-          ? this.cursors.encode({
-              version: 1,
-              kind: "ranked",
-              id: last.id,
-              createdAt: last.createdAt.toISOString(),
-              score: last.score,
             })
           : null,
     };
@@ -398,7 +486,10 @@ export class ReelService {
     viewerId: string,
     input: { cursor?: string | undefined; limit: number },
   ): Promise<{ items: object[]; nextCursor: string | null; hasMore: boolean }> {
-    return this.rankedPage(viewerId, { ...input, tag: tag.toLowerCase() });
+    return this.rankedThenOlder(viewerId, {
+      ...input,
+      tag: tag.toLowerCase(),
+    });
   }
 
   async share(reelId: string, userId: string): Promise<{ shareCount: number }> {

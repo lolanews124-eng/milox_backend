@@ -1,4 +1,7 @@
-/** Reels-tab and hashtag ranking. Home posts stay on their own feed score. */
+/**
+ * Recent-window score. The Reels tab ranks every approved reel in that
+ * window, then continues into older reels. REEL_RANK_POOL is not a feed cap.
+ */
 
 export const REEL_RANK_POOL = 200;
 export const REEL_RANK_WINDOW_DAYS = 14;

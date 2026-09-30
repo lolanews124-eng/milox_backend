@@ -105,7 +105,7 @@ export class FeedService {
     const cursor = options.cursor
       ? this.cursors.decode(options.cursor)
       : undefined;
-    if (cursor && cursor.kind !== "ranked") {
+    if (cursor && cursor.kind !== "discover") {
       throw new AppError(
         "INVALID_CURSOR",
         "This cursor belongs to a different feed",
@@ -181,10 +181,11 @@ export class FeedService {
         hasMore && last
           ? this.cursors.encode({
               version: 1,
-              kind: "ranked",
+              kind: "discover",
               id: last.person.id,
               createdAt: last.person.createdAt.toISOString(),
-              score: last.score,
+              discoverBoost: last.discoverBoost,
+              followerCount: last.followerCount,
             })
           : null,
       hasMore,

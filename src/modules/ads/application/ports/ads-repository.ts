@@ -1,5 +1,12 @@
 import type { AdPlacement } from "@prisma/client";
 
+export interface ServedAdMedia {
+  kind: "IMAGE" | "VIDEO";
+  url: string;
+  posterUrl: string | null;
+  targetUrl: string | null;
+}
+
 export interface ServedAdRecord {
   id: string;
   title: string;
@@ -7,7 +14,10 @@ export interface ServedAdRecord {
   imageUrl: string | null;
   targetUrl: string | null;
   ctaLabel: string | null;
+  format: "IMAGE" | "CAROUSEL" | "VIDEO";
   placement: AdPlacement;
+  placements: AdPlacement[];
+  media: ServedAdMedia[];
   priority: number;
 }
 

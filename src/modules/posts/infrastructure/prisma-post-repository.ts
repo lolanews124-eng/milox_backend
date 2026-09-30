@@ -1,5 +1,4 @@
 import {
-  AuditActorType,
   MediaKind,
   OutboxStatus,
   PostKind,
@@ -581,36 +580,6 @@ export class PrismaPostRepository implements PostRepository {
             ...(details ? { details } : {}),
           },
           select: { id: true, status: true, createdAt: true },
-        });
-
-        // Any report immediately removes the post from public feed/profile.
-        await transaction.post.update({
-          where: { id: postId },
-          data: { isHidden: true },
-        });
-        await transaction.moderationAction.create({
-          data: {
-            actorId: reporterId,
-            targetUserId: post.authorId,
-            reportId: report.id,
-            actionCode: "POST_AUTO_HIDDEN",
-            note: "Auto-hidden after user report",
-            metadata: { postId, reasonCode, source: "post_report" },
-          },
-        });
-        await transaction.auditLog.create({
-          data: {
-            actorType: AuditActorType.USER,
-            actorUserId: reporterId,
-            action: "moderation.post.auto_hidden",
-            resourceType: "post",
-            resourceId: postId,
-            metadata: {
-              reportId: report.id,
-              reasonCode,
-              isHidden: true,
-            },
-          },
         });
 
         return report;

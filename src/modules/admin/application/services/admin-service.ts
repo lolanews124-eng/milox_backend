@@ -8,6 +8,8 @@ import { unlink } from "node:fs/promises";
 import path from "node:path";
 
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { ReportModerationError } from "../../../moderation/application/report-moderation.js";
+import { PhotoReasonRequiredError } from "../remove-user-photo.js";
 import {
   AdminHierarchyError,
   AdminSelfActionError,
@@ -388,6 +390,140 @@ export class AdminService {
     }
   }
 
+  async listUserPhotos(userId: string): Promise<object> {
+    const photos = await this.repository.listUserPhotos(userId);
+    if (!photos) {
+      throw new AppError("ADMIN_USER_NOT_FOUND", "User not found", 404);
+    }
+    return photos;
+  }
+
+  async removeUserPhoto(
+    actorId: string,
+    userId: string,
+    mediaId: string,
+    reason: string,
+  ): Promise<object> {
+    try {
+      const removed = await this.repository.removeUserPhoto({
+        actorId,
+        userId,
+        mediaId,
+        reason: reason.trim(),
+      });
+      if (!removed) {
+        throw new AppError(
+          "ADMIN_PHOTO_NOT_FOUND",
+          "Photo not found on this account",
+          404,
+        );
+      }
+      return removed;
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async warnUser(
+    actorId: string,
+    userId: string,
+    input: { reasonCode: string; note?: string | undefined },
+  ): Promise<object> {
+    try {
+      const result = await this.repository.warnUser({
+        actorId,
+        userId,
+        reasonCode: input.reasonCode,
+        note: input.note?.trim() || null,
+      });
+      if (!result) {
+        throw new AppError("ADMIN_USER_NOT_FOUND", "User not found", 404);
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getReportDetail(reportId: string): Promise<object> {
+    const detail = await this.repository.getReportDetail(reportId);
+    if (!detail) {
+      throw new AppError("ADMIN_REPORT_NOT_FOUND", "Report not found", 404);
+    }
+    return detail;
+  }
+
+  async moderateReport(
+    actorId: string,
+    reportId: string,
+    input: {
+      action:
+        | "DISMISS"
+        | "WARN"
+        | "REMOVE"
+        | "REMOVE_AND_WARN"
+        | "RESTRICT"
+        | "SUSPEND";
+      reasonCode?: string | undefined;
+      note?: string | undefined;
+      removeProfileMedia?: boolean | undefined;
+    },
+  ): Promise<object> {
+    try {
+      const detail = await this.repository.moderateReport({
+        actorId,
+        reportId,
+        action: input.action,
+        reasonCode: input.reasonCode,
+        note: input.note?.trim() || null,
+        removeProfileMedia: input.removeProfileMedia === true,
+      });
+      if (!detail) {
+        throw new AppError("ADMIN_REPORT_NOT_FOUND", "Report not found", 404);
+      }
+      return detail;
+    } catch (error) {
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      if (error instanceof AdminStateConflictError) {
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "Report has already reached a final state",
+          409,
+        );
+      }
+      if (error instanceof ReportModerationError) {
+        throw new AppError(
+          error.code,
+          error.code === "NOTHING_TO_REMOVE"
+            ? "This report has no post, story, reel, comment, or message to remove"
+            : "This report has no user to warn",
+          422,
+        );
+      }
+      throw error;
+    }
+  }
+
   async listPosts(options: {
     q?: string | undefined;
     hidden?: boolean | undefined;
@@ -462,13 +598,19 @@ export class AdminService {
   async deletePost(
     actorId: string,
     postId: string,
-    input: { note?: string | undefined },
+    input: {
+      note?: string | undefined;
+      removeProfileMedia?: boolean | undefined;
+      reason?: string | undefined;
+    },
   ): Promise<object> {
     try {
       const post = await this.repository.deletePost({
         actorId,
         postId,
         note: input.note?.trim() || null,
+        removeProfileMedia: input.removeProfileMedia === true,
+        reason: input.reason?.trim() || null,
       });
       if (!post) {
         throw new AppError("ADMIN_POST_NOT_FOUND", "Post not found", 404);
@@ -1149,6 +1291,7 @@ export class AdminService {
 
   async createAd(actorId: string, input: object): Promise<object> {
     try {
+      assertAdCreative(input as CreateAdInput);
       const ad = await this.repository.createAd({
         actorId,
         ...(input as CreateAdInput),
@@ -1168,6 +1311,7 @@ export class AdminService {
     input: object,
   ): Promise<object> {
     try {
+      assertAdCreative(input as CreateAdInput, true);
       const ad = await this.repository.updateAd({
         actorId,
         adId,
@@ -1839,7 +1983,7 @@ export class AdminService {
   async updateMedia(
     actorId: string,
     mediaId: string,
-    input: { deleted: boolean; purgeStorage?: boolean },
+    input: { deleted: boolean; purgeStorage?: boolean; reason?: string | undefined },
   ): Promise<object> {
     try {
       const result = await this.repository.updateMedia({
@@ -1847,6 +1991,7 @@ export class AdminService {
         mediaId,
         deleted: input.deleted,
         purgeStorage: Boolean(input.deleted && input.purgeStorage),
+        reason: input.reason?.trim() || null,
       });
       if (!result) {
         throw new AppError("ADMIN_MEDIA_NOT_FOUND", "Media not found", 404);
@@ -1858,6 +2003,13 @@ export class AdminService {
     } catch (error) {
       if (error instanceof AdminHierarchyError) {
         throw new AppError("FORBIDDEN", "Insufficient authority", 403);
+      }
+      if (error instanceof PhotoReasonRequiredError) {
+        throw new AppError(
+          "PHOTO_REASON_REQUIRED",
+          "A reason is required so the user can be notified",
+          422,
+        );
       }
       throw error;
     }
@@ -2196,7 +2348,15 @@ type CreateAdInput = {
   imageUrl?: string | null;
   targetUrl?: string | null;
   ctaLabel?: string | null;
-  placement: string;
+  format?: "IMAGE" | "CAROUSEL" | "VIDEO";
+  placement?: string;
+  placements?: string[];
+  media?: Array<{
+    kind: "IMAGE" | "VIDEO";
+    url: string;
+    posterUrl?: string | null;
+    targetUrl?: string | null;
+  }>;
   priority?: number;
   insertEvery?: number | null;
   isActive?: boolean;
@@ -2205,6 +2365,44 @@ type CreateAdInput = {
 };
 
 type UpdateAdInput = Partial<CreateAdInput>;
+
+function assertAdCreative(input: CreateAdInput, partial = false): void {
+  const format = input.format;
+  const media = input.media;
+  if (!format && !media) return;
+  if (partial && format === undefined && media === undefined) return;
+  const resolved = format ?? "IMAGE";
+  if (resolved === "IMAGE") {
+    const images = (media ?? []).filter((item) => item.kind === "IMAGE");
+    if (images.length === 0 && !input.imageUrl) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "An image ad needs an uploaded image",
+        400,
+      );
+    }
+  }
+  if (resolved === "CAROUSEL") {
+    const images = (media ?? []).filter((item) => item.kind === "IMAGE");
+    if (images.length < 2 || images.length > 4) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "A carousel ad needs 2 to 4 images",
+        400,
+      );
+    }
+  }
+  if (resolved === "VIDEO") {
+    const videos = (media ?? []).filter((item) => item.kind === "VIDEO");
+    if (videos.length !== 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "A video ad needs one video",
+        400,
+      );
+    }
+  }
+}
 
 function paginate<T>(
   result: { items: T[]; total: number },

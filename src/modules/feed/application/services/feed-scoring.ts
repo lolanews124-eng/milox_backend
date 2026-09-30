@@ -52,7 +52,10 @@ export function feedRankPoolSize(limit: number): number {
   );
 }
 
-/** Smaller pool for Discover people — light re-rank only. */
+/**
+ * Older Discover lists stopped after this pool. Pagination now walks every
+ * eligible profile, so these limits are no longer applied.
+ */
 export const DISCOVER_RANK_POOL_MULTIPLIER = 4;
 export const DISCOVER_RANK_POOL_MIN = 24;
 export const DISCOVER_RANK_POOL_MAX = 72;

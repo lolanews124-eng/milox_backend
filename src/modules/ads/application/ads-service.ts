@@ -38,7 +38,10 @@ export function presentServedAd(ad: ServedAdRecord): object {
     imageUrl: ad.imageUrl,
     targetUrl: ad.targetUrl,
     ctaLabel: ad.ctaLabel ?? "Learn more",
+    format: ad.format,
     placement: ad.placement,
+    placements: ad.placements,
+    media: ad.media,
     priority: ad.priority,
     sponsoredLabel: "Sponsored",
   };

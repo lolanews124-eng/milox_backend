@@ -163,6 +163,21 @@ export const adminStoryIdParamSchema = z.object({
   storyId: z.uuid(),
 });
 
+export const warnUserSchema = z
+  .object({
+    reasonCode: z.enum([
+      "SPAM",
+      "HARASSMENT",
+      "NUDITY",
+      "SCAM",
+      "HATE_SPEECH",
+      "UNDERAGE",
+      "OTHER",
+    ]),
+    note: z.string().trim().min(1).max(1_000).optional(),
+  })
+  .strict();
+
 export const changeUserStatusSchema = z
   .object({
     status: z.enum([
@@ -188,6 +203,32 @@ export const resolveReportSchema = z
   })
   .strict();
 
+export const moderateReportSchema = z
+  .object({
+    action: z.enum([
+      "DISMISS",
+      "WARN",
+      "REMOVE",
+      "REMOVE_AND_WARN",
+      "RESTRICT",
+      "SUSPEND",
+    ]),
+    reasonCode: z
+      .enum([
+        "SPAM",
+        "HARASSMENT",
+        "NUDITY",
+        "SCAM",
+        "HATE_SPEECH",
+        "UNDERAGE",
+        "OTHER",
+      ])
+      .optional(),
+    note: z.string().trim().min(1).max(1_000).optional(),
+    removeProfileMedia: z.boolean().optional(),
+  })
+  .strict();
+
 export const updatePostVisibilitySchema = z
   .object({
     isHidden: z.boolean(),
@@ -198,8 +239,30 @@ export const updatePostVisibilitySchema = z
 export const deletePostSchema = z
   .object({
     note: z.string().trim().min(1).max(500).optional(),
+    removeProfileMedia: z.boolean().optional(),
+    reason: z.string().trim().min(1).max(300).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.removeProfileMedia && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "A reason is required to remove the profile photo",
+      });
+    }
+  });
+
+export const removeUserPhotoSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(300),
   })
   .strict();
+
+export const adminUserPhotoParamSchema = z.object({
+  userId: z.uuid(),
+  mediaId: z.uuid(),
+});
 
 export const deleteStorySchema = deletePostSchema;
 
@@ -385,21 +448,35 @@ export const adminAdQuerySchema = z.object({
   ...offsetPageSchema,
 });
 
+const adMediaSchema = z.object({
+  kind: z.enum(["IMAGE", "VIDEO"]),
+  url: z.string().trim().url().max(512),
+  posterUrl: z.string().trim().url().max(512).nullable().optional(),
+  targetUrl: z.string().trim().url().max(512).nullable().optional(),
+});
+
 export const createAdSchema = z
   .object({
     title: z.string().trim().min(1).max(120),
     body: z.string().trim().max(500).optional(),
-    imageUrl: z.string().trim().url().max(512).optional(),
+    imageUrl: z.string().trim().url().max(512).nullable().optional(),
     targetUrl: z.string().trim().url().max(512).optional(),
     ctaLabel: z.string().trim().min(1).max(40).optional(),
-    placement: z.enum(AdPlacement),
+    format: z.enum(["IMAGE", "CAROUSEL", "VIDEO"]).optional(),
+    placement: z.enum(AdPlacement).optional(),
+    placements: z.array(z.enum(AdPlacement)).min(1).max(12).optional(),
+    media: z.array(adMediaSchema).max(4).optional(),
     priority: z.coerce.number().int().min(0).max(10_000).optional(),
     insertEvery: z.coerce.number().int().min(1).max(100).nullable().optional(),
     isActive: z.boolean().optional(),
     startsAt: z.coerce.date().optional(),
     endsAt: z.coerce.date().optional(),
   })
-  .strict();
+  .strict()
+  .refine((data) => Boolean(data.placement) || (data.placements?.length ?? 0) > 0, {
+    message: "Choose at least one placement",
+    path: ["placements"],
+  });
 
 export const updateAdSchema = z
   .object({
@@ -408,7 +485,10 @@ export const updateAdSchema = z
     imageUrl: z.string().trim().url().max(512).nullable().optional(),
     targetUrl: z.string().trim().url().max(512).nullable().optional(),
     ctaLabel: z.string().trim().min(1).max(40).nullable().optional(),
+    format: z.enum(["IMAGE", "CAROUSEL", "VIDEO"]).optional(),
     placement: z.enum(AdPlacement).optional(),
+    placements: z.array(z.enum(AdPlacement)).min(1).max(12).optional(),
+    media: z.array(adMediaSchema).max(4).optional(),
     priority: z.coerce.number().int().min(0).max(10_000).optional(),
     insertEvery: z.coerce.number().int().min(1).max(100).nullable().optional(),
     isActive: z.boolean().optional(),
@@ -658,6 +738,7 @@ export const updateMediaSchema = z
     deleted: z.boolean(),
     /** Soft-delete and remove the binary from UPLOAD_ROOT (cannot restore file). */
     purgeStorage: z.boolean().optional().default(false),
+    reason: z.string().trim().min(1).max(300).optional(),
   })
   .strict();
 

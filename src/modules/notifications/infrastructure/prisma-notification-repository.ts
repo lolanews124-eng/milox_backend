@@ -90,7 +90,10 @@ export class PrismaNotificationRepository
     const recipient = await this.database.user.findFirst({
       where: {
         id: data.recipientId,
-        status: UserStatus.ACTIVE,
+        status:
+          data.type === NotificationType.SYSTEM && data.actorId == null
+            ? { in: [UserStatus.ACTIVE, UserStatus.SUSPENDED] }
+            : UserStatus.ACTIVE,
         deletedAt: null,
         ...(data.actorId ? visibleUserCardWhere(data.actorId) : {}),
       },

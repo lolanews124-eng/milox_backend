@@ -23,9 +23,7 @@ import type {
 } from "../application/ports/feed-repository.js";
 import type { FeedCursor } from "../application/services/feed-cursor.js";
 import {
-  computeDiscoverPeopleScore,
   computeSuggestedFeedScore,
-  discoverRankPoolSize,
   diversifyByAuthor,
   feedRankPoolSize,
   latestFeedCutoff,
@@ -318,24 +316,9 @@ export class PrismaFeedRepository implements FeedRepository {
   async getDiscoverPeople(
     query: DiscoverPeopleQuery,
   ): Promise<RankedDiscoverPerson[]> {
-    const poolLimit = discoverRankPoolSize(query.limit);
     const viewerId = query.viewerId;
-
-    const [viewer, viewerTagRows] = await Promise.all([
-      this.database.user.findUnique({
-        where: { id: viewerId },
-        select: { country: true },
-      }),
-      this.database.userInterest.findMany({
-        where: { userId: viewerId, tag: { isActive: true } },
-        select: { tag: { select: { slug: true } } },
-      }),
-    ]);
-
-    const viewerInterestSlugs = new Set(
-      viewerTagRows.map(({ tag }) => tag.slug.toLowerCase()),
-    );
-    const viewerCountry = viewer?.country ?? null;
+    const cursor =
+      query.cursor?.kind === "discover" ? query.cursor : undefined;
 
     const rows = await this.database.user.findMany({
       where: {
@@ -391,6 +374,7 @@ export class PrismaFeedRepository implements FeedRepository {
           ...(query.countries?.length
             ? [{ country: { in: query.countries } }]
             : []),
+          ...(cursor ? [discoverKeysetWhere(cursor)] : []),
         ],
       },
       orderBy: [
@@ -399,7 +383,7 @@ export class PrismaFeedRepository implements FeedRepository {
         { createdAt: "desc" },
         { id: "desc" },
       ],
-      take: poolLimit,
+      take: query.limit + 1,
       select: {
         ...publicAuthorSelect(),
         discoverBoost: true,
@@ -414,50 +398,14 @@ export class PrismaFeedRepository implements FeedRepository {
       },
     });
 
-    const ranked = rows.map((row) => {
+    return rows.map((row) => {
       const { discoverBoost, ...person } = row;
-      const authorInterestSlugs = (person.interests ?? []).map((entry) =>
-        entry.tag.slug.toLowerCase(),
-      );
-      let sharedInterestCount = 0;
-      for (const slug of authorInterestSlugs) {
-        if (viewerInterestSlugs.has(slug)) sharedInterestCount += 1;
-      }
-
-      const score = computeDiscoverPeopleScore({
-        discoverBoost,
-        sameCountry: Boolean(
-          viewerCountry && person.country === viewerCountry,
-        ),
-        sharedInterestCount,
-        followerCount: person.followerCount ?? 0,
-        createdAt: person.createdAt,
-      });
-
       return {
-        item: person as PostAuthorViewRecord,
-        score,
-        createdAt: person.createdAt,
-        id: person.id,
+        person: person as PostAuthorViewRecord,
+        discoverBoost,
+        followerCount: person.followerCount ?? 0,
       };
     });
-
-    ranked.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      const byTime = b.createdAt.getTime() - a.createdAt.getTime();
-      if (byTime !== 0) return byTime;
-      return b.id.localeCompare(a.id);
-    });
-
-    const afterCursor = rankedAfterCursor(
-      ranked,
-      query.cursor?.kind === "ranked" ? query.cursor : undefined,
-    );
-
-    return afterCursor.slice(0, query.limit + 1).map((entry) => ({
-      person: entry.item,
-      score: entry.score,
-    }));
   }
 
   async passProfile(viewerId: string, targetId: string): Promise<void> {
@@ -530,6 +478,32 @@ function chronologicalCursorWhere(
     OR: [
       { createdAt: { lt: createdAt } },
       { createdAt, id: { lt: cursor.id } },
+    ],
+  };
+}
+
+function discoverKeysetWhere(
+  cursor: Extract<FeedCursor, { kind: "discover" }>,
+): Prisma.UserWhereInput {
+  const createdAt = new Date(cursor.createdAt);
+  return {
+    OR: [
+      { discoverBoost: { lt: cursor.discoverBoost } },
+      {
+        discoverBoost: cursor.discoverBoost,
+        followerCount: { lt: cursor.followerCount },
+      },
+      {
+        discoverBoost: cursor.discoverBoost,
+        followerCount: cursor.followerCount,
+        createdAt: { lt: createdAt },
+      },
+      {
+        discoverBoost: cursor.discoverBoost,
+        followerCount: cursor.followerCount,
+        createdAt,
+        id: { lt: cursor.id },
+      },
     ],
   };
 }

@@ -187,8 +187,58 @@ export class MediaService {
       });
       return {
         id: record.id,
-        url: `${this.config.API_PUBLIC_URL.replace(/\/$/, "")}/api/v1/media/${record.id}`,
+        url: publicMediaUrl(this.config.API_PUBLIC_URL, record.id),
         byteSize: record.byteSize,
+      };
+    } catch (error: unknown) {
+      await unlink(absolutePath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Admin house-ad video. MP4 only, same 10 MB cap as reels. */
+  async uploadAdVideo(
+    ownerUserId: string,
+    input: Buffer,
+  ): Promise<{ id: string; url: string; mimeType: string }> {
+    if (input.length <= 0 || input.length > MAX_VIDEO_BYTES) {
+      throw new AppError(
+        "PAYLOAD_TOO_LARGE",
+        "Video must be 10 MB or smaller",
+        413,
+      );
+    }
+    const id = randomUUID();
+    const storageKey = `public/ads/${id}.mp4`;
+    const absolutePath = path.resolve(this.config.UPLOAD_ROOT, storageKey);
+    const temporaryPath = `${absolutePath}.tmp`;
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(temporaryPath, input, { flag: "wx" });
+    try {
+      await assertMp4(temporaryPath);
+      await rename(temporaryPath, absolutePath);
+    } catch (error: unknown) {
+      await unlink(temporaryPath).catch(() => undefined);
+      await unlink(absolutePath).catch(() => undefined);
+      throw error;
+    }
+    try {
+      const record = await this.repository.create({
+        id,
+        ownerUserId,
+        kind: MediaKind.OTHER,
+        visibility: MediaVisibility.PUBLIC,
+        storageKey,
+        mimeType: "video/mp4",
+        byteSize: input.length,
+        width: null,
+        height: null,
+        checksumSha256: createHash("sha256").update(input).digest("hex"),
+      });
+      return {
+        id: record.id,
+        url: publicMediaUrl(this.config.API_PUBLIC_URL, record.id),
+        mimeType: record.mimeType,
       };
     } catch (error: unknown) {
       await unlink(absolutePath).catch(() => undefined);
@@ -276,6 +326,10 @@ async function encodeWithinBudget(
     throw new Error("Failed to encode image");
   }
   return best;
+}
+
+function publicMediaUrl(apiPublicUrl: string, mediaId: string): string {
+  return `${apiPublicUrl.replace(/\/$/, "")}/api/v1/media/${mediaId}`;
 }
 
 function kindDirectory(kind: MediaKind): string {

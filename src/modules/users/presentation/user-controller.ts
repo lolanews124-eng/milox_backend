@@ -25,6 +25,16 @@ export class UserController {
     );
   };
 
+  getProfileHealth = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const userId = requireUserId(request);
+    response.status(200).json(
+      successEnvelope(request, await this.users.getProfileHealth(userId)),
+    );
+  };
+
   getEntitlements = async (
     request: Request,
     response: Response,

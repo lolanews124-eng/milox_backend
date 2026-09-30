@@ -118,6 +118,11 @@ function switchSystemAction(payload: Record<string, unknown>): string {
   if (code === "POST_SHARED") return "shared your post";
   if (code === "REEL_SHARED") return "shared your reel";
   if (code === "FOLLOW_ACCEPTED") return "accepted your follow request";
+  if (code === "PROFILE_WARNING") {
+    const message =
+      typeof payload.message === "string" ? payload.message.trim() : "";
+    return message || "Your profile health changed";
+  }
   if (code === "REEL_REJECTED") {
     const label =
       typeof payload.reasonLabel === "string" && payload.reasonLabel.trim()

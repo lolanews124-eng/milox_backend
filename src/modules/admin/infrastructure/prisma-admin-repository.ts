@@ -27,6 +27,15 @@ import {
   ensureMobileAppConfig,
   MOBILE_APP_CONFIG_ID,
 } from "../../app-release/mobile-app-config.js";
+import {
+  PhotoReasonRequiredError,
+  removeOwnedPhoto,
+} from "../application/remove-user-photo.js";
+import {
+  loadReportDetail,
+  moderateOpenReport,
+  warnUserDirectly,
+} from "../../moderation/application/report-moderation.js";
 import { reelRejectReasonLabel } from "../../reels/application/reel-reject-reasons.js";
 import { enqueueReelMentions } from "../../reels/infrastructure/prisma-reel-repository.js";
 import {
@@ -217,6 +226,7 @@ const adminReportSelect = {
 
 const postAdminSelect = {
   id: true,
+  kind: true,
   body: true,
   likeCount: true,
   commentCount: true,
@@ -231,6 +241,7 @@ const postAdminSelect = {
       displayName: true,
       isVerifiedBadge: true,
       profilePhotoMediaId: true,
+      coverPhotoMediaId: true,
     },
   },
   media: {
@@ -1004,6 +1015,151 @@ export class PrismaAdminRepository implements AdminRepository {
     );
   }
 
+  warnUser(data: {
+    actorId: string;
+    userId: string;
+    reasonCode: string;
+    note: string | null;
+  }): Promise<object | null> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await transaction.user.findFirst({
+        where: {
+          id: data.actorId,
+          status: UserStatus.ACTIVE,
+          role: {
+            in: [UserRole.MODERATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN],
+          },
+        },
+        select: { id: true },
+      });
+      if (!actor) throw new AdminHierarchyError();
+      return warnUserDirectly(transaction, {
+        actorId: actor.id,
+        userId: data.userId,
+        reasonCode: data.reasonCode,
+        note: data.note,
+      });
+    });
+  }
+
+  async listUserPhotos(userId: string): Promise<object | null> {
+    const user = await this.database.user.findUnique({
+      where: { id: userId },
+      select: { id: true, profilePhotoMediaId: true, coverPhotoMediaId: true },
+    });
+    if (!user) return null;
+    const photos = await this.database.mediaAsset.findMany({
+      where: {
+        ownerUserId: userId,
+        deletedAt: null,
+        kind: { not: MediaKind.CHAT_IMAGE },
+        mimeType: { startsWith: "image/" },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 80,
+      select: { id: true, kind: true, mimeType: true, createdAt: true },
+    });
+    const listed = new Set(photos.map((photo) => photo.id));
+    const missingIds = [user.profilePhotoMediaId, user.coverPhotoMediaId].filter(
+      (id): id is string => id != null && !listed.has(id),
+    );
+    const pinned =
+      missingIds.length === 0
+        ? []
+        : await this.database.mediaAsset.findMany({
+            where: {
+              id: { in: missingIds },
+              ownerUserId: userId,
+              deletedAt: null,
+              kind: { not: MediaKind.CHAT_IMAGE },
+            },
+            select: { id: true, kind: true, mimeType: true, createdAt: true },
+          });
+    const items = [...pinned, ...photos];
+    return {
+      items: items.map((photo) => ({
+        id: photo.id,
+        kind: photo.kind,
+        mimeType: photo.mimeType,
+        createdAt: photo.createdAt.toISOString(),
+        isCurrentProfile: photo.id === user.profilePhotoMediaId,
+        isCurrentCover: photo.id === user.coverPhotoMediaId,
+      })),
+    };
+  }
+
+  removeUserPhoto(data: {
+    actorId: string;
+    userId: string;
+    mediaId: string;
+    reason: string;
+  }): Promise<object | null> {
+    return this.database.$transaction(async (transaction) => {
+      const actor = await transaction.user.findFirst({
+        where: {
+          id: data.actorId,
+          status: UserStatus.ACTIVE,
+          role: {
+            in: [UserRole.MODERATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN],
+          },
+        },
+        select: { id: true },
+      });
+      if (!actor) throw new AdminHierarchyError();
+      const removed = await removeOwnedPhoto(transaction, {
+        actorId: actor.id,
+        userId: data.userId,
+        mediaId: data.mediaId,
+        reason: data.reason,
+      });
+      return removed;
+    });
+  }
+
+  getReportDetail(reportId: string): Promise<object | null> {
+    return loadReportDetail(this.database, reportId);
+  }
+
+  moderateReport(data: {
+    actorId: string;
+    reportId: string;
+    action:
+      | "DISMISS"
+      | "WARN"
+      | "REMOVE"
+      | "REMOVE_AND_WARN"
+      | "RESTRICT"
+      | "SUSPEND";
+    reasonCode?: string | undefined;
+    note: string | null;
+    removeProfileMedia?: boolean | undefined;
+  }): Promise<object | null> {
+    return this.database.$transaction(
+      async (transaction) => {
+        const actor = await transaction.user.findFirst({
+          where: {
+            id: data.actorId,
+            status: UserStatus.ACTIVE,
+            role: {
+              in: [UserRole.MODERATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN],
+            },
+          },
+          select: { id: true },
+        });
+        if (!actor) throw new AdminHierarchyError();
+        return moderateOpenReport(transaction, {
+          actorId: actor.id,
+          reportId: data.reportId,
+          action: data.action,
+          reasonCode: data.reasonCode ?? "",
+          note: data.note,
+          removeProfileMedia: data.removeProfileMedia === true,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
   async listPosts(
     query: AdminPostQuery,
   ): Promise<AdminPage<AdminPostRecord>> {
@@ -1191,6 +1347,32 @@ export class PrismaAdminRepository implements AdminRepository {
           metadata: { actionCode: "POST_DELETED" },
         },
       });
+      if (data.removeProfileMedia && data.reason?.trim()) {
+        const owner = await transaction.user.findUnique({
+          where: { id: post.authorId },
+          select: { profilePhotoMediaId: true, coverPhotoMediaId: true },
+        });
+        const attachments = await transaction.postMedia.findMany({
+          where: { postId: post.id },
+          select: { mediaAssetId: true },
+        });
+        const targets = attachments
+          .map((row) => row.mediaAssetId)
+          .filter(
+            (mediaId) =>
+              mediaId === owner?.profilePhotoMediaId ||
+              mediaId === owner?.coverPhotoMediaId,
+          );
+        for (const mediaId of targets) {
+          await removeOwnedPhoto(transaction, {
+            actorId: data.actorId,
+            userId: post.authorId,
+            mediaId,
+            reason: data.reason.trim(),
+            now,
+          });
+        }
+      }
       return mapAdminPost(updated);
     });
   }
@@ -2127,7 +2309,11 @@ export class PrismaAdminRepository implements AdminRepository {
   async listAds(query: AdminAdQuery): Promise<AdminPage<AdminAdRecord>> {
     const where: Prisma.AdvertisementWhereInput = {
       ...(query.placement
-        ? { placement: query.placement as AdPlacement }
+        ? {
+            placementLinks: {
+              some: { placement: query.placement as AdPlacement },
+            },
+          }
         : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
     };
@@ -2137,6 +2323,7 @@ export class PrismaAdminRepository implements AdminRepository {
         orderBy: [{ isActive: "desc" }, { priority: "desc" }, { createdAt: "desc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
+        include: adCreativeInclude,
       }),
       this.database.advertisement.count({ where }),
     ]);
@@ -2146,20 +2333,29 @@ export class PrismaAdminRepository implements AdminRepository {
   createAd(data: CreateAdData): Promise<AdminAdRecord> {
     return this.database.$transaction(async (transaction) => {
       const actor = await this.requireAdminActor(transaction, data.actorId);
+      const creative = resolveAdCreative(data);
       const created = await transaction.advertisement.create({
         data: {
           title: data.title,
           body: data.body ?? null,
-          imageUrl: data.imageUrl ?? null,
+          imageUrl: creative.imageUrl,
           targetUrl: data.targetUrl ?? null,
           ctaLabel: data.ctaLabel ?? null,
-          placement: data.placement as Prisma.AdvertisementCreateInput["placement"],
+          format: creative.format,
+          placement: creative.placements[0]!,
           priority: data.priority ?? 0,
           insertEvery: data.insertEvery ?? null,
           isActive: data.isActive ?? false,
           startsAt: data.startsAt ?? null,
           endsAt: data.endsAt ?? null,
+          placementLinks: {
+            create: creative.placements.map((placement) => ({ placement })),
+          },
+          ...(creative.assets.length
+            ? { assets: { create: creative.assets } }
+            : {}),
         },
+        include: adCreativeInclude,
       });
       await this.writeAudit(transaction, actor.id, "admin.ad.created", "advertisement", created.id, {});
       return mapAd(created);
@@ -2171,24 +2367,62 @@ export class PrismaAdminRepository implements AdminRepository {
       const actor = await this.requireAdminActor(transaction, data.actorId);
       const existing = await transaction.advertisement.findUnique({
         where: { id: data.adId },
-        select: { id: true },
+        select: { id: true, imageUrl: true, placement: true, format: true },
       });
       if (!existing) return null;
+      const nextPlacements =
+        data.placements ??
+        (data.placement ? [data.placement] : undefined);
+      const nextAssets =
+        data.media !== undefined
+          ? resolveAdCreative({
+              format: data.format ?? existing.format,
+              media: data.media,
+              ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
+            }).assets
+          : data.imageUrl !== undefined && (data.format ?? existing.format) === "IMAGE"
+            ? resolveAdCreative({
+                format: "IMAGE",
+                imageUrl: data.imageUrl,
+              }).assets
+            : undefined;
       const patch: Prisma.AdvertisementUpdateInput = {};
       if (data.title !== undefined) patch.title = data.title;
       if (data.body !== undefined) patch.body = data.body;
-      if (data.imageUrl !== undefined) patch.imageUrl = data.imageUrl;
       if (data.targetUrl !== undefined) patch.targetUrl = data.targetUrl;
       if (data.ctaLabel !== undefined) patch.ctaLabel = data.ctaLabel;
-      if (data.placement !== undefined) patch.placement = data.placement as AdPlacement;
       if (data.priority !== undefined) patch.priority = data.priority;
       if (data.insertEvery !== undefined) patch.insertEvery = data.insertEvery;
       if (data.isActive !== undefined) patch.isActive = data.isActive;
       if (data.startsAt !== undefined) patch.startsAt = data.startsAt;
       if (data.endsAt !== undefined) patch.endsAt = data.endsAt;
+      if (data.format !== undefined) patch.format = data.format;
+      if (nextPlacements) {
+        patch.placement = nextPlacements[0] as AdPlacement;
+        patch.placementLinks = {
+          deleteMany: {},
+          create: nextPlacements.map((placement) => ({
+            placement: placement as AdPlacement,
+          })),
+        };
+      }
+      if (nextAssets) {
+        const cover =
+          nextAssets.find((item) => item.kind === "IMAGE")?.url ??
+          nextAssets.find((item) => item.posterUrl)?.posterUrl ??
+          null;
+        patch.imageUrl = cover;
+        patch.assets = {
+          deleteMany: {},
+          ...(nextAssets.length ? { create: nextAssets } : {}),
+        };
+      } else if (data.imageUrl !== undefined) {
+        patch.imageUrl = data.imageUrl;
+      }
       const updated = await transaction.advertisement.update({
         where: { id: existing.id },
         data: patch,
+        include: adCreativeInclude,
       });
       await this.writeAudit(transaction, actor.id, "admin.ad.updated", "advertisement", updated.id, {});
       return mapAd(updated);
@@ -3431,6 +3665,26 @@ export class PrismaAdminRepository implements AdminRepository {
         select: { id: true, deletedAt: true, storageKey: true },
       });
       if (!existing) return null;
+      if (data.deleted && !existing.deletedAt) {
+        const asset = await transaction.mediaAsset.findUnique({
+          where: { id: existing.id },
+          select: { ownerUserId: true, kind: true, mimeType: true },
+        });
+        const isUserPhoto = Boolean(
+          asset?.ownerUserId &&
+            asset.kind !== MediaKind.CHAT_IMAGE &&
+            asset.mimeType.startsWith("image/"),
+        );
+        if (isUserPhoto && asset?.ownerUserId) {
+          if (!data.reason?.trim()) throw new PhotoReasonRequiredError();
+          await removeOwnedPhoto(transaction, {
+            actorId: actor.id,
+            userId: asset.ownerUserId,
+            mediaId: existing.id,
+            reason: data.reason.trim(),
+          });
+        }
+      }
       const shouldPurge = Boolean(data.deleted && data.purgeStorage);
       const updated = await transaction.mediaAsset.update({
         where: { id: existing.id },
@@ -4314,6 +4568,8 @@ function mapAdminPost(
     authorDisplayName: post.author.displayName,
     authorIsVerifiedBadge: post.author.isVerifiedBadge,
     authorProfilePhotoMediaId: post.author.profilePhotoMediaId,
+    authorCoverPhotoMediaId: post.author.coverPhotoMediaId,
+    kind: post.kind,
     bodyPreview: truncatePreview(post.body),
     mediaCount: post._count.media,
     mediaPreview: post.media.map((row) => ({
@@ -4616,6 +4872,66 @@ async function upsertPlanPrices(
   }
 }
 
+const adCreativeInclude = {
+  placementLinks: { select: { placement: true } },
+  assets: { orderBy: { sortOrder: "asc" as const } },
+} satisfies Prisma.AdvertisementInclude;
+
+function resolveAdCreative(data: {
+  format?: "IMAGE" | "CAROUSEL" | "VIDEO";
+  placement?: string;
+  placements?: string[];
+  media?: Array<{
+    kind: "IMAGE" | "VIDEO";
+    url: string;
+    posterUrl?: string | null;
+    targetUrl?: string | null;
+  }>;
+  imageUrl?: string | null;
+}): {
+  format: "IMAGE" | "CAROUSEL" | "VIDEO";
+  placements: AdPlacement[];
+  imageUrl: string | null;
+  assets: Array<{
+    kind: "IMAGE" | "VIDEO";
+    url: string;
+    posterUrl: string | null;
+    targetUrl: string | null;
+    sortOrder: number;
+  }>;
+} {
+  const placements = (
+    data.placements?.length
+      ? data.placements
+      : data.placement
+        ? [data.placement]
+        : ["FEED"]
+  ) as AdPlacement[];
+  const assets = (data.media?.length
+    ? data.media
+    : data.imageUrl
+      ? [{ kind: "IMAGE" as const, url: data.imageUrl }]
+      : []
+  ).map((item, index) => ({
+    kind: item.kind,
+    url: item.url,
+    posterUrl: item.posterUrl ?? null,
+    targetUrl: item.targetUrl ?? null,
+    sortOrder: index,
+  }));
+  const cover =
+    assets.find((item) => item.kind === "IMAGE")?.url ??
+    assets.find((item) => item.posterUrl)?.posterUrl ??
+    data.imageUrl ??
+    null;
+  return {
+    format: data.format ?? (assets.some((item) => item.kind === "VIDEO") ? "VIDEO" : assets.length > 1 ? "CAROUSEL" : "IMAGE"),
+    placements,
+    imageUrl: cover,
+    assets,
+  };
+}
+
 function mapAd(ad: {
   id: string;
   title: string;
@@ -4623,6 +4939,7 @@ function mapAd(ad: {
   imageUrl: string | null;
   targetUrl: string | null;
   ctaLabel: string | null;
+  format?: "IMAGE" | "CAROUSEL" | "VIDEO";
   placement: string;
   priority: number;
   insertEvery: number | null;
@@ -4633,7 +4950,15 @@ function mapAd(ad: {
   endsAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  placementLinks?: Array<{ placement: string }>;
+  assets?: Array<{
+    kind: string;
+    url: string;
+    posterUrl: string | null;
+    targetUrl: string | null;
+  }>;
 }): AdminAdRecord {
+  const placements = ad.placementLinks?.map((link) => link.placement) ?? [ad.placement];
   return {
     id: ad.id,
     title: ad.title,
@@ -4641,7 +4966,15 @@ function mapAd(ad: {
     imageUrl: ad.imageUrl,
     targetUrl: ad.targetUrl,
     ctaLabel: ad.ctaLabel,
-    placement: ad.placement,
+    format: ad.format ?? "IMAGE",
+    placement: placements[0] ?? ad.placement,
+    placements,
+    media: (ad.assets ?? []).map((asset) => ({
+      kind: asset.kind,
+      url: asset.url,
+      posterUrl: asset.posterUrl,
+      targetUrl: asset.targetUrl,
+    })),
     priority: ad.priority,
     insertEvery: ad.insertEvery,
     isActive: ad.isActive,

@@ -17,6 +17,11 @@ export function createUserRouter(
 
   router.get("/me", security.authenticate, asyncHandler(controller.getMe));
   router.get(
+    "/me/profile-health",
+    security.authenticate,
+    asyncHandler(controller.getProfileHealth),
+  );
+  router.get(
     "/me/entitlements",
     security.authenticate,
     asyncHandler(controller.getEntitlements),

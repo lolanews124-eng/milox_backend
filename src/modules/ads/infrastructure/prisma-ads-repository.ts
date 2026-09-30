@@ -13,14 +13,20 @@ const servedAdSelect = {
   imageUrl: true,
   targetUrl: true,
   ctaLabel: true,
+  format: true,
   placement: true,
   priority: true,
+  placementLinks: { select: { placement: true } },
+  assets: {
+    orderBy: { sortOrder: "asc" },
+    select: { kind: true, url: true, posterUrl: true, targetUrl: true },
+  },
 } satisfies Prisma.AdvertisementSelect;
 
 function activeAdWhere(placement: AdPlacement, now: Date): Prisma.AdvertisementWhereInput {
   return {
-    placement,
     isActive: true,
+    placementLinks: { some: { placement } },
     AND: [
       { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
       { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
@@ -39,12 +45,13 @@ export class PrismaAdsRepository implements AdsRepository {
     const config = await this.getPlacementConfig(placement);
     if (config && !config.isEnabled) return [];
 
-    return this.database.advertisement.findMany({
+    const rows = await this.database.advertisement.findMany({
       where: activeAdWhere(placement, now),
       orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       take: Math.max(1, Math.min(limit, 20)),
       select: servedAdSelect,
     });
+    return rows.map(mapServedAd);
   }
 
   async pickAdForSlot(
@@ -91,6 +98,46 @@ export class PrismaAdsRepository implements AdsRepository {
     });
     return row ? mapPlacementConfig(row) : null;
   }
+}
+
+function mapServedAd(row: {
+  id: string;
+  title: string;
+  body: string | null;
+  imageUrl: string | null;
+  targetUrl: string | null;
+  ctaLabel: string | null;
+  format: "IMAGE" | "CAROUSEL" | "VIDEO";
+  placement: AdPlacement;
+  priority: number;
+  placementLinks: Array<{ placement: AdPlacement }>;
+  assets: Array<{
+    kind: "IMAGE" | "VIDEO";
+    url: string;
+    posterUrl: string | null;
+    targetUrl: string | null;
+  }>;
+}): ServedAdRecord {
+  const media = row.assets.map((asset) => ({
+    kind: asset.kind,
+    url: asset.url,
+    posterUrl: asset.posterUrl,
+    targetUrl: asset.targetUrl,
+  }));
+  const placements = row.placementLinks.map((link) => link.placement);
+  return {
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    imageUrl: row.imageUrl,
+    targetUrl: row.targetUrl,
+    ctaLabel: row.ctaLabel,
+    format: row.format,
+    placement: row.placement,
+    placements: placements.length > 0 ? placements : [row.placement],
+    media,
+    priority: row.priority,
+  };
 }
 
 function mapPlacementConfig(row: {

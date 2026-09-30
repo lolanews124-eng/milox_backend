@@ -21,6 +21,7 @@ import {
   postSpamLimitsFromConfig,
 } from "./post-spam-guard.js";
 import { prisma } from "../../../../infrastructure/prisma/client.js";
+import { assertCanCreateContent } from "../../../moderation/application/profile-health.js";
 import { recordDailyMission } from "../../../rewards/application/daily-engagement.js";
 
 export interface PostPage {
@@ -47,6 +48,7 @@ export class PostService implements ProfileUpdatePostWriter {
     input: { body?: string | undefined; mediaIds: string[] },
     idempotencyKey?: string,
   ): Promise<CreatePostResult> {
+    await assertCanCreateContent(prisma, authorId);
     const body = normalizeBody(input.body);
     if (!body && input.mediaIds.length === 0) {
       throw new AppError(
@@ -129,22 +131,24 @@ export class PostService implements ProfileUpdatePostWriter {
     }
   }
 
-  createProfilePhotoUpdatePost(
+  async createProfilePhotoUpdatePost(
     authorId: string,
     mediaAssetId: string,
   ): Promise<void> {
-    return this.repository.createProfileUpdatePost({
+    await assertCanCreateContent(prisma, authorId);
+    await this.repository.createProfileUpdatePost({
       authorId,
       kind: "PROFILE_PHOTO_UPDATE",
       mediaAssetId,
     });
   }
 
-  createCoverPhotoUpdatePost(
+  async createCoverPhotoUpdatePost(
     authorId: string,
     mediaAssetId: string,
   ): Promise<void> {
-    return this.repository.createProfileUpdatePost({
+    await assertCanCreateContent(prisma, authorId);
+    await this.repository.createProfileUpdatePost({
       authorId,
       kind: "COVER_PHOTO_UPDATE",
       mediaAssetId,

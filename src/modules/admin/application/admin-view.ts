@@ -226,6 +226,8 @@ export interface AdminPostRecord {
   authorDisplayName: string | null;
   authorIsVerifiedBadge: boolean;
   authorProfilePhotoMediaId: string | null;
+  authorCoverPhotoMediaId: string | null;
+  kind: string;
   bodyPreview: string | null;
   mediaCount: number;
   mediaPreview: Array<{ id: string; mimeType: string }>;
@@ -349,7 +351,15 @@ export interface AdminAdRecord {
   imageUrl: string | null;
   targetUrl: string | null;
   ctaLabel: string | null;
+  format: string;
   placement: string;
+  placements: string[];
+  media: Array<{
+    kind: string;
+    url: string;
+    posterUrl: string | null;
+    targetUrl: string | null;
+  }>;
   priority: number;
   insertEvery: number | null;
   isActive: boolean;
@@ -620,6 +630,8 @@ export function presentAdminPost(post: AdminPostRecord): object {
     authorDisplayName: post.authorDisplayName,
     authorIsVerifiedBadge: post.authorIsVerifiedBadge,
     authorProfilePhotoMediaId: post.authorProfilePhotoMediaId,
+    authorCoverPhotoMediaId: post.authorCoverPhotoMediaId,
+    kind: post.kind,
     bodyPreview: post.bodyPreview,
     mediaCount: post.mediaCount,
     mediaPreview: post.mediaPreview,
@@ -799,7 +811,10 @@ export function presentAdminAd(ad: AdminAdRecord): object {
     imageUrl: ad.imageUrl,
     targetUrl: ad.targetUrl,
     ctaLabel: ad.ctaLabel,
+    format: ad.format,
     placement: ad.placement,
+    placements: ad.placements,
+    media: ad.media,
     priority: ad.priority,
     insertEvery: ad.insertEvery,
     isActive: ad.isActive,

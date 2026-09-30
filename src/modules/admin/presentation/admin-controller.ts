@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import path from "node:path";
 import { MediaKind } from "@prisma/client";
+import { fileTypeFromBuffer } from "file-type";
 
 import { AppError } from "../../../shared/errors/app-error.js";
 import type { MediaService } from "../../media/application/services/media-service.js";
@@ -88,6 +89,10 @@ import {
   adminVerifiedBadgeOrderIdParamSchema,
   adminVerifiedBadgeOrderActionSchema,
   resolveReportSchema,
+  moderateReportSchema,
+  warnUserSchema,
+  removeUserPhotoSchema,
+  adminUserPhotoParamSchema,
   setVerifiedBadgeSchema,
   setBroadcastEnabledSchema,
   updateAdSchema,
@@ -277,6 +282,37 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
+  listUserPhotos = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { userId } = adminUserIdParamSchema.parse(request.params);
+    const data = await this.admin.listUserPhotos(userId);
+    response.status(200).json(success(request, data));
+  };
+
+  removeUserPhoto = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { userId, mediaId } = adminUserPhotoParamSchema.parse(request.params);
+    const input = removeUserPhotoSchema.parse(request.body as unknown);
+    const data = await this.admin.removeUserPhoto(
+      requireUser(request),
+      userId,
+      mediaId,
+      input.reason,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  warnUser = async (request: Request, response: Response): Promise<void> => {
+    const { userId } = adminUserIdParamSchema.parse(request.params);
+    const input = warnUserSchema.parse(request.body as unknown);
+    const data = await this.admin.warnUser(requireUser(request), userId, input);
+    response.status(200).json(success(request, data));
+  };
+
   listReports = async (request: Request, response: Response): Promise<void> => {
     const query = adminReportQuerySchema.parse(request.query);
     const data = await this.admin.listReports(query);
@@ -290,6 +326,29 @@ export class AdminController {
     const { reportId } = adminReportIdParamSchema.parse(request.params);
     const input = resolveReportSchema.parse(request.body as unknown);
     const data = await this.admin.resolveReport(
+      requireUser(request),
+      reportId,
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  getReportDetail = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { reportId } = adminReportIdParamSchema.parse(request.params);
+    const data = await this.admin.getReportDetail(reportId);
+    response.status(200).json(success(request, data));
+  };
+
+  moderateReport = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { reportId } = adminReportIdParamSchema.parse(request.params);
+    const input = moderateReportSchema.parse(request.body as unknown);
+    const data = await this.admin.moderateReport(
       requireUser(request),
       reportId,
       input,
@@ -1035,6 +1094,64 @@ export class AdminController {
     );
   };
 
+  uploadAdCreative = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    if (!request.file) {
+      throw new AppError("VALIDATION_ERROR", "File is required", 400, [
+        { field: "file", issue: "required" },
+      ]);
+    }
+    const actor = requireUser(request);
+    const detected = await fileTypeFromBuffer(request.file.buffer);
+    const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (detected && imageTypes.has(detected.mime)) {
+      const asset = (await this.media.uploadImage(
+        actor,
+        MediaKind.POST_IMAGE,
+        request.file.buffer,
+      )) as {
+        id: string;
+        url: string | null;
+        mimeType: string;
+      };
+      if (!asset.url) {
+        throw new AppError(
+          "INTERNAL_ERROR",
+          "Uploaded image has no public URL",
+          500,
+        );
+      }
+      response.status(201).json(
+        success(request, {
+          id: asset.id,
+          url: asset.url,
+          mimeType: asset.mimeType,
+          kind: "IMAGE",
+        }),
+      );
+      return;
+    }
+    if (detected?.mime === "video/mp4") {
+      const asset = await this.media.uploadAdVideo(actor, request.file.buffer);
+      response.status(201).json(
+        success(request, {
+          id: asset.id,
+          url: asset.url,
+          mimeType: asset.mimeType,
+          kind: "VIDEO",
+        }),
+      );
+      return;
+    }
+    throw new AppError(
+      "UNSUPPORTED_MEDIA_TYPE",
+      "Upload a JPG, PNG, or WebP image, or an MP4 video",
+      415,
+    );
+  };
+
   listMatches = async (request: Request, response: Response): Promise<void> => {
     const query = adminMatchQuerySchema.parse(request.query);
     const data = await this.admin.listMatches(query);
@@ -1169,6 +1286,7 @@ export class AdminController {
     const data = await this.admin.updateMedia(requireUser(request), mediaId, {
       deleted: input.deleted,
       purgeStorage: input.purgeStorage,
+      reason: input.reason,
     });
     response.status(200).json(success(request, data));
   };

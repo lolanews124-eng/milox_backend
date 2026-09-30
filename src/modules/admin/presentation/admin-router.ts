@@ -26,6 +26,38 @@ const blogImageUpload = multer({
   },
 });
 
+const adCreativeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1,
+    fields: 4,
+  },
+});
+
+const adCreativeMiddleware: RequestHandler = (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
+  adCreativeUpload.single("file")(request, response, (error: unknown) => {
+    if (error instanceof MulterError) {
+      const tooLarge = error.code === "LIMIT_FILE_SIZE";
+      next(
+        new AppError(
+          tooLarge ? "PAYLOAD_TOO_LARGE" : "VALIDATION_ERROR",
+          tooLarge
+            ? "File must be 10 MB or smaller"
+            : "Invalid file upload",
+          tooLarge ? 413 : 400,
+        ),
+      );
+      return;
+    }
+    next(error);
+  });
+};
+
 const blogImageMiddleware: RequestHandler = (
   request: Request,
   response: Response,
@@ -126,6 +158,24 @@ export function createAdminRouter(
     adminOnly,
     asyncHandler(controller.changeUserStatus),
   );
+  router.post(
+    "/users/:userId/warn",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.warnUser),
+  );
+  router.get(
+    "/users/:userId/photos",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.listUserPhotos),
+  );
+  router.post(
+    "/users/:userId/photos/:mediaId/remove",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.removeUserPhoto),
+  );
   router.get(
     "/reports",
     readLimit,
@@ -137,6 +187,18 @@ export function createAdminRouter(
     mutationLimit,
     moderationStaff,
     asyncHandler(controller.resolveReport),
+  );
+  router.get(
+    "/reports/:reportId",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.getReportDetail),
+  );
+  router.post(
+    "/reports/:reportId/moderate",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.moderateReport),
   );
   router.get(
     "/posts",
@@ -619,6 +681,13 @@ export function createAdminRouter(
     adminOnly,
     blogImageMiddleware,
     asyncHandler(controller.uploadBlogImage),
+  );
+  router.post(
+    "/ad-uploads",
+    uploadLimit,
+    adminOnly,
+    adCreativeMiddleware,
+    asyncHandler(controller.uploadAdCreative),
   );
   router.get(
     "/matches/stats",

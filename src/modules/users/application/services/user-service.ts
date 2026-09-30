@@ -17,6 +17,7 @@ import {
 
 import type { AppConfig } from "../../../../config/env.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { computeProfileHealth } from "../../../moderation/application/profile-health.js";
 import {
   resolveUserEntitlements,
   syncUserPremiumState,
@@ -96,6 +97,41 @@ export class UserService {
       this.config.INTEREST_DAILY_LIMIT,
     );
     return mapPrivateProfile(user, this.config, entitlements);
+  }
+
+  async getProfileHealth(userId: string): Promise<object> {
+    await this.requireActiveUser(userId);
+    const warnings = await this.database.profileWarning.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        kind: true,
+        reasonCode: true,
+        message: true,
+        scoreDelta: true,
+        restrictUntil: true,
+        createdAt: true,
+      },
+    });
+    const health = computeProfileHealth(warnings, new Date());
+    return {
+      score: health.score,
+      band: health.band,
+      bandLabel: health.bandLabel,
+      restrictedUntil: health.restrictedUntil?.toISOString() ?? null,
+      warnings: [...warnings]
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .slice(0, 12)
+        .map((warning) => ({
+          id: warning.id,
+          kind: warning.kind,
+          reasonCode: warning.reasonCode,
+          message: warning.message,
+          scoreDelta: warning.scoreDelta,
+          createdAt: warning.createdAt.toISOString(),
+        })),
+    };
   }
 
   async publicSitemap(query: {
