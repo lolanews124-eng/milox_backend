@@ -37,6 +37,7 @@ import {
   warnUserDirectly,
 } from "../../moderation/application/report-moderation.js";
 import { reelRejectReasonLabel } from "../../reels/application/reel-reject-reasons.js";
+import { addDays, istDateKey, istDayRange, startOfIstDay } from "../../../shared/ist-time.js";
 import { enqueueReelMentions } from "../../reels/infrastructure/prisma-reel-repository.js";
 import {
   ensurePaypalSettings,
@@ -371,9 +372,7 @@ export class PrismaAdminRepository implements AdminRepository {
   constructor(private readonly database: PrismaClient) {}
 
   async dashboard(now: Date): Promise<AdminDashboardRecord> {
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    const dayStart = startOfIstDay(now);
     const [
       totalUsers,
       dailyActiveUsers,
@@ -481,11 +480,9 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   async usersStats(now: Date): Promise<AdminUsersStatsRecord> {
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    const dayStart = startOfIstDay(now);
     const onlineSince = new Date(now.getTime() - 15 * 60 * 1000);
-    const todaySince = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const todaySince = dayStart;
     const quietSince = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
     const activeWhere = {
       deletedAt: null,
@@ -566,6 +563,125 @@ export class PrismaAdminRepository implements AdminRepository {
       suspendedUsers,
       reportedUsers,
       deletedUsers,
+    };
+  }
+
+  async userArrivals(now: Date, days: number): Promise<{
+    timezone: "Asia/Kolkata";
+    days: number;
+    total: number;
+    items: Array<{
+      date: string;
+      count: number;
+      firstAt: Date | null;
+      lastAt: Date | null;
+    }>;
+  }> {
+    const span = Math.min(90, Math.max(1, days));
+    const start = addDays(startOfIstDay(now), -(span - 1));
+    const rows = await this.database.$queryRaw<
+      Array<{ day: string; count: number; firstAt: Date | null; lastAt: Date | null }>
+    >`
+      SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
+             COUNT(*)::int AS count,
+             MIN("createdAt") AS "firstAt",
+             MAX("createdAt") AS "lastAt"
+      FROM users
+      WHERE "createdAt" >= ${start}
+        AND role::text = 'USER'
+        AND "isSystemAccount" = false
+      GROUP BY 1
+    `;
+    const byDay = new Map(
+      rows.map((row) => [
+        String(row.day).slice(0, 10),
+        {
+          count: Number(row.count),
+          firstAt: row.firstAt,
+          lastAt: row.lastAt,
+        },
+      ]),
+    );
+    const items = Array.from({ length: span }, (_, index) => {
+      const date = istDateKey(addDays(start, span - 1 - index));
+      const row = byDay.get(date);
+      return {
+        date,
+        count: row?.count ?? 0,
+        firstAt: row?.firstAt ?? null,
+        lastAt: row?.lastAt ?? null,
+      };
+    });
+    return {
+      timezone: "Asia/Kolkata",
+      days: span,
+      total: items.reduce((sum, item) => sum + item.count, 0),
+      items,
+    };
+  }
+
+  async userArrivalsOn(dateKey: string): Promise<{
+    date: string;
+    timezone: "Asia/Kolkata";
+    count: number;
+    truncated: boolean;
+    hours: Array<{ hour: number; count: number }>;
+    users: Array<{
+      id: string;
+      username: string;
+      displayName: string | null;
+      createdAt: Date;
+      country: string;
+      status: UserStatus;
+      deletedAt: Date | null;
+    }>;
+  } | null> {
+    const range = istDayRange(dateKey);
+    if (!range) return null;
+    const where = {
+      createdAt: { gte: range.start, lt: range.end },
+      role: UserRole.USER,
+      isSystemAccount: false,
+    };
+    const [count, users, hourRows] = await Promise.all([
+      this.database.user.count({ where }),
+      this.database.user.findMany({
+        where,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: 500,
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          createdAt: true,
+          country: true,
+          status: true,
+          deletedAt: true,
+        },
+      }),
+      this.database.$queryRaw<Array<{ hour: number; count: number }>>`
+        SELECT EXTRACT(HOUR FROM "createdAt" AT TIME ZONE 'Asia/Kolkata')::int AS hour,
+               COUNT(*)::int AS count
+        FROM users
+        WHERE "createdAt" >= ${range.start}
+          AND "createdAt" < ${range.end}
+          AND role::text = 'USER'
+          AND "isSystemAccount" = false
+        GROUP BY 1
+        ORDER BY 1
+      `,
+    ]);
+    const hourCounts = new Map(hourRows.map((row) => [Number(row.hour), Number(row.count)]));
+    return {
+      date: dateKey,
+      timezone: "Asia/Kolkata",
+      count,
+      truncated: count > users.length,
+      hours: Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        count: hourCounts.get(hour) ?? 0,
+      })),
+      users,
     };
   }
 
@@ -3055,9 +3171,7 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   async matchesStats(now: Date): Promise<AdminMatchesStatsRecord> {
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    const dayStart = startOfIstDay(now);
     const [
       totalMatches,
       activeMatches,
@@ -3083,9 +3197,7 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   async referralsStats(now: Date): Promise<AdminReferralsStatsRecord> {
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    const dayStart = startOfIstDay(now);
     const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
     const monthStart = new Date(dayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
     const trendStart = new Date(dayStart.getTime() - 13 * 24 * 60 * 60 * 1000);
@@ -3388,9 +3500,7 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   async conversationsStats(now: Date): Promise<AdminConversationsStatsRecord> {
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    const dayStart = startOfIstDay(now);
     const [
       totalConversations,
       activeConversations,
@@ -3966,11 +4076,7 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async analytics(now: Date): Promise<AdminAnalyticsRecord> {
     const days = 30;
-    const start = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() - (days - 1),
-    ));
+    const start = addDays(startOfIstDay(now), -(days - 1));
     const demographicsWhere = {
       deletedAt: null,
       status: { not: UserStatus.DELETED },
@@ -3979,21 +4085,21 @@ export class PrismaAdminRepository implements AdminRepository {
     const [userDays, postDays, reportDays, genderGroups, ageGroups, countryGroups, demographicsTotal] =
       await Promise.all([
       this.database.$queryRaw<Array<{ day: string; count: number }>>`
-        SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+        SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM users
         WHERE "createdAt" >= ${start} AND "deletedAt" IS NULL
         GROUP BY 1
       `,
       this.database.$queryRaw<Array<{ day: string; count: number }>>`
-        SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+        SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM posts
         WHERE "createdAt" >= ${start} AND "deletedAt" IS NULL
         GROUP BY 1
       `,
       this.database.$queryRaw<Array<{ day: string; count: number }>>`
-        SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+        SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM reports
         WHERE "createdAt" >= ${start}
@@ -5062,9 +5168,7 @@ function seriesFromCounts(
 ): Array<{ date: string; count: number }> {
   const buckets = new Map<string, number>();
   for (let index = 0; index < days; index += 1) {
-    const day = new Date(start);
-    day.setUTCDate(start.getUTCDate() + index);
-    buckets.set(day.toISOString().slice(0, 10), 0);
+    buckets.set(istDateKey(addDays(start, index)), 0);
   }
   for (const row of rows) {
     const key = String(row.day).slice(0, 10);
@@ -5080,12 +5184,10 @@ function buildDailySeries(
 ): Array<{ date: string; count: number }> {
   const buckets = new Map<string, number>();
   for (let index = 0; index < days; index += 1) {
-    const day = new Date(start);
-    day.setUTCDate(start.getUTCDate() + index);
-    buckets.set(day.toISOString().slice(0, 10), 0);
+    buckets.set(istDateKey(addDays(start, index)), 0);
   }
   for (const timestamp of timestamps) {
-    const key = timestamp.toISOString().slice(0, 10);
+    const key = istDateKey(timestamp);
     if (buckets.has(key)) {
       buckets.set(key, (buckets.get(key) ?? 0) + 1);
     }
@@ -5175,7 +5277,7 @@ function activityFilterWhere(
   nowMs: number,
 ): Prisma.UserWhereInput {
   if (activity === "today") {
-    return recentPresenceWhere(new Date(nowMs - 24 * 60 * 60 * 1000));
+    return recentPresenceWhere(startOfIstDay(new Date(nowMs)));
   }
   if (activity === "week") {
     return recentPresenceWhere(new Date(nowMs - 7 * 24 * 60 * 60 * 1000));

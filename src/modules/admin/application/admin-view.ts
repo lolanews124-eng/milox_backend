@@ -19,6 +19,39 @@ export interface AdminUsersStatsRecord {
   deletedUsers: number;
 }
 
+export interface AdminUserArrivalSummary {
+  date: string;
+  count: number;
+  firstAt: Date | null;
+  lastAt: Date | null;
+}
+
+export interface AdminUserArrivalsRecord {
+  timezone: "Asia/Kolkata";
+  days: number;
+  total: number;
+  items: AdminUserArrivalSummary[];
+}
+
+export interface AdminUserArrivalPerson {
+  id: string;
+  username: string;
+  displayName: string | null;
+  createdAt: Date;
+  country: string;
+  status: UserStatus;
+  deletedAt: Date | null;
+}
+
+export interface AdminUserArrivalDayRecord {
+  date: string;
+  timezone: "Asia/Kolkata";
+  count: number;
+  truncated: boolean;
+  hours: Array<{ hour: number; count: number }>;
+  users: AdminUserArrivalPerson[];
+}
+
 export interface AdminVerificationStatsRecord {
   pendingBadge: number;
   verifiedBadge: number;

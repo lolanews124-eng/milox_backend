@@ -8,6 +8,7 @@ import { unlink } from "node:fs/promises";
 import path from "node:path";
 
 import { AppError } from "../../../../shared/errors/app-error.js";
+import { istDateKey } from "../../../../shared/ist-time.js";
 import { ReportModerationError } from "../../../moderation/application/report-moderation.js";
 import { PhotoReasonRequiredError } from "../remove-user-photo.js";
 import {
@@ -184,6 +185,18 @@ export class AdminService {
     return presentAdminUsersStats(stats);
   }
 
+  userArrivals(days: number): ReturnType<AdminRepository["userArrivals"]> {
+    return this.repository.userArrivals(new Date(), days);
+  }
+
+  async userArrivalsOn(dateKey: string): Promise<object> {
+    const day = await this.repository.userArrivalsOn(dateKey);
+    if (!day) {
+      throw new AppError("VALIDATION_ERROR", "That date is not valid", 400);
+    }
+    return day;
+  }
+
   async verificationStats(): Promise<object> {
     const stats = await this.repository.verificationStats();
     return presentAdminVerificationStats(stats);
@@ -241,7 +254,7 @@ export class AdminService {
         ? { emailVerified: options.emailVerified }
         : {}),
     });
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = istDateKey(new Date());
     const audiencePart =
       options.audience === "inactive"
         ? `inactive-${options.inactiveDays}d`

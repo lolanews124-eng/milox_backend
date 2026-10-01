@@ -7,6 +7,7 @@ import {
 } from "@prisma/client";
 
 import type { AppConfig } from "../../../config/env.js";
+import { istDateKey, startOfIstDay } from "../../../shared/ist-time.js";
 import {
   decryptSecret,
   encryptSecret,
@@ -117,7 +118,7 @@ export async function savePaypalSettings(
 }
 
 function dayStartUtc(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return startOfIstDay(now);
 }
 
 function addDays(date: Date, days: number): Date {
@@ -332,7 +333,7 @@ export async function paypalIncomeReport(
     if (at >= today) addMoney(todayBucket, row.currency, row.amountMinor);
     if (at >= week) addMoney(weekBucket, row.currency, row.amountMinor);
     addMoney(monthBucket, row.currency, row.amountMinor);
-    const key = at.toISOString().slice(0, 10);
+    const key = istDateKey(at);
     const day = daily.get(key) ?? {};
     addMoney(day, row.currency, row.amountMinor);
     daily.set(key, day);
@@ -343,7 +344,7 @@ export async function paypalIncomeReport(
     totals: Array<{ currency: string; amountMinor: number; count: number }>;
   }> = [];
   for (let i = 0; i < 30; i += 1) {
-    const date = addDays(month, i).toISOString().slice(0, 10);
+    const date = istDateKey(addDays(month, i));
     series.push({
       date,
       totals: moneyList(daily.get(date) ?? {}),

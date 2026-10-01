@@ -12,6 +12,7 @@ import type { Server } from "socket.io";
 
 import type { AppConfig } from "../../../config/env.js";
 import { AppError } from "../../../shared/errors/app-error.js";
+import { addDays, istDateKey, startOfIstDay } from "../../../shared/ist-time.js";
 import { activeConversationWhere } from "../../chat/infrastructure/chat-query-policy.js";
 import {
   ensureAppEconomyConfig,
@@ -658,15 +659,11 @@ export class CallService {
   }> {
     const clampedDays = Math.min(90, Math.max(1, Math.floor(days)));
     const now = new Date();
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
-    const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
-    const monthStart = new Date(dayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
-    const rangeStart = new Date(
-      dayStart.getTime() - (clampedDays - 1) * 24 * 60 * 60 * 1000,
-    );
-    const rangeEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const dayStart = startOfIstDay(now);
+    const weekStart = addDays(dayStart, -6);
+    const monthStart = addDays(dayStart, -29);
+    const rangeStart = addDays(dayStart, -(clampedDays - 1));
+    const rangeEnd = addDays(dayStart, 1);
 
     const [
       liveCalls,
@@ -729,9 +726,7 @@ export class CallService {
       }
     >();
     for (let index = 0; index < clampedDays; index += 1) {
-      const day = new Date(rangeStart);
-      day.setUTCDate(rangeStart.getUTCDate() + index);
-      buckets.set(day.toISOString().slice(0, 10), {
+      buckets.set(istDateKey(addDays(rangeStart, index)), {
         callCount: 0,
         completedCount: 0,
         pointsCharged: 0,
@@ -744,7 +739,7 @@ export class CallService {
     let missedOrRejectedInRange = 0;
 
     for (const session of sessionsInRange) {
-      const key = session.ringingAt.toISOString().slice(0, 10);
+      const key = istDateKey(session.ringingAt);
       const bucket = buckets.get(key);
       if (!bucket) continue;
       bucket.callCount += 1;
@@ -832,12 +827,8 @@ export class CallService {
     const pageSize = Math.min(100, Math.max(1, input.pageSize));
     const clampedDays = Math.min(90, Math.max(1, Math.floor(input.days)));
     const now = new Date();
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
-    const rangeStart = new Date(
-      dayStart.getTime() - (clampedDays - 1) * 24 * 60 * 60 * 1000,
-    );
+    const dayStart = startOfIstDay(now);
+    const rangeStart = addDays(dayStart, -(clampedDays - 1));
     const where = { ringingAt: { gte: rangeStart } };
     const [total, sessions] = await Promise.all([
       this.database.callSession.count({ where }),

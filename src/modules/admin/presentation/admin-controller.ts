@@ -48,6 +48,8 @@ import {
   adminSubscriptionQuerySchema,
   adminUserIdParamSchema,
   adminUserQuerySchema,
+  adminUserArrivalsQuerySchema,
+  adminUserArrivalDateSchema,
   adminUserExportQuerySchema,
   broadcastOfficialMessageSchema,
   officialBroadcastJobIdParamSchema,
@@ -241,6 +243,18 @@ export class AdminController {
 
   usersStats = async (request: Request, response: Response): Promise<void> => {
     const data = await this.admin.usersStats();
+    response.status(200).json(success(request, data));
+  };
+
+  userArrivals = async (request: Request, response: Response): Promise<void> => {
+    const query = adminUserArrivalsQuerySchema.parse(request.query);
+    const data = await this.admin.userArrivals(query.days);
+    response.status(200).json(success(request, data));
+  };
+
+  userArrivalsOn = async (request: Request, response: Response): Promise<void> => {
+    const { date } = adminUserArrivalDateSchema.parse(request.params);
+    const data = await this.admin.userArrivalsOn(date);
     response.status(200).json(success(request, data));
   };
 

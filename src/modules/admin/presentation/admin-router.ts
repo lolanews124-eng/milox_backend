@@ -141,6 +141,18 @@ export function createAdminRouter(
     asyncHandler(controller.usersStats),
   );
   router.get(
+    "/users/arrivals",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.userArrivals),
+  );
+  router.get(
+    "/users/arrivals/:date",
+    readLimit,
+    adminOnly,
+    asyncHandler(controller.userArrivalsOn),
+  );
+  router.get(
     "/users/:userId",
     readLimit,
     adminOnly,
