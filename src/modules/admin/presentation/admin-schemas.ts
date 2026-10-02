@@ -68,6 +68,10 @@ export const adminUserArrivalDateSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+export const adminUserArrivalPageSchema = z.object({
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+});
+
 export const adminUserQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   status: z.enum(UserStatus).optional(),

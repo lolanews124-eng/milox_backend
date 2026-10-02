@@ -50,6 +50,7 @@ import {
   adminUserQuerySchema,
   adminUserArrivalsQuerySchema,
   adminUserArrivalDateSchema,
+  adminUserArrivalPageSchema,
   adminUserExportQuerySchema,
   broadcastOfficialMessageSchema,
   officialBroadcastJobIdParamSchema,
@@ -254,7 +255,8 @@ export class AdminController {
 
   userArrivalsOn = async (request: Request, response: Response): Promise<void> => {
     const { date } = adminUserArrivalDateSchema.parse(request.params);
-    const data = await this.admin.userArrivalsOn(date);
+    const { page } = adminUserArrivalPageSchema.parse(request.query);
+    const data = await this.admin.userArrivalsOn(date, page);
     response.status(200).json(success(request, data));
   };
 

@@ -582,7 +582,7 @@ export class PrismaAdminRepository implements AdminRepository {
     const rows = await this.database.$queryRaw<
       Array<{ day: string; count: number; firstAt: Date | null; lastAt: Date | null }>
     >`
-      SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
+      SELECT to_char(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
              COUNT(*)::int AS count,
              MIN("createdAt") AS "firstAt",
              MAX("createdAt") AS "lastAt"
@@ -620,11 +620,13 @@ export class PrismaAdminRepository implements AdminRepository {
     };
   }
 
-  async userArrivalsOn(dateKey: string): Promise<{
+  async userArrivalsOn(dateKey: string, pageInput: number): Promise<{
     date: string;
     timezone: "Asia/Kolkata";
     count: number;
-    truncated: boolean;
+    page: number;
+    pageSize: number;
+    pages: number;
     hours: Array<{ hour: number; count: number }>;
     users: Array<{
       id: string;
@@ -638,17 +640,21 @@ export class PrismaAdminRepository implements AdminRepository {
   } | null> {
     const range = istDayRange(dateKey);
     if (!range) return null;
+    const pageSize = 100;
     const where = {
       createdAt: { gte: range.start, lt: range.end },
       role: UserRole.USER,
       isSystemAccount: false,
     };
-    const [count, users, hourRows] = await Promise.all([
-      this.database.user.count({ where }),
+    const count = await this.database.user.count({ where });
+    const pages = Math.max(1, Math.ceil(count / pageSize));
+    const page = Math.min(Math.max(1, pageInput), pages);
+    const [users, hourRows] = await Promise.all([
       this.database.user.findMany({
         where,
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        take: 500,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
         select: {
           id: true,
           username: true,
@@ -660,7 +666,7 @@ export class PrismaAdminRepository implements AdminRepository {
         },
       }),
       this.database.$queryRaw<Array<{ hour: number; count: number }>>`
-        SELECT EXTRACT(HOUR FROM "createdAt" AT TIME ZONE 'Asia/Kolkata')::int AS hour,
+        SELECT EXTRACT(HOUR FROM ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')::int AS hour,
                COUNT(*)::int AS count
         FROM users
         WHERE "createdAt" >= ${range.start}
@@ -676,7 +682,9 @@ export class PrismaAdminRepository implements AdminRepository {
       date: dateKey,
       timezone: "Asia/Kolkata",
       count,
-      truncated: count > users.length,
+      page,
+      pageSize,
+      pages,
       hours: Array.from({ length: 24 }, (_, hour) => ({
         hour,
         count: hourCounts.get(hour) ?? 0,
@@ -4085,21 +4093,21 @@ export class PrismaAdminRepository implements AdminRepository {
     const [userDays, postDays, reportDays, genderGroups, ageGroups, countryGroups, demographicsTotal] =
       await Promise.all([
       this.database.$queryRaw<Array<{ day: string; count: number }>>`
-        SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
+        SELECT to_char(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM users
         WHERE "createdAt" >= ${start} AND "deletedAt" IS NULL
         GROUP BY 1
       `,
       this.database.$queryRaw<Array<{ day: string; count: number }>>`
-        SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
+        SELECT to_char(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM posts
         WHERE "createdAt" >= ${start} AND "deletedAt" IS NULL
         GROUP BY 1
       `,
       this.database.$queryRaw<Array<{ day: string; count: number }>>`
-        SELECT to_char("createdAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
+        SELECT to_char(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM reports
         WHERE "createdAt" >= ${start}

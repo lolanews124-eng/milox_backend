@@ -189,8 +189,8 @@ export class AdminService {
     return this.repository.userArrivals(new Date(), days);
   }
 
-  async userArrivalsOn(dateKey: string): Promise<object> {
-    const day = await this.repository.userArrivalsOn(dateKey);
+  async userArrivalsOn(dateKey: string, page: number): Promise<object> {
+    const day = await this.repository.userArrivalsOn(dateKey, page);
     if (!day) {
       throw new AppError("VALIDATION_ERROR", "That date is not valid", 400);
     }

@@ -498,7 +498,7 @@ export interface AdminRepository {
   }>;
   usersStats(now: Date): Promise<AdminUsersStatsRecord>;
   userArrivals(now: Date, days: number): Promise<AdminUserArrivalsRecord>;
-  userArrivalsOn(dateKey: string): Promise<AdminUserArrivalDayRecord | null>;
+  userArrivalsOn(dateKey: string, page: number): Promise<AdminUserArrivalDayRecord | null>;
   verificationStats(): Promise<AdminVerificationStatsRecord>;
   listUsers(query: AdminUserQuery): Promise<AdminPage<AdminUserRecord>>;
   exportUserEmails(
