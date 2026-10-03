@@ -11,6 +11,11 @@ import type { ChatIo } from "../../modules/chat/realtime/chat-gateway.js";
 import type { CallService } from "../../modules/calls/application/call-service.js";
 import { CallEndReason } from "@prisma/client";
 import { claimNextOutboxEvent } from "../../shared/claim-outbox-event.js";
+import {
+  CHAT_OUTBOX_IDLE_CAP_MS,
+  nextOutboxPollDelay,
+  OUTBOX_STALE_RECOVERY_MS,
+} from "../outbox-poll.js";
 
 const createdPayloadSchema = z.object({
   messageId: z.uuid(),
@@ -39,8 +44,11 @@ const CHAT_EVENTS = [
 
 export class ChatOutboxWorker {
   private timer: NodeJS.Timeout | undefined;
+  private recoveryTimer: NodeJS.Timeout | undefined;
   private running = false;
+  private started = false;
   private pendingWake = false;
+  private emptyStreak = 0;
 
   constructor(
     private readonly database: PrismaClient,
@@ -51,26 +59,40 @@ export class ChatOutboxWorker {
   ) {}
 
   async start(): Promise<void> {
-    if (this.timer) return;
+    if (this.started) return;
+    this.started = true;
     await this.recoverStaleEvents();
-    this.timer = setInterval(() => {
-      void this.tick();
-    }, this.config.CHAT_OUTBOX_POLL_MS);
-    this.timer.unref();
-    void this.tick();
+    this.recoveryTimer = setInterval(() => {
+      void this.recoverStaleEvents().catch((error: unknown) => {
+        console.warn(
+          "Chat outbox stale recovery failed",
+          error instanceof Error ? error.message : error,
+        );
+      });
+    }, OUTBOX_STALE_RECOVERY_MS);
+    this.recoveryTimer.unref();
+    this.arm(0);
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.started = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.recoveryTimer) clearInterval(this.recoveryTimer);
+    this.recoveryTimer = undefined;
   }
 
   wake(): void {
+    this.emptyStreak = 0;
     if (this.running) {
       this.pendingWake = true;
       return;
     }
-    void this.tick();
+    if (!this.started) {
+      void this.tick();
+      return;
+    }
+    this.arm(0);
   }
 
   async tick(): Promise<void> {
@@ -79,22 +101,29 @@ export class ChatOutboxWorker {
       return;
     }
     this.running = true;
+    let processed = 0;
+    let batchFull = false;
+    let deferred = false;
     try {
       do {
         this.pendingWake = false;
-        for (let processed = 0; processed < 100; processed += 1) {
+        processed = 0;
+        deferred = false;
+        for (let index = 0; index < 100; index += 1) {
           let event: OutboxEvent | null;
           try {
             event = await this.claimNextEvent();
           } catch (error) {
-            // Transient DB contention — try again on the next poll.
+            // Transient DB contention — back off instead of spinning.
             console.warn(
               "Chat outbox claim deferred",
               error instanceof Error ? error.message : error,
             );
+            deferred = true;
             break;
           }
           if (!event) break;
+          processed += 1;
           try {
             await this.deliver(event);
             await this.database.outboxEvent.update({
@@ -109,10 +138,40 @@ export class ChatOutboxWorker {
             await this.failOrRetry(event, error);
           }
         }
-      } while (this.pendingWake);
+        batchFull = processed === 100;
+      } while (this.pendingWake && !deferred);
     } finally {
       this.running = false;
+      const wakeNow = this.pendingWake;
+      this.pendingWake = false;
+      if (!this.started) {
+        if (wakeNow && !deferred) void this.tick();
+      } else if (!deferred && (wakeNow || batchFull)) {
+        this.emptyStreak = 0;
+        this.arm(0);
+      } else if (processed > 0) {
+        this.emptyStreak = 0;
+        this.arm(this.config.CHAT_OUTBOX_POLL_MS);
+      } else {
+        this.emptyStreak += 1;
+        this.arm(
+          nextOutboxPollDelay(
+            this.config.CHAT_OUTBOX_POLL_MS,
+            this.emptyStreak,
+            CHAT_OUTBOX_IDLE_CAP_MS,
+          ),
+        );
+      }
     }
+  }
+
+  private arm(delayMs: number): void {
+    if (!this.started) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      void this.tick();
+    }, delayMs);
+    this.timer.unref();
   }
 
   private async deliver(event: OutboxEvent): Promise<void> {

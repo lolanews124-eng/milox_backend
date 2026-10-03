@@ -64,7 +64,7 @@ async function bootstrap(): Promise<void> {
     wakeOutbox: () => chatOutboxHooks.wakeAll(),
   });
   const app = createApp({
-    chatOutboxWake: () => chatOutboxHooks.wakeChat(),
+    chatOutboxWake: () => chatOutboxHooks.wakeAll(),
     signupOfficialChat: officialChat.signupWriter,
     officialChat: officialChat.service,
     calls: callService,

@@ -3,11 +3,12 @@ import {
   InterestStatus,
   MatchStatus,
   MediaKind,
-  Prisma,
+  type Prisma,
   UserStatus,
   type PrismaClient,
 } from "@prisma/client";
 
+import { uniqueConstraintFields } from "../../../shared/prisma-unique-constraint.js";
 import {
   DuplicateUsernameError,
   InvalidProfileReferenceError,
@@ -332,10 +333,7 @@ export class PrismaUserRepository implements UserRepository {
         });
       });
     } catch (error: unknown) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
+      if (uniqueConstraintFields(error)) {
         throw new DuplicateUsernameError();
       }
       throw error;

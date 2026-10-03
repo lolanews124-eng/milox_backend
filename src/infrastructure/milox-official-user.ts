@@ -15,6 +15,7 @@ import {
 import sharp from "sharp";
 
 import { getConfig } from "../config/env.js";
+import { uniqueConstraintFields } from "../shared/prisma-unique-constraint.js";
 import {
   MILOX_OFFICIAL_AVATAR_MEDIA_ID,
   MILOX_OFFICIAL_AVATAR_STORAGE_KEY,
@@ -82,39 +83,59 @@ export async function ensureMiloxOfficialUser(
     .update(randomBytes(64))
     .digest("hex");
 
-  const created = await database.user.create({
-    data: {
-      username: MILOX_OFFICIAL_USERNAME,
-      usernameNormalized: MILOX_OFFICIAL_USERNAME,
-      email: SYSTEM_EMAIL,
-      passwordHash,
-      ageRange: AgeRange.AGE_25_28,
-      gender: Gender.OTHER,
-      country: "Global",
-      role: UserRole.ADMIN,
-      status: UserStatus.ACTIVE,
-      displayName: MILOX_OFFICIAL_DISPLAY_NAME,
-      bio: MILOX_OFFICIAL_BIO,
-      isVerifiedBadge: true,
-      isSystemAccount: true,
-      hideOnline: true,
-      hideLastSeen: true,
-      emailVerifiedAt: new Date(),
-    },
-    select: {
-      id: true,
-      username: true,
-      displayName: true,
-    },
-  });
+  try {
+    const created = await database.user.create({
+      data: {
+        username: MILOX_OFFICIAL_USERNAME,
+        usernameNormalized: MILOX_OFFICIAL_USERNAME,
+        email: SYSTEM_EMAIL,
+        passwordHash,
+        ageRange: AgeRange.AGE_25_28,
+        gender: Gender.OTHER,
+        country: "Global",
+        role: UserRole.ADMIN,
+        status: UserStatus.ACTIVE,
+        displayName: MILOX_OFFICIAL_DISPLAY_NAME,
+        bio: MILOX_OFFICIAL_BIO,
+        isVerifiedBadge: true,
+        isSystemAccount: true,
+        hideOnline: true,
+        hideLastSeen: true,
+        emailVerifiedAt: new Date(),
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+      },
+    });
 
-  await ensureMiloxOfficialAvatar(database, created.id);
+    await ensureMiloxOfficialAvatar(database, created.id);
 
-  return {
-    id: created.id,
-    username: created.username,
-    displayName: created.displayName ?? MILOX_OFFICIAL_DISPLAY_NAME,
-  };
+    return {
+      id: created.id,
+      username: created.username,
+      displayName: created.displayName ?? MILOX_OFFICIAL_DISPLAY_NAME,
+    };
+  } catch (error: unknown) {
+    if (!uniqueConstraintFields(error)) throw error;
+    const raced = await database.user.findFirst({
+      where: {
+        OR: [
+          { usernameNormalized: MILOX_OFFICIAL_USERNAME },
+          { email: SYSTEM_EMAIL },
+        ],
+      },
+      select: { id: true, username: true, displayName: true },
+    });
+    if (!raced) throw error;
+    await ensureMiloxOfficialAvatar(database, raced.id);
+    return {
+      id: raced.id,
+      username: raced.username,
+      displayName: raced.displayName ?? MILOX_OFFICIAL_DISPLAY_NAME,
+    };
+  }
 }
 
 async function ensureMiloxOfficialAvatar(

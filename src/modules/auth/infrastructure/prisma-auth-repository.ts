@@ -1,6 +1,6 @@
 import {
   EmailJobType,
-  Prisma,
+  type Prisma,
   type PrismaClient,
 } from "@prisma/client";
 
@@ -14,6 +14,7 @@ import type {
   RotateRefreshSessionResult,
 } from "../application/ports/auth-repository.js";
 import { DuplicateAccountError } from "../application/ports/auth-repository.js";
+import { uniqueConstraintFields } from "../../../shared/prisma-unique-constraint.js";
 import type { SignupRewardsWriter } from "../../rewards/application/ports/rewards-repository.js";
 import { runTransactionWithRetry } from "../../../shared/prisma-serializable-transaction.js";
 
@@ -124,16 +125,12 @@ export class PrismaAuthRepository implements AuthRepository {
         return user;
       });
     } catch (error: unknown) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        const target = Array.isArray(error.meta?.target)
-          ? error.meta.target.map(String)
-          : [];
-        throw new DuplicateAccountError(
-          target.includes("email") ? "email" : "username",
+      const fields = uniqueConstraintFields(error);
+      if (fields) {
+        const emailTaken = fields.some((field) =>
+          field.toLowerCase().includes("email"),
         );
+        throw new DuplicateAccountError(emailTaken ? "email" : "username");
       }
       throw error;
     }

@@ -1,7 +1,7 @@
 import {
   NotificationType,
   OutboxStatus,
-  Prisma,
+  type Prisma,
   type OutboxEvent,
   type PrismaClient,
 } from "@prisma/client";
@@ -12,6 +12,11 @@ import type { ChatIo } from "../../modules/chat/realtime/chat-gateway.js";
 import type { NotificationService } from "../../modules/notifications/application/services/notification-service.js";
 import type { PushSender } from "../../modules/push/application/services/fcm-push-sender.js";
 import { claimNextOutboxEvent } from "../../shared/claim-outbox-event.js";
+import {
+  nextOutboxPollDelay,
+  NOTIFICATION_OUTBOX_IDLE_CAP_MS,
+  OUTBOX_STALE_RECOVERY_MS,
+} from "../outbox-poll.js";
 
 const directPayloadSchema = z.object({
   actorId: z.uuid(),
@@ -80,8 +85,11 @@ interface NotificationJob {
 
 export class NotificationOutboxWorker {
   private timer: NodeJS.Timeout | undefined;
+  private recoveryTimer: NodeJS.Timeout | undefined;
   private running = false;
+  private started = false;
   private pendingWake = false;
+  private emptyStreak = 0;
 
   constructor(
     private readonly database: PrismaClient,
@@ -92,26 +100,40 @@ export class NotificationOutboxWorker {
   ) {}
 
   async start(): Promise<void> {
-    if (this.timer) return;
+    if (this.started) return;
+    this.started = true;
     await this.recoverStaleEvents();
-    this.timer = setInterval(() => {
-      void this.tick();
-    }, this.config.NOTIFICATION_OUTBOX_POLL_MS);
-    this.timer.unref();
-    void this.tick();
+    this.recoveryTimer = setInterval(() => {
+      void this.recoverStaleEvents().catch((error: unknown) => {
+        console.warn(
+          "Notification outbox stale recovery failed",
+          error instanceof Error ? error.message : error,
+        );
+      });
+    }, OUTBOX_STALE_RECOVERY_MS);
+    this.recoveryTimer.unref();
+    this.arm(0);
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.started = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.recoveryTimer) clearInterval(this.recoveryTimer);
+    this.recoveryTimer = undefined;
   }
 
   wake(): void {
+    this.emptyStreak = 0;
     if (this.running) {
       this.pendingWake = true;
       return;
     }
-    void this.tick();
+    if (!this.started) {
+      void this.tick();
+      return;
+    }
+    this.arm(0);
   }
 
   async tick(): Promise<void> {
@@ -120,58 +142,94 @@ export class NotificationOutboxWorker {
       return;
     }
     this.running = true;
+    let processed = 0;
+    let batchFull = false;
+    let deferred = false;
     try {
-      for (let processed = 0; processed < 100; processed += 1) {
-        let event: OutboxEvent | null;
-        try {
-          event = await this.claimNextEvent();
-        } catch (error) {
-          console.warn(
-            "Notification outbox claim deferred",
-            error instanceof Error ? error.message : error,
-          );
-          return;
-        }
-        if (!event) return;
-        try {
-          const jobs = await this.jobsForEvent(event);
-          for (const job of jobs) {
-            const notification = await this.notifications.createFromEvent({
-              sourceEventId: event.id,
-              ...job,
-            });
-            if (notification) {
-              this.io
-                .to(`user:${job.recipientId}`)
-                .emit("notification:new", notification);
-              if (this.push?.isEnabled()) {
-                void this.push
-                  .sendForNotification(job.recipientId, notification)
-                  .catch((error) => {
-                    console.error("Failed to send push notification", error);
-                  });
+      do {
+        this.pendingWake = false;
+        processed = 0;
+        deferred = false;
+        for (let index = 0; index < 100; index += 1) {
+          let event: OutboxEvent | null;
+          try {
+            event = await this.claimNextEvent();
+          } catch (error) {
+            console.warn(
+              "Notification outbox claim deferred",
+              error instanceof Error ? error.message : error,
+            );
+            deferred = true;
+            break;
+          }
+          if (!event) break;
+          processed += 1;
+          try {
+            const jobs = await this.jobsForEvent(event);
+            for (const job of jobs) {
+              const notification = await this.notifications.createFromEvent({
+                sourceEventId: event.id,
+                ...job,
+              });
+              if (notification) {
+                this.io
+                  .to(`user:${job.recipientId}`)
+                  .emit("notification:new", notification);
+                if (this.push?.isEnabled()) {
+                  void this.push
+                    .sendForNotification(job.recipientId, notification)
+                    .catch((error) => {
+                      console.error("Failed to send push notification", error);
+                    });
+                }
               }
             }
+            await this.database.outboxEvent.update({
+              where: { id: event.id },
+              data: {
+                status: OutboxStatus.PROCESSED,
+                processedAt: new Date(),
+                lastError: null,
+              },
+            });
+          } catch (error) {
+            await this.failOrRetry(event, error);
           }
-          await this.database.outboxEvent.update({
-            where: { id: event.id },
-            data: {
-              status: OutboxStatus.PROCESSED,
-              processedAt: new Date(),
-              lastError: null,
-            },
-          });
-        } catch (error) {
-          await this.failOrRetry(event, error);
         }
-      }
+        batchFull = processed === 100;
+      } while (this.pendingWake && !deferred);
     } finally {
       this.running = false;
-      if (this.pendingWake) {
-        this.pendingWake = false;
-        void this.tick();
+      const wakeNow = this.pendingWake;
+      this.pendingWake = false;
+      if (!this.started) {
+        if (wakeNow && !deferred) void this.tick();
+      } else if (!deferred && (wakeNow || batchFull)) {
+        this.emptyStreak = 0;
+        this.arm(0);
+      } else if (processed > 0) {
+        this.emptyStreak = 0;
+        this.arm(this.config.NOTIFICATION_OUTBOX_POLL_MS);
+      } else {
+        this.emptyStreak += 1;
+        this.arm(
+          nextOutboxPollDelay(
+            this.config.NOTIFICATION_OUTBOX_POLL_MS,
+            this.emptyStreak,
+            NOTIFICATION_OUTBOX_IDLE_CAP_MS,
+          ),
+        );
       }
     }
+  }
+
+  private arm(delayMs: number): void {
+    if (!this.started) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      void this.tick();
+    }, delayMs);
+    this.timer.unref();
   }
 
   private async jobsForEvent(

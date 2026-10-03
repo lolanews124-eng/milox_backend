@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import { sendDownload } from "../../../shared/http/send-file.js";
 import type { MediaService } from "../application/services/media-service.js";
 
 const mediaUploadSchema = z.object({
@@ -24,15 +25,10 @@ export class MediaController {
     response.type(media.mimeType);
     response.setHeader("Cache-Control", "public, max-age=3600");
     if (media.checksum) response.setHeader("ETag", `"${media.checksum}"`);
-    await new Promise<void>((resolve, reject) => {
-      response.sendFile(media.absolutePath, (error) => {
-        if (error) {
-          reject(new AppError("MEDIA_NOT_FOUND", "Media not found", 404));
-          return;
-        }
-        resolve();
-      });
-    });
+    const error = await sendDownload(response, media.absolutePath);
+    if (error) {
+      throw new AppError("MEDIA_NOT_FOUND", "Media not found", 404);
+    }
   };
 
   upload = async (request: Request, response: Response): Promise<void> => {

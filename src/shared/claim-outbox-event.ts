@@ -8,6 +8,10 @@ import {
  * Atomically claim the next pending outbox row for the given event types.
  * Uses PostgreSQL `FOR UPDATE SKIP LOCKED` so chat + notification workers
  * (and multiple app instances) never deadlock on the same claim.
+ *
+ * Ordering stays `createdAt` so older events are claimed first. The
+ * `(status, eventType, createdAt)` index lets this seek the worker's event
+ * types instead of walking every pending row of unrelated types.
  */
 export async function claimNextOutboxEvent(
   database: PrismaClient,

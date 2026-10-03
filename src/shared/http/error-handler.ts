@@ -12,9 +12,19 @@ export const errorHandler: ErrorRequestHandler = (
   error: unknown,
   request,
   response,
-  _next,
+  next,
 ) => {
-  void _next;
+  if (response.headersSent) {
+    console.error("Request error after headers were sent", {
+      requestId: request.requestId,
+      method: request.method,
+      path: request.originalUrl,
+      error: error instanceof Error ? error.stack ?? error.message : error,
+    });
+    next(error);
+    return;
+  }
+
   if (error instanceof ZodError) {
     response.status(400).json({
       success: false,
@@ -43,6 +53,13 @@ export const errorHandler: ErrorRequestHandler = (
     });
     return;
   }
+
+  console.error("Unhandled request error", {
+    requestId: request.requestId,
+    method: request.method,
+    path: request.originalUrl,
+    error: error instanceof Error ? error.stack ?? error.message : error,
+  });
 
   response.status(500).json({
     success: false,

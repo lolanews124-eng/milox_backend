@@ -1,7 +1,8 @@
-import { EmailJobType } from "@prisma/client";
+import { EmailJobType, Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
 import { PrismaAuthRepository } from "../src/modules/auth/infrastructure/prisma-auth-repository.js";
+import { DuplicateAccountError } from "../src/modules/auth/application/ports/auth-repository.js";
 
 describe("PrismaAuthRepository.createAccount", () => {
   it("creates the user when official chat bootstrap fails", async () => {
@@ -77,5 +78,71 @@ describe("PrismaAuthRepository.createAccount", () => {
       },
     });
     expect(signupOfficialChat.bootstrapWelcomeInTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("maps a username unique constraint to a duplicate account error", async () => {
+    const database = {
+      $transaction: vi.fn().mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError(
+          "Unique constraint failed on the fields: (`usernameNormalized`)",
+          {
+            code: "P2002",
+            clientVersion: "test",
+            meta: { target: ["usernameNormalized"] },
+          },
+        ),
+      ),
+    };
+    const repository = new PrismaAuthRepository(database as never);
+
+    await expect(
+      repository.createAccount({
+        username: "night_user",
+        usernameNormalized: "night_user",
+        email: "night@example.com",
+        passwordHash: "hash",
+        displayName: "night_user",
+        ageRange: "AGE_25_28",
+        country: "India",
+        gender: "PREFER_NOT_TO_SAY",
+        autoVerifyEmail: true,
+        verificationTokenHash: "hash-token",
+        verificationToken: "raw-token",
+        verificationExpiresAt: new Date("2026-07-18T00:00:00.000Z"),
+      }),
+    ).rejects.toEqual(expect.any(DuplicateAccountError));
+  });
+
+  it("maps an email constraint name string to the email field", async () => {
+    const database = {
+      $transaction: vi.fn().mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError(
+          "Unique constraint failed on the fields: (`email`)",
+          {
+            code: "P2002",
+            clientVersion: "test",
+            meta: { target: "User_email_key" },
+          },
+        ),
+      ),
+    };
+    const repository = new PrismaAuthRepository(database as never);
+
+    await expect(
+      repository.createAccount({
+        username: "night_user",
+        usernameNormalized: "night_user",
+        email: "night@example.com",
+        passwordHash: "hash",
+        displayName: "night_user",
+        ageRange: "AGE_25_28",
+        country: "India",
+        gender: "PREFER_NOT_TO_SAY",
+        autoVerifyEmail: true,
+        verificationTokenHash: "hash-token",
+        verificationToken: "raw-token",
+        verificationExpiresAt: new Date("2026-07-18T00:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({ field: "email" });
   });
 });

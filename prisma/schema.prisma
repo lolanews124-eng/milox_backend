@@ -1414,6 +1414,7 @@ model OutboxEvent {
   updatedAt     DateTime     @updatedAt
 
   @@index([status, availableAt])
+  @@index([status, eventType, createdAt])
   @@index([aggregateType, aggregateId])
   @@map("outbox_events")
 }

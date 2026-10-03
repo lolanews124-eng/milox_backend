@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import { sendDownload } from "../../../shared/http/send-file.js";
 import type { ChatService } from "../application/services/chat-service.js";
 import {
   addGroupMemberSchema,
@@ -246,7 +247,8 @@ export class ChatController {
     response.type(media.mimeType);
     response.set("Cache-Control", "private, max-age=3600");
     if (media.checksum) response.set("ETag", `"${media.checksum}"`);
-    response.sendFile(media.absolutePath);
+    const error = await sendDownload(response, media.absolutePath);
+    if (error) throw error;
   };
 }
 

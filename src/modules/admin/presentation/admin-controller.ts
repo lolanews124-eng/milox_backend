@@ -4,6 +4,7 @@ import { MediaKind } from "@prisma/client";
 import { fileTypeFromBuffer } from "file-type";
 
 import { AppError } from "../../../shared/errors/app-error.js";
+import { sendDownload } from "../../../shared/http/send-file.js";
 import type { MediaService } from "../../media/application/services/media-service.js";
 import type { OfficialChatService } from "../../official-chat/application/official-chat-service.js";
 import { officialBroadcastJobStore } from "../../official-chat/application/official-broadcast-job-store.js";
@@ -1285,15 +1286,10 @@ export class AdminController {
     if (media.checksumSha256) {
       response.setHeader("ETag", `"${media.checksumSha256}"`);
     }
-    await new Promise<void>((resolve, reject) => {
-      response.sendFile(absolutePath, (error) => {
-        if (error) {
-          reject(new AppError("ADMIN_MEDIA_NOT_FOUND", "Media not found", 404));
-          return;
-        }
-        resolve();
-      });
-    });
+    const error = await sendDownload(response, absolutePath);
+    if (error) {
+      throw new AppError("ADMIN_MEDIA_NOT_FOUND", "Media not found", 404);
+    }
   };
 
   updateMedia = async (request: Request, response: Response): Promise<void> => {
