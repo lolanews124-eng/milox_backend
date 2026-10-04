@@ -262,12 +262,13 @@ export class ChatOutboxWorker {
   }
 
   private emitToConversationMembers(
-    conversationId: string,
+    _conversationId: string,
     memberIds: string[],
     event: "message:new" | "message:edited",
     message: object,
   ): void {
-    this.io.to(`conversation:${conversationId}`).emit(event, message);
+    // Members are already in both conversation:{id} and user:{id}. Emitting
+    // to both rooms delivered the same event twice and doubled unread counts.
     for (const memberId of memberIds) {
       this.io.to(`user:${memberId}`).emit(event, message);
     }
