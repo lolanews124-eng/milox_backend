@@ -368,6 +368,14 @@ const conversationAdminSelect = {
   _count: { select: { messages: true } },
 } satisfies Prisma.ConversationSelect;
 
+function arrivalCountryWhere(country: string | null): Prisma.UserWhereInput {
+  if (!country) return {};
+  if (country === "Unknown") {
+    return { OR: [{ country: "" }, { country: "Unknown" }] };
+  }
+  return { country };
+}
+
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private readonly database: PrismaClient) {}
 
@@ -620,14 +628,21 @@ export class PrismaAdminRepository implements AdminRepository {
     };
   }
 
-  async userArrivalsOn(dateKey: string, pageInput: number): Promise<{
+  async userArrivalsOn(
+    dateKey: string,
+    pageInput: number,
+    country?: string,
+  ): Promise<{
     date: string;
     timezone: "Asia/Kolkata";
     count: number;
+    total: number;
+    country: string | null;
     page: number;
     pageSize: number;
     pages: number;
     hours: Array<{ hour: number; count: number }>;
+    countries: Array<{ country: string; count: number }>;
     users: Array<{
       id: string;
       username: string;
@@ -641,30 +656,33 @@ export class PrismaAdminRepository implements AdminRepository {
     const range = istDayRange(dateKey);
     if (!range) return null;
     const pageSize = 100;
-    const where = {
+    const dayWhere = {
       createdAt: { gte: range.start, lt: range.end },
       role: UserRole.USER,
       isSystemAccount: false,
     };
-    const count = await this.database.user.count({ where });
-    const pages = Math.max(1, Math.ceil(count / pageSize));
-    const page = Math.min(Math.max(1, pageInput), pages);
-    const [users, hourRows] = await Promise.all([
-      this.database.user.findMany({
-        where,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          createdAt: true,
-          country: true,
-          status: true,
-          deletedAt: true,
-        },
-      }),
+    const selectedCountry = country?.trim() || null;
+    const where = {
+      ...dayWhere,
+      ...arrivalCountryWhere(selectedCountry),
+    };
+    const [total, count, countryRows, hourRows] = await Promise.all([
+      this.database.user.count({ where: dayWhere }),
+      this.database.user.count({ where }),
+      this.database.$queryRaw<Array<{ country: string; count: number }>>`
+        SELECT CASE
+                 WHEN btrim("country") = '' THEN 'Unknown'
+                 ELSE btrim("country")
+               END AS country,
+               COUNT(*)::int AS count
+        FROM users
+        WHERE "createdAt" >= ${range.start}
+          AND "createdAt" < ${range.end}
+          AND role::text = 'USER'
+          AND "isSystemAccount" = false
+        GROUP BY 1
+        ORDER BY count DESC, country ASC
+      `,
       this.database.$queryRaw<Array<{ hour: number; count: number }>>`
         SELECT EXTRACT(HOUR FROM ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')::int AS hour,
                COUNT(*)::int AS count
@@ -677,17 +695,40 @@ export class PrismaAdminRepository implements AdminRepository {
         ORDER BY 1
       `,
     ]);
+    const pages = Math.max(1, Math.ceil(count / pageSize));
+    const page = Math.min(Math.max(1, pageInput), pages);
+    const users = await this.database.user.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        createdAt: true,
+        country: true,
+        status: true,
+        deletedAt: true,
+      },
+    });
     const hourCounts = new Map(hourRows.map((row) => [Number(row.hour), Number(row.count)]));
     return {
       date: dateKey,
       timezone: "Asia/Kolkata",
       count,
+      total,
+      country: selectedCountry,
       page,
       pageSize,
       pages,
       hours: Array.from({ length: 24 }, (_, hour) => ({
         hour,
         count: hourCounts.get(hour) ?? 0,
+      })),
+      countries: countryRows.map((row) => ({
+        country: String(row.country),
+        count: Number(row.count),
       })),
       users,
     };

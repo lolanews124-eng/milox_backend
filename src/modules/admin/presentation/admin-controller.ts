@@ -256,8 +256,8 @@ export class AdminController {
 
   userArrivalsOn = async (request: Request, response: Response): Promise<void> => {
     const { date } = adminUserArrivalDateSchema.parse(request.params);
-    const { page } = adminUserArrivalPageSchema.parse(request.query);
-    const data = await this.admin.userArrivalsOn(date, page);
+    const { page, country } = adminUserArrivalPageSchema.parse(request.query);
+    const data = await this.admin.userArrivalsOn(date, page, country);
     response.status(200).json(success(request, data));
   };
 

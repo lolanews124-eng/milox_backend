@@ -47,10 +47,13 @@ export interface AdminUserArrivalDayRecord {
   date: string;
   timezone: "Asia/Kolkata";
   count: number;
+  total: number;
+  country: string | null;
   page: number;
   pageSize: number;
   pages: number;
   hours: Array<{ hour: number; count: number }>;
+  countries: Array<{ country: string; count: number }>;
   users: AdminUserArrivalPerson[];
 }
 

@@ -70,6 +70,12 @@ export const adminUserArrivalDateSchema = z.object({
 
 export const adminUserArrivalPageSchema = z.object({
   page: z.coerce.number().int().min(1).max(100_000).default(1),
+  country: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .optional(),
 });
 
 export const adminUserQuerySchema = z.object({
