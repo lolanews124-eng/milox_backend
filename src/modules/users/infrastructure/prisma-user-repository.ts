@@ -369,6 +369,10 @@ export class PrismaUserRepository implements UserRepository {
 
   async softDelete(userId: string, now: Date): Promise<void> {
     await this.database.$transaction(async (transaction) => {
+      const current = await transaction.user.findUnique({
+        where: { id: userId },
+        select: { profilePhotoMediaId: true, coverPhotoMediaId: true },
+      });
       await transaction.user.update({
         where: { id: userId },
         data: {
@@ -379,8 +383,12 @@ export class PrismaUserRepository implements UserRepository {
           relationshipGoal: null,
           websiteUrl: null,
           instagramHandle: null,
-          profilePhoto: { disconnect: true },
-          coverPhoto: { disconnect: true },
+          ...(current?.profilePhotoMediaId
+            ? { profilePhoto: { disconnect: true } }
+            : {}),
+          ...(current?.coverPhotoMediaId
+            ? { coverPhoto: { disconnect: true } }
+            : {}),
           interests: { deleteMany: {} },
         },
       });
@@ -475,7 +483,7 @@ export class PrismaUserRepository implements UserRepository {
           payload: { userId },
         },
       });
-    });
+    }, { timeout: 20_000 });
   }
 }
 
