@@ -12,6 +12,7 @@ import {
   visibleAuthorWhere,
   visibleUserCardWhere,
 } from "../../posts/infrastructure/post-query-policy.js";
+import { recentPresenceWhere } from "../../../shared/user-visibility.js";
 import type { PostAuthorViewRecord } from "../../posts/application/post-view.js";
 import type {
   DiscoverPeopleQuery,
@@ -410,19 +411,29 @@ export class PrismaFeedRepository implements FeedRepository {
 
   async getOnlinePeople(
     viewerId: string,
-    userIds: string[],
+    since: Date,
+    alsoOnlineIds: string[],
   ): Promise<PostAuthorViewRecord[]> {
-    if (userIds.length === 0) return [];
+    const activity: Prisma.UserWhereInput[] = [recentPresenceWhere(since)];
+    if (alsoOnlineIds.length > 0) {
+      activity.push({ id: { in: alsoOnlineIds.slice(0, 500) } });
+    }
     const rows = await this.database.user.findMany({
       where: {
         AND: [
           visibleUserCardWhere(viewerId),
-          { id: { in: userIds } },
           { id: { not: viewerId } },
           { hideOnline: false },
           { isPrivateAccount: false },
+          { OR: activity },
         ],
       },
+      orderBy: [
+        { lastSeenAt: { sort: "desc", nulls: "last" } },
+        { lastLoginAt: { sort: "desc", nulls: "last" } },
+        { id: "desc" },
+      ],
+      take: 60,
       select: {
         ...publicAuthorSelect(),
         followers: {

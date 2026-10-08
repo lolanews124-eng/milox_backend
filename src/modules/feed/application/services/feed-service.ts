@@ -126,20 +126,14 @@ export class FeedService {
   }
 
   async listOnlinePeople(viewerId: string): Promise<object[]> {
-    const recentIds = listOnlineUserIds()
-      .filter((id) => id !== viewerId)
-      .slice(-80)
-      .reverse();
-    if (recentIds.length === 0) return [];
-
-    const people = await this.repository.getOnlinePeople(viewerId, recentIds);
-    const order = new Map(recentIds.map((id, index) => [id, index]));
-    people.sort(
-      (a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99),
+    const since = new Date(Date.now() - 15 * 60 * 1000);
+    const alsoOnlineIds = listOnlineUserIds().filter((id) => id !== viewerId);
+    const people = await this.repository.getOnlinePeople(
+      viewerId,
+      since,
+      alsoOnlineIds,
     );
-    return people
-      .slice(0, 24)
-      .map((person) => presentPublicAuthor(person, this.config));
+    return people.map((person) => presentPublicAuthor(person, this.config));
   }
 
   private pageFromChronological(

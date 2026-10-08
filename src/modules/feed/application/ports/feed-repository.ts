@@ -46,7 +46,8 @@ export interface FeedRepository {
   ): Promise<RankedDiscoverPerson[]>;
   getOnlinePeople(
     viewerId: string,
-    userIds: string[],
+    since: Date,
+    alsoOnlineIds: string[],
   ): Promise<PostAuthorViewRecord[]>;
   passProfile(viewerId: string, targetId: string): Promise<void>;
   getPassedProfileIds(viewerId: string): Promise<string[]>;

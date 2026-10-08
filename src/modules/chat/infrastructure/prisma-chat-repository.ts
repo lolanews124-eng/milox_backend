@@ -641,7 +641,7 @@ export class PrismaChatRepository implements ChatRepository {
     const now = new Date();
     const user = await this.database.user.update({
       where: { id: userId },
-      data: online ? {} : { lastSeenAt: now },
+      data: { lastSeenAt: now },
       select: {
         hideOnline: true,
         hideLastSeen: true,
