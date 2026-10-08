@@ -1,6 +1,7 @@
 import type { AgeRange, Gender } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
+import { listOnlineUserIds } from "../../../chat/realtime/presence-registry.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import {
   presentPost,
@@ -122,6 +123,23 @@ export class FeedService {
       ...(options.countries ? { countries: options.countries } : {}),
     });
     return this.pageFromRankedPeople(rows, options.limit);
+  }
+
+  async listOnlinePeople(viewerId: string): Promise<object[]> {
+    const recentIds = listOnlineUserIds()
+      .filter((id) => id !== viewerId)
+      .slice(-80)
+      .reverse();
+    if (recentIds.length === 0) return [];
+
+    const people = await this.repository.getOnlinePeople(viewerId, recentIds);
+    const order = new Map(recentIds.map((id, index) => [id, index]));
+    people.sort(
+      (a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99),
+    );
+    return people
+      .slice(0, 24)
+      .map((person) => presentPublicAuthor(person, this.config));
   }
 
   private pageFromChronological(

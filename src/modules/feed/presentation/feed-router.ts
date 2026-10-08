@@ -35,6 +35,11 @@ export function createFeedRouter(
     asyncHandler(controller.discover),
   );
   router.get(
+    "/online",
+    authenticate,
+    asyncHandler(controller.online),
+  );
+  router.get(
     "/passes",
     authenticate,
     asyncHandler(controller.passedProfiles),

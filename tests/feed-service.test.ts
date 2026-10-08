@@ -104,6 +104,7 @@ function createRepository(): FeedRepository {
     getTrending: vi.fn(),
     getSuggested: vi.fn(),
     getDiscoverPeople: vi.fn(),
+    getOnlinePeople: vi.fn(),
     passProfile: vi.fn(),
     getPassedProfileIds: vi.fn(),
     userExists: vi.fn(),

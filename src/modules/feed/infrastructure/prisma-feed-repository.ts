@@ -408,6 +408,36 @@ export class PrismaFeedRepository implements FeedRepository {
     });
   }
 
+  async getOnlinePeople(
+    viewerId: string,
+    userIds: string[],
+  ): Promise<PostAuthorViewRecord[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.database.user.findMany({
+      where: {
+        AND: [
+          visibleUserCardWhere(viewerId),
+          { id: { in: userIds } },
+          { id: { not: viewerId } },
+          { hideOnline: false },
+          { isPrivateAccount: false },
+        ],
+      },
+      select: {
+        ...publicAuthorSelect(),
+        followers: {
+          where: {
+            followerId: viewerId,
+            status: { in: [FollowStatus.ACTIVE, FollowStatus.PENDING] },
+          },
+          select: { status: true },
+          take: 1,
+        },
+      },
+    });
+    return rows as PostAuthorViewRecord[];
+  }
+
   async passProfile(viewerId: string, targetId: string): Promise<void> {
     await this.database.profilePass.upsert({
       where: { viewerId_targetId: { viewerId, targetId } },
