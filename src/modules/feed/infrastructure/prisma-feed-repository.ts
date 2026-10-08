@@ -433,7 +433,7 @@ export class PrismaFeedRepository implements FeedRepository {
         { lastLoginAt: { sort: "desc", nulls: "last" } },
         { id: "desc" },
       ],
-      take: 60,
+      take: 120,
       select: {
         ...publicAuthorSelect(),
         followers: {

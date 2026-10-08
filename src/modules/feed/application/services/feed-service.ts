@@ -126,7 +126,7 @@ export class FeedService {
   }
 
   async listOnlinePeople(viewerId: string): Promise<object[]> {
-    const since = new Date(Date.now() - 15 * 60 * 1000);
+    const since = new Date(Date.now() - 60 * 60 * 1000);
     const alsoOnlineIds = listOnlineUserIds().filter((id) => id !== viewerId);
     const people = await this.repository.getOnlinePeople(
       viewerId,
