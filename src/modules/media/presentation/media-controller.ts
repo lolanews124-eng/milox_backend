@@ -24,6 +24,9 @@ export class MediaController {
     const media = await this.media.resolvePublicMedia(mediaId);
     response.type(media.mimeType);
     response.setHeader("Cache-Control", "public, max-age=3600");
+    // Inline so Google Image/Video can index; attachment would block crawlers.
+    response.setHeader("Content-Disposition", "inline");
+    response.setHeader("X-Robots-Tag", "index, max-image-preview:large");
     if (media.checksum) response.setHeader("ETag", `"${media.checksum}"`);
     const error = await sendDownload(response, media.absolutePath);
     if (error) {

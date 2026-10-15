@@ -287,6 +287,33 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     });
   });
 
+  // Public media lives on the API host; crawlers need an explicit allow so
+  // Google Image/Video can fetch cross-domain assets referenced from milox.in.
+  app.get("/robots.txt", (_request, response) => {
+    response
+      .type("text/plain")
+      .send(
+        [
+          "User-agent: *",
+          "Allow: /api/v1/media/",
+          "Disallow: /api/v1/conversations/",
+          "",
+          "User-agent: Googlebot",
+          "Allow: /api/v1/media/",
+          "Disallow: /api/v1/conversations/",
+          "",
+          "User-agent: Googlebot-Image",
+          "Allow: /api/v1/media/",
+          "Disallow: /",
+          "",
+          "User-agent: Googlebot-Video",
+          "Allow: /api/v1/media/",
+          "Disallow: /",
+          "",
+        ].join("\n"),
+      );
+  });
+
   app.use("/api/v1/auth", auth.router);
   app.use("/api/v1/users", moderation.userBlocksRouter);
   app.use("/api/v1/users", follows.userRouter);

@@ -149,7 +149,19 @@ export class UserService {
         page: number;
         pageSize: number;
         total: number;
-        items: Array<{ username?: string; id?: string; updatedAt: string }>;
+        items: Array<{
+          username?: string;
+          id?: string;
+          updatedAt: string;
+          images?: string[];
+          video?: {
+            contentUrl: string;
+            thumbnailUrl: string | null;
+            title: string;
+            description: string;
+            durationSec: number | null;
+          } | null;
+        }>;
       }
   > {
     const author = {
@@ -159,15 +171,32 @@ export class UserService {
       role: UserRole.USER,
       isSystemAccount: false,
     };
-    const postWhere = { deletedAt: null, isHidden: false, author };
+    // Only substantive public UGC — thin empty profiles/posts flood the
+    // sitemap, burn crawl budget, and push marketing pages out of Google.
+    const profileWhere = {
+      ...author,
+      profilePhotoMediaId: { not: null },
+      OR: [
+        { postCount: { gte: 1 } },
+        { AND: [{ bio: { not: null } }, { NOT: { bio: "" } }] },
+      ],
+    };
+    const postWhere = {
+      deletedAt: null,
+      isHidden: false,
+      author,
+      media: { some: {} },
+    };
     const reelWhere = {
       deletedAt: null,
       status: ReelReviewStatus.APPROVED,
       author,
+      posterMediaId: { not: null },
+      durationMs: { gte: 1000 },
     };
     if (query.kind === "counts") {
       const [profiles, posts, reels] = await Promise.all([
-        this.database.user.count({ where: author }),
+        this.database.user.count({ where: profileWhere }),
         this.database.post.count({ where: postWhere }),
         this.database.reel.count({ where: reelWhere }),
       ]);
@@ -183,24 +212,44 @@ export class UserService {
     const pageSize = PUBLIC_SITEMAP_PAGE_SIZE;
     if (query.kind === "profiles") {
       const [total, rows] = await Promise.all([
-        this.database.user.count({ where: author }),
+        this.database.user.count({ where: profileWhere }),
         this.database.user.findMany({
-          where: author,
+          where: profileWhere,
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           skip,
           take: pageSize,
-          select: { username: true, updatedAt: true },
+          select: {
+            username: true,
+            updatedAt: true,
+            bio: true,
+            postCount: true,
+            profilePhotoMediaId: true,
+            coverPhotoMediaId: true,
+          },
         }),
       ]);
+      const items = rows
+        .filter((row) => {
+          const bio = row.bio?.replace(/\s+/g, " ").trim() ?? "";
+          return bio.length >= 20 || row.postCount >= 1;
+        })
+        .map((row) => {
+          const images = [
+            mediaUrl(row.profilePhotoMediaId ?? undefined, this.config),
+            mediaUrl(row.coverPhotoMediaId ?? undefined, this.config),
+          ].filter((url): url is string => Boolean(url));
+          return {
+            username: row.username,
+            updatedAt: row.updatedAt.toISOString(),
+            ...(images.length > 0 ? { images } : {}),
+          };
+        });
       return {
         kind: "profiles",
         page: query.page,
         pageSize,
         total,
-        items: rows.map((row) => ({
-          username: row.username,
-          updatedAt: row.updatedAt.toISOString(),
-        })),
+        items,
       };
     }
     if (query.kind === "posts") {
@@ -211,7 +260,15 @@ export class UserService {
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           skip,
           take: pageSize,
-          select: { id: true, updatedAt: true },
+          select: {
+            id: true,
+            updatedAt: true,
+            media: {
+              orderBy: { sortOrder: "asc" },
+              take: 10,
+              select: { mediaAssetId: true },
+            },
+          },
         }),
       ]);
       return {
@@ -219,10 +276,16 @@ export class UserService {
         page: query.page,
         pageSize,
         total,
-        items: rows.map((row) => ({
-          id: row.id,
-          updatedAt: row.updatedAt.toISOString(),
-        })),
+        items: rows.map((row) => {
+          const images = row.media
+            .map((item) => mediaUrl(item.mediaAssetId, this.config))
+            .filter((url): url is string => Boolean(url));
+          return {
+            id: row.id,
+            updatedAt: row.updatedAt.toISOString(),
+            ...(images.length > 0 ? { images } : {}),
+          };
+        }),
       };
     }
     const [total, rows] = await Promise.all([
@@ -232,7 +295,15 @@ export class UserService {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         skip,
         take: pageSize,
-        select: { id: true, createdAt: true },
+        select: {
+          id: true,
+          createdAt: true,
+          caption: true,
+          durationMs: true,
+          mediaAssetId: true,
+          posterMediaId: true,
+          author: { select: { username: true, displayName: true } },
+        },
       }),
     ]);
     return {
@@ -240,10 +311,38 @@ export class UserService {
       page: query.page,
       pageSize,
       total,
-      items: rows.map((row) => ({
-        id: row.id,
-        updatedAt: row.createdAt.toISOString(),
-      })),
+      items: rows.map((row) => {
+        const contentUrl = mediaUrl(row.mediaAssetId, this.config);
+        const thumbnailUrl = mediaUrl(
+          row.posterMediaId ?? undefined,
+          this.config,
+        );
+        const authorName =
+          row.author.displayName?.trim() || row.author.username;
+        const caption = row.caption?.replace(/\s+/g, " ").trim() || "";
+        const title =
+          caption.slice(0, 100) || `Reel by ${authorName} on Milox`;
+        const description =
+          caption.slice(0, 2048) || `Reel by ${authorName} on Milox.`;
+        const images = thumbnailUrl ? [thumbnailUrl] : [];
+        return {
+          id: row.id,
+          updatedAt: row.createdAt.toISOString(),
+          ...(images.length > 0 ? { images } : {}),
+          video: contentUrl
+            ? {
+                contentUrl,
+                thumbnailUrl,
+                title,
+                description,
+                durationSec:
+                  row.durationMs > 0
+                    ? Math.max(1, Math.round(row.durationMs / 1000))
+                    : null,
+              }
+            : null,
+        };
+      }),
     };
   }
 
