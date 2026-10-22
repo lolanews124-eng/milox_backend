@@ -192,8 +192,14 @@ export function resetConfigForTests(): void {
   cachedConfig = undefined;
 }
 
-/** Always allowed in production (Vercel admin). Also set ADMIN_ORIGIN on the server. */
-const DEFAULT_EXTRA_CORS_ORIGINS = ["https://milox-admin.vercel.app"] as const;
+/**
+ * Always allowed in production (Vercel staff consoles).
+ * Also set ADMIN_ORIGIN / BOTS_ORIGIN on the server when those are the canonical hosts.
+ */
+const DEFAULT_EXTRA_CORS_ORIGINS = [
+  "https://milox-admin.vercel.app",
+  "https://milox-bots-manage.vercel.app",
+] as const;
 
 function normalizeOrigin(origin: string): string {
   return origin.replace(/\/+$/, "");
@@ -211,8 +217,8 @@ export function getAllowedOrigins(config: AppConfig): string[] {
 }
 
 /** Vercel preview deploys use unique subdomains (e.g. milox-admin-git-main.vercel.app). */
-const VERCEL_ADMIN_ORIGIN =
-  /^https:\/\/milox-admin[a-z0-9-]*\.vercel\.app$/i;
+const VERCEL_STAFF_CONSOLE_ORIGIN =
+  /^https:\/\/milox-(?:admin|bots-manage)[a-z0-9-]*\.vercel\.app$/i;
 
 export function isAllowedCorsOrigin(
   config: AppConfig,
@@ -221,7 +227,7 @@ export function isAllowedCorsOrigin(
   if (!origin) return true;
   const normalized = normalizeOrigin(origin);
   if (getAllowedOrigins(config).includes(normalized)) return true;
-  return VERCEL_ADMIN_ORIGIN.test(normalized);
+  return VERCEL_STAFF_CONSOLE_ORIGIN.test(normalized);
 }
 
 export function createCorsOriginChecker(config: AppConfig) {
