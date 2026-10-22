@@ -428,7 +428,7 @@ describeE2e("bots automatic planner → worker pipeline E2E", () => {
       where: { id: fixtures.postId },
       select: { likeCount: true },
     });
-    expect(afterPost.likeCount).toBe(beforePost.likeCount);
+    expect(afterPost.likeCount).toBe(beforePost.likeCount + 1);
 
     const planner = new BotActivityPlanner(database, {
       scopeBotAccountId: fixtures.botAccountId,
@@ -448,8 +448,8 @@ describeE2e("bots automatic planner → worker pipeline E2E", () => {
       jobId: row.id,
       idempotencyKey: expectedKey,
       status: row.status,
-      organicLikeCountBefore: beforePost.likeCount,
-      organicLikeCountAfter: afterPost.likeCount,
+      totalLikeCountBefore: beforePost.likeCount,
+      totalLikeCountAfter: afterPost.likeCount,
       domainLikes: 1,
       jobsApiSample: apiJob,
     };
@@ -507,7 +507,7 @@ describeE2e("bots automatic planner → worker pipeline E2E", () => {
       where: { id: fixtures.postId },
       select: { commentCount: true },
     });
-    expect(afterPost.commentCount).toBe(beforePost.commentCount);
+    expect(afterPost.commentCount).toBe(beforePost.commentCount + 1);
 
     const planner = new BotActivityPlanner(database, {
       scopeBotAccountId: fixtures.botAccountId,
@@ -537,8 +537,8 @@ describeE2e("bots automatic planner → worker pipeline E2E", () => {
       status: row.status,
       commentId: comments[0]!.id,
       commentBody: comments[0]!.body,
-      organicCommentCountBefore: beforePost.commentCount,
-      organicCommentCountAfter: afterPost.commentCount,
+      totalCommentCountBefore: beforePost.commentCount,
+      totalCommentCountAfter: afterPost.commentCount,
       jobsApiSample: apiJob,
     };
   });
@@ -609,8 +609,8 @@ describeE2e("bots automatic planner → worker pipeline E2E", () => {
       where: { id: fixtures.followTargetUserId },
       select: { followerCount: true },
     });
-    expect(afterBot.followingCount).toBe(beforeBot.followingCount);
-    expect(afterTarget.followerCount).toBe(beforeTarget.followerCount);
+    expect(afterBot.followingCount).toBe(beforeBot.followingCount + 1);
+    expect(afterTarget.followerCount).toBe(beforeTarget.followerCount + 1);
 
     const planner = new BotActivityPlanner(database, {
       scopeBotAccountId: fixtures.botAccountId,
@@ -632,10 +632,10 @@ describeE2e("bots automatic planner → worker pipeline E2E", () => {
       status: row.status,
       followId: follows[0]!.id,
       followStatus: follows[0]!.status,
-      organicFollowingBefore: beforeBot.followingCount,
-      organicFollowingAfter: afterBot.followingCount,
-      organicFollowersBefore: beforeTarget.followerCount,
-      organicFollowersAfter: afterTarget.followerCount,
+      totalFollowingBefore: beforeBot.followingCount,
+      totalFollowingAfter: afterBot.followingCount,
+      totalFollowersBefore: beforeTarget.followerCount,
+      totalFollowersAfter: afterTarget.followerCount,
       jobsApiSample: apiJob,
     };
   });

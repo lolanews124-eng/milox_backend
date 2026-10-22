@@ -133,7 +133,7 @@ describeE2e("bots worker lifecycle + race E2E", () => {
       where: { id: postId },
       select: { likeCount: true },
     });
-    expect(post.likeCount).toBe(0);
+    expect(post.likeCount).toBe(1);
 
     await database.postLike.deleteMany({ where: { postId } });
     await database.botActivityJob.delete({ where: { id: job.id } });

@@ -10,12 +10,13 @@ import {
 /**
  * Recomputes posts.trendingScore used by Trending + Suggested + Following-hot.
  *
- * Viral signals (likes/comments exclude automated accounts so bots cannot
- * inflate public popularity rankings):
+ * Viral signals (likes/comments/followers exclude automated accounts so bots
+ * cannot inflate public popularity rankings). Displayed denormalized counts on
+ * posts/users may include bots; trendingScore stays organic-only:
  * - organic likes, organic comments×2.5, shares×3, saves×2.5, soft views
  * - velocity (engagement density while young)
  * - engagement-rate boost / low-rate high-view penalty
- * - author followerCount boost (capped)
+ * - organic author follower boost (capped)
  * - light quality boost (caption or media)
  * - time decay
  */
@@ -30,6 +31,15 @@ const ORGANIC_COMMENTS = `(
   SELECT COUNT(*)::float FROM comments c
   INNER JOIN users cu ON cu.id = c."authorId"
   WHERE c."postId" = p.id AND c."deletedAt" IS NULL AND cu."isAutomatedAccount" = false
+)`;
+
+/** Denormalized users.followerCount includes bots; trending must not. */
+const ORGANIC_FOLLOWERS = `(
+  SELECT COUNT(*)::float FROM follows f
+  INNER JOIN users fu ON fu.id = f."followerId"
+  WHERE f."followeeId" = u.id
+    AND f.status = 'ACTIVE'
+    AND fu."isAutomatedAccount" = false
 )`;
 
 export class FeedScoreWorker {
@@ -154,7 +164,7 @@ export class FeedScoreWorker {
             )
             * (
               1.0 + ${FEED_FOLLOWER_BOOST_CAP} * LEAST(
-                LN(GREATEST(u."followerCount", 0) + 1.0)
+                LN(GREATEST(${ORGANIC_FOLLOWERS}, 0) + 1.0)
                   / LN(${FEED_FOLLOWER_BOOST_REF} + 1.0),
                 1.0
               )
@@ -167,7 +177,7 @@ export class FeedScoreWorker {
             WHEN p."createdAt" >= NOW() - INTERVAL '12 hours'
               THEN 0.35 * (
                 1.0 + ${FEED_FOLLOWER_BOOST_CAP} * 0.5 * LEAST(
-                  LN(GREATEST(u."followerCount", 0) + 1.0)
+                  LN(GREATEST(${ORGANIC_FOLLOWERS}, 0) + 1.0)
                     / LN(${FEED_FOLLOWER_BOOST_REF} + 1.0),
                   1.0
                 )
@@ -175,7 +185,7 @@ export class FeedScoreWorker {
             WHEN p."createdAt" >= NOW() - INTERVAL '48 hours'
               THEN 0.15 * (
                 1.0 + ${FEED_FOLLOWER_BOOST_CAP} * 0.5 * LEAST(
-                  LN(GREATEST(u."followerCount", 0) + 1.0)
+                  LN(GREATEST(${ORGANIC_FOLLOWERS}, 0) + 1.0)
                     / LN(${FEED_FOLLOWER_BOOST_REF} + 1.0),
                   1.0
                 )

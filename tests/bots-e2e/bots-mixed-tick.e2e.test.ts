@@ -302,9 +302,13 @@ describeE2e("bots mixed planner tick (like+comment+follow)", () => {
       where: { id: followTargetUserId },
       select: { followerCount: true },
     });
-    expect(afterPost.likeCount).toBe(beforePost.likeCount);
-    expect(afterPost.commentCount).toBe(beforePost.commentCount);
-    expect(afterTarget.followerCount).toBe(beforeTarget.followerCount);
+    expect(afterPost.likeCount).toBeGreaterThanOrEqual(beforePost.likeCount + 1);
+    expect(afterPost.commentCount).toBeGreaterThanOrEqual(
+      beforePost.commentCount + 1,
+    );
+    expect(afterTarget.followerCount).toBeGreaterThanOrEqual(
+      beforeTarget.followerCount + 1,
+    );
 
     const likeKeys = await database.botActivityJob.groupBy({
       by: ["idempotencyKey"],

@@ -4,7 +4,7 @@
  * - Provisions exactly one bot via the real candidates → provision HTTP API
  * - Creates one fixture author + post
  * - Executes one LIKE_POST and one COMMENT_POST through the real worker path
- * - Asserts domain persistence + organic counters + jobs list API (dashboard contract)
+ * - Asserts domain persistence + total counters + jobs list API (dashboard contract)
  *
  * Does not change main .env. Worker enabled only inside this process.
  *
@@ -65,6 +65,8 @@ type Evidence = {
   commentCount: number;
   organicLikeCount: number;
   organicCommentCount: number;
+  totalLikeCount: number;
+  totalCommentCount: number;
   jobsApiItems: unknown[];
   duplicateLikeStillOne: boolean;
   browserUiVerified: false;
@@ -521,8 +523,20 @@ describeE2e("bots UI→activity practical verification", () => {
       where: { id: postId },
       select: { likeCount: true, commentCount: true },
     });
-    expect(post.likeCount).toBe(0);
-    expect(post.commentCount).toBe(0);
+    expect(post.likeCount).toBe(1);
+    expect(post.commentCount).toBe(1);
+    const organicLikeCount = await database.postLike.count({
+      where: { postId, user: { isAutomatedAccount: false } },
+    });
+    const organicCommentCount = await database.comment.count({
+      where: {
+        postId,
+        deletedAt: null,
+        author: { isAutomatedAccount: false },
+      },
+    });
+    expect(organicLikeCount).toBe(0);
+    expect(organicCommentCount).toBe(0);
 
     // Idempotent: second like job must not create a duplicate like.
     const likeAgain = await createJob(database, {
@@ -618,8 +632,10 @@ describeE2e("bots UI→activity practical verification", () => {
       commentJobStatus: commentRow.status,
       likeCount: likesAfter,
       commentCount: comments.length,
-      organicLikeCount: post.likeCount,
-      organicCommentCount: post.commentCount,
+      organicLikeCount,
+      organicCommentCount,
+      totalLikeCount: post.likeCount,
+      totalCommentCount: post.commentCount,
       jobsApiItems: [likeApi, commentApi],
       duplicateLikeStillOne: likesAfter === 1,
       browserUiVerified: false,

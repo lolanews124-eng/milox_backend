@@ -55,23 +55,17 @@ export class PrismaCommentRepository implements CommentRepository {
         },
         select: { id: true },
       });
-      const author = await transaction.user.findUnique({
-        where: { id: data.authorId },
-        select: { isAutomatedAccount: true },
+      // commentCount / replyCount are total engagement (human + automated).
+      // Organic-only popularity stays in feed trendingScore.
+      await transaction.post.update({
+        where: { id: data.postId },
+        data: { commentCount: { increment: 1 } },
       });
-      // Public commentCount is organic-only; automated comments remain in
-      // `comments` for ops/audit without inflating denormalized counters.
-      if (!author?.isAutomatedAccount) {
-        await transaction.post.update({
-          where: { id: data.postId },
-          data: { commentCount: { increment: 1 } },
+      if (parent) {
+        await transaction.comment.update({
+          where: { id: parent.id },
+          data: { replyCount: { increment: 1 } },
         });
-        if (parent) {
-          await transaction.comment.update({
-            where: { id: parent.id },
-            data: { replyCount: { increment: 1 } },
-          });
-        }
       }
 
       const replyRecipientId =
@@ -197,42 +191,31 @@ export class PrismaCommentRepository implements CommentRepository {
           : { id: comment.id, deletedAt: null };
       const doomed = await transaction.comment.findMany({
         where: deleteWhere,
-        select: {
-          id: true,
-          author: { select: { isAutomatedAccount: true } },
-        },
+        select: { id: true },
       });
-      const organicDeleted = doomed.filter(
-        (row) => !row.author.isAutomatedAccount,
-      ).length;
+      const deletedCount = doomed.length;
       await transaction.comment.updateMany({
         where: deleteWhere,
         data: { deletedAt, isHidden: true },
       });
-      if (organicDeleted > 0) {
+      if (deletedCount > 0) {
         await transaction.post.updateMany({
           where: {
             id: comment.postId,
-            commentCount: { gte: organicDeleted },
+            commentCount: { gte: deletedCount },
           },
-          data: { commentCount: { decrement: organicDeleted } },
+          data: { commentCount: { decrement: deletedCount } },
         });
       }
       if (comment.parentId) {
-        const deleter = await transaction.user.findUnique({
-          where: { id: comment.authorId },
-          select: { isAutomatedAccount: true },
+        await transaction.comment.updateMany({
+          where: {
+            id: comment.parentId,
+            replyCount: { gt: 0 },
+            deletedAt: null,
+          },
+          data: { replyCount: { decrement: 1 } },
         });
-        if (!deleter?.isAutomatedAccount) {
-          await transaction.comment.updateMany({
-            where: {
-              id: comment.parentId,
-              replyCount: { gt: 0 },
-              deletedAt: null,
-            },
-            data: { replyCount: { decrement: 1 } },
-          });
-        }
       }
       await transaction.outboxEvent.create({
         data: {

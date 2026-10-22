@@ -85,16 +85,17 @@ Keep main `.env` at `BOTS_WORKER_ENABLED=false`. Use `test_fixtures_only` only a
 `milox_live_copy` (leave kill/pause on there; prefer `fresh_public` only when you
 intentionally want local discovery on a dedicated or fixture-safe DB).
 
-## Organic vs operational engagement
+## Total vs organic engagement
 
 | Surface | Semantics |
 | --- | --- |
-| `posts.likeCount` / `commentCount` (public API) | **Organic** — automated actors do not increment these denormalized counters (going forward). Domain rows (`post_likes`, `comments`) still record bot actions for ops/audit. |
-| `users.followerCount` / `followingCount` | **Organic** — automated followers do not increment public counts (going forward). |
-| Feed `trendingScore` | **Organic** — recomputed from like/comment subqueries excluding `isAutomatedAccount`. |
-| `bot_activity_jobs` / domain rows | **Operational** — full automated activity history. |
+| `posts.likeCount` / `commentCount` (public API) | **Total** — human + automated. Domain services increment these when bots like/comment. |
+| `users.followerCount` / `followingCount` | **Total** — human + automated followers/following. |
+| Feed `trendingScore` | **Organic** — likes, comments, and follower boost use SQL that excludes `isAutomatedAccount`. Bots must not inflate popularity rankings. |
+| Domain rows (`post_likes`, `comments`, `follows`) | Source of truth for both total and organic breakdowns. |
+| `bot_activity_jobs` | **Operational** — automated activity job history. |
 
-Historical denormalized inflation (if any bot actions ran before this change) is **not** rewritten.
+Organic counts for analytics: `COUNT(*)` from domain tables joined to `users` where `isAutomatedAccount = false`.
 
 ## Daily limits
 
@@ -109,18 +110,10 @@ not unlimited. PATCH `/admin/bots/:botId` accepts `{ permissions: { maxLikesPerD
 
 ## Historical denormalized counters
 
-Before organic-increment gating, bot likes/comments/follows may have incremented
-`posts.likeCount` / `commentCount` and `users.followerCount`. Attribution is only
-reliable when:
-
-- the actor user still has `isAutomatedAccount = true`, **and**
-- the domain row (`post_likes` / `comments` / `follows`) still exists.
-
-We **do not** auto-backfill or rewrite historical denormalized counters: some
-bot rows may have been deleted, and some automated flags may have been set after
-the fact. A separately reviewed reconciliation could subtract counts of current
-automated domain rows from denormalized totals for affected posts/users, then
-spot-check. Trending already ignores automated likes/comments via SQL.
+While public counters briefly stayed organic-only, bot domain rows could exist
+without a matching denormalized increment. Going forward, totals include bots
+again. We **do not** auto-backfill historical gaps: reconcile only with an
+explicit reviewed script if product requires it. Trending remains organic via SQL.
 
 ## PostgreSQL claim integration tests
 

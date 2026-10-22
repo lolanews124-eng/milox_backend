@@ -89,7 +89,7 @@ describeE2e("bots activity actual execution E2E", () => {
     expect(dbTarget).not.toContain("live_copy");
   });
 
-  it("executes a real like via PostService and does not inflate organic likeCount", async () => {
+  it("executes a real like via PostService and increments total likeCount once", async () => {
     const before = await database.post.findUniqueOrThrow({
       where: { id: fixtures.postId },
       select: { likeCount: true },
@@ -123,14 +123,21 @@ describeE2e("bots activity actual execution E2E", () => {
       where: { id: fixtures.postId },
       select: { likeCount: true },
     });
-    expect(after.likeCount).toBe(before.likeCount);
+    expect(after.likeCount).toBe(before.likeCount + 1);
+    const organicLikes = await database.postLike.count({
+      where: {
+        postId: fixtures.postId,
+        user: { isAutomatedAccount: false },
+      },
+    });
+    expect(organicLikes).toBe(0);
 
     const terminal = await database.botActivityJob.findUniqueOrThrow({
       where: { id: job.id },
     });
     expect(terminal.status).toBe("PROCESSED");
 
-    // Retry path: domain already liked → skipped, no duplicate row
+    // Retry path: domain already liked → skipped, no duplicate row / double-count
     const retryJob = await createJob(database, {
       botAccountId: fixtures.botAccountId,
       activityType: "LIKE_POST",
@@ -154,9 +161,14 @@ describeE2e("bots activity actual execution E2E", () => {
       where: { postId: fixtures.postId, userId: fixtures.botUserId },
     });
     expect(likeCount).toBe(1);
+    const afterRetry = await database.post.findUniqueOrThrow({
+      where: { id: fixtures.postId },
+      select: { likeCount: true },
+    });
+    expect(afterRetry.likeCount).toBe(after.likeCount);
   });
 
-  it("executes a real comment and does not inflate organic commentCount", async () => {
+  it("executes a real comment and increments total commentCount once", async () => {
     const body = "E2E approved comment template.";
     const before = await database.post.findUniqueOrThrow({
       where: { id: fixtures.postId },
@@ -190,7 +202,7 @@ describeE2e("bots activity actual execution E2E", () => {
       where: { id: fixtures.postId },
       select: { commentCount: true },
     });
-    expect(after.commentCount).toBe(before.commentCount);
+    expect(after.commentCount).toBe(before.commentCount + 1);
 
     const retryJob = await createJob(database, {
       botAccountId: fixtures.botAccountId,
@@ -223,7 +235,7 @@ describeE2e("bots activity actual execution E2E", () => {
     expect(comments).toBe(1);
   });
 
-  it("executes a real follow and does not inflate organic followerCount", async () => {
+  it("executes a real follow and increments total followerCount once", async () => {
     const before = await database.user.findUniqueOrThrow({
       where: { id: fixtures.followTargetUserId },
       select: { followerCount: true },
@@ -255,7 +267,7 @@ describeE2e("bots activity actual execution E2E", () => {
       where: { id: fixtures.followTargetUserId },
       select: { followerCount: true },
     });
-    expect(after.followerCount).toBe(before.followerCount);
+    expect(after.followerCount).toBe(before.followerCount + 1);
 
     const retryJob = await createJob(database, {
       botAccountId: fixtures.botAccountId,
@@ -506,7 +518,7 @@ describeE2e("bots activity actual execution E2E", () => {
         where: { id: extraPostId },
         select: { likeCount: true },
       });
-      expect(post.likeCount).toBe(0);
+      expect(post.likeCount).toBe(1);
     }
 
     await database.postLike.deleteMany({ where: { postId: extraPostId } });

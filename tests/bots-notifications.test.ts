@@ -78,7 +78,10 @@ describe("bot activity → notification outbox (domain path)", () => {
 
     await new PrismaPostRepository(database).like(postId, botUserId);
 
-    expect(transaction.post.update).not.toHaveBeenCalled();
+    expect(transaction.post.update).toHaveBeenCalledWith({
+      where: { id: postId },
+      data: { likeCount: { increment: 1 } },
+    });
     expect(outboxCreate).toHaveBeenCalledWith({
       data: {
         eventType: "post.liked",
@@ -124,7 +127,10 @@ describe("bot activity → notification outbox (domain path)", () => {
       body: "nice post",
     });
 
-    expect(transaction.post.update).not.toHaveBeenCalled();
+    expect(transaction.post.update).toHaveBeenCalledWith({
+      where: { id: postId },
+      data: { commentCount: { increment: 1 } },
+    });
     expect(outboxCreate).toHaveBeenCalledWith({
       data: {
         eventType: "post.commented",
@@ -152,7 +158,7 @@ describe("bot activity → notification outbox (domain path)", () => {
         findUniqueOrThrow: vi
           .fn()
           .mockResolvedValue({ followerCount: 3 }),
-        update: vi.fn(),
+        update: vi.fn().mockResolvedValue({ followerCount: 4 }),
       },
       outboxEvent: { create: outboxCreate },
     };
@@ -172,7 +178,7 @@ describe("bot activity → notification outbox (domain path)", () => {
 
     await new PrismaFollowRepository(database).follow("target_user", botUserId);
 
-    expect(transaction.user.update).not.toHaveBeenCalled();
+    expect(transaction.user.update).toHaveBeenCalled();
     expect(outboxCreate).toHaveBeenCalledWith({
       data: {
         eventType: "user.followed",

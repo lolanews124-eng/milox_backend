@@ -83,14 +83,11 @@ export class PrismaFollowRepository implements FollowRepository {
           followId = created.id;
         }
 
-        const follower = await transaction.user.findUnique({
-          where: { id: followerId },
-          select: { isAutomatedAccount: true },
-        });
-        const countTowardPublic =
-          follower?.isAutomatedAccount !== true;
+        // followerCount / followingCount are total (human + automated).
+        // Organic popularity rankings use other signals; do not treat these
+        // denormalized fields as organic-only.
         let followerCount: number;
-        if (nextStatus === FollowStatus.ACTIVE && countTowardPublic) {
+        if (nextStatus === FollowStatus.ACTIVE) {
           const updatedTarget = await transaction.user.update({
             where: { id: target.id },
             data: { followerCount: { increment: 1 } },
@@ -183,20 +180,14 @@ export class PrismaFollowRepository implements FollowRepository {
       await transaction.follow.delete({ where: { id: relation.id } });
 
       if (relation.status === FollowStatus.ACTIVE) {
-        const follower = await transaction.user.findUnique({
-          where: { id: followerId },
-          select: { isAutomatedAccount: true },
+        await transaction.user.updateMany({
+          where: { id: target.id, followerCount: { gt: 0 } },
+          data: { followerCount: { decrement: 1 } },
         });
-        if (!follower?.isAutomatedAccount) {
-          await transaction.user.updateMany({
-            where: { id: target.id, followerCount: { gt: 0 } },
-            data: { followerCount: { decrement: 1 } },
-          });
-          await transaction.user.updateMany({
-            where: { id: followerId, followingCount: { gt: 0 } },
-            data: { followingCount: { decrement: 1 } },
-          });
-        }
+        await transaction.user.updateMany({
+          where: { id: followerId, followingCount: { gt: 0 } },
+          data: { followingCount: { decrement: 1 } },
+        });
       }
       const currentTarget = await transaction.user.findUniqueOrThrow({
         where: { id: target.id },
@@ -250,20 +241,14 @@ export class PrismaFollowRepository implements FollowRepository {
       });
       if (updated.count === 0) return false;
       if (action === "accept") {
-        const follower = await transaction.user.findUnique({
-          where: { id: request.followerId },
-          select: { isAutomatedAccount: true },
+        await transaction.user.update({
+          where: { id: followeeId },
+          data: { followerCount: { increment: 1 } },
         });
-        if (!follower?.isAutomatedAccount) {
-          await transaction.user.update({
-            where: { id: followeeId },
-            data: { followerCount: { increment: 1 } },
-          });
-          await transaction.user.update({
-            where: { id: request.followerId },
-            data: { followingCount: { increment: 1 } },
-          });
-        }
+        await transaction.user.update({
+          where: { id: request.followerId },
+          data: { followingCount: { increment: 1 } },
+        });
         await transaction.outboxEvent.create({
           data: {
             eventType: "follow.accepted",

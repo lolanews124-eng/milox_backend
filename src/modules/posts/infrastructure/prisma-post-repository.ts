@@ -633,18 +633,12 @@ export class PrismaPostRepository implements PostRepository {
         if (!post) return null;
         if (relation === "like") {
           await transaction.postLike.create({ data: { postId, userId } });
-          // Public likeCount is organic-only: automated accounts keep the
-          // post_likes row for ops/audit but do not inflate denormalized counts.
-          const actor = await transaction.user.findUnique({
-            where: { id: userId },
-            select: { isAutomatedAccount: true },
+          // likeCount is total engagement (human + automated). Organic-only
+          // popularity stays in feed trendingScore (excludes isAutomatedAccount).
+          await transaction.post.update({
+            where: { id: postId },
+            data: { likeCount: { increment: 1 } },
           });
-          if (!actor?.isAutomatedAccount) {
-            await transaction.post.update({
-              where: { id: postId },
-              data: { likeCount: { increment: 1 } },
-            });
-          }
           if (post.authorId !== userId) {
             await transaction.outboxEvent.create({
               data: {
@@ -702,16 +696,10 @@ export class PrismaPostRepository implements PostRepository {
         throw new PostActionConflictError(`not_${relation}d`);
       }
       if (relation === "like") {
-        const actor = await transaction.user.findUnique({
-          where: { id: userId },
-          select: { isAutomatedAccount: true },
+        await transaction.post.updateMany({
+          where: { id: postId, likeCount: { gt: 0 } },
+          data: { likeCount: { decrement: 1 } },
         });
-        if (!actor?.isAutomatedAccount) {
-          await transaction.post.updateMany({
-            where: { id: postId, likeCount: { gt: 0 } },
-            data: { likeCount: { decrement: 1 } },
-          });
-        }
       } else {
         await transaction.post.updateMany({
           where: { id: postId, saveCount: { gt: 0 } },
