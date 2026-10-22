@@ -10,14 +10,28 @@ import {
 /**
  * Recomputes posts.trendingScore used by Trending + Suggested + Following-hot.
  *
- * Viral signals:
- * - likes, comments×2.5, shares×3, saves×2.5, soft views
+ * Viral signals (likes/comments exclude automated accounts so bots cannot
+ * inflate public popularity rankings):
+ * - organic likes, organic comments×2.5, shares×3, saves×2.5, soft views
  * - velocity (engagement density while young)
  * - engagement-rate boost / low-rate high-view penalty
  * - author followerCount boost (capped)
  * - light quality boost (caption or media)
  * - time decay
  */
+
+const ORGANIC_LIKES = `(
+  SELECT COUNT(*)::float FROM post_likes pl
+  INNER JOIN users bu ON bu.id = pl."userId"
+  WHERE pl."postId" = p.id AND bu."isAutomatedAccount" = false
+)`;
+
+const ORGANIC_COMMENTS = `(
+  SELECT COUNT(*)::float FROM comments c
+  INNER JOIN users cu ON cu.id = c."authorId"
+  WHERE c."postId" = p.id AND c."deletedAt" IS NULL AND cu."isAutomatedAccount" = false
+)`;
+
 export class FeedScoreWorker {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
@@ -51,8 +65,8 @@ export class FeedScoreWorker {
         SET "trendingScore" = GREATEST(
           (
             (
-              p."likeCount"
-              + (p."commentCount" * 2.5)
+              ${ORGANIC_LIKES}
+              + (${ORGANIC_COMMENTS} * 2.5)
               + (p."shareCount" * 3.0)
               + (p."saveCount" * 2.5)
               + LEAST(LN(p."viewCount" + 1.0) * 8.0, p."viewCount" * 0.08)
@@ -61,8 +75,8 @@ export class FeedScoreWorker {
               CASE
                 WHEN (
                   (
-                    p."likeCount"
-                    + (p."commentCount" * 2.5)
+                    ${ORGANIC_LIKES}
+                    + (${ORGANIC_COMMENTS} * 2.5)
                     + (p."shareCount" * 3.0)
                     + (p."saveCount" * 2.5)
                   ) / (
@@ -73,8 +87,8 @@ export class FeedScoreWorker {
                   THEN 1.28
                 WHEN (
                   (
-                    p."likeCount"
-                    + (p."commentCount" * 2.5)
+                    ${ORGANIC_LIKES}
+                    + (${ORGANIC_COMMENTS} * 2.5)
                     + (p."shareCount" * 3.0)
                     + (p."saveCount" * 2.5)
                   ) / (
@@ -104,19 +118,19 @@ export class FeedScoreWorker {
               CASE
                 WHEN p."viewCount" >= 10
                   AND (
-                    (p."likeCount" + (p."commentCount" * 2.5))::float
+                    (${ORGANIC_LIKES} + (${ORGANIC_COMMENTS} * 2.5))
                     / GREATEST(p."viewCount", 1)::float
                   ) >= 0.08
                   THEN 1.15
                 WHEN p."viewCount" >= 80
                   AND (
-                    (p."likeCount" + (p."commentCount" * 2.5))::float
+                    (${ORGANIC_LIKES} + (${ORGANIC_COMMENTS} * 2.5))
                     / GREATEST(p."viewCount", 1)::float
                   ) < 0.02
                   THEN 0.55
                 WHEN p."viewCount" >= 40
                   AND (
-                    (p."likeCount" + (p."commentCount" * 2.5))::float
+                    (${ORGANIC_LIKES} + (${ORGANIC_COMMENTS} * 2.5))
                     / GREATEST(p."viewCount", 1)::float
                   ) < 0.03
                   THEN 0.75

@@ -363,6 +363,8 @@ model User {
   discoverBoost       Int               @default(0)
   /// System-owned accounts (e.g. Milox Official) cannot sign in via the app.
   isSystemAccount     Boolean           @default(false)
+  /// Staff-managed automated accounts (bots). Not the same as isSystemAccount.
+  isAutomatedAccount  Boolean           @default(false)
   isPrivateAccount    Boolean           @default(false)
   hideAge             Boolean           @default(false)
   hideCountry         Boolean           @default(false)
@@ -457,6 +459,10 @@ model User {
   groupsCreated       Conversation[]          @relation("GroupConversationCreator")
   callsInitiated      CallSession[]            @relation("CallCaller")
   callsReceived       CallSession[]            @relation("CallCallee")
+  botAccount          BotAccount?              @relation("BotAccountUser")
+  botsInspiredFromThisAccount BotAccount[]     @relation("BotSourceCandidate")
+  botsProvisioned     BotAccount[]             @relation("BotProvisioner")
+  botCandidateBatchesCreated BotCandidateBatch[] @relation("BotBatchCreator")
 
   @@index([status, createdAt])
   @@index([referredByUserId])
@@ -466,6 +472,7 @@ model User {
   @@index([verifiedBadgeExpiresAt])
   @@index([premiumTier, discoverBoost])
   @@index([deletedAt])
+  @@index([isAutomatedAccount, status])
   @@map("users")
 }
 
@@ -1927,4 +1934,133 @@ model MobileAppConfig {
   updatedAt         DateTime @updatedAt
 
   @@map("mobile_app_configs")
+}
+
+// -----------------------------------------------------------------------------
+// Automated accounts (bots) — management foundation
+// -----------------------------------------------------------------------------
+
+enum BotAccountStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+enum BotCandidateBatchStatus {
+  PREVIEWED
+  SELECTION_LOCKED
+  PROVISIONING
+  DONE
+  CANCELLED
+}
+
+enum BotActivityJobStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  CANCELLED
+  SKIPPED
+}
+
+enum BotActivityType {
+  LIKE_POST
+  COMMENT_POST
+  FOLLOW_USER
+  /// Reserved — disabled until synthetic views are excluded from public counts.
+  VIEW_POST
+  VIEW_STORY
+  VIEW_REEL
+}
+
+/// Singleton (id = default) for global bot execution controls.
+model BotSettings {
+  id                    String   @id @default("default") @db.VarChar(32)
+  /// When true, no bot activity jobs may be claimed or executed.
+  killSwitch            Boolean  @default(true)
+  globalPause           Boolean  @default(true)
+  maxConcurrency        Int      @default(3)
+  /// Global per-hour caps and feature flags (likes/comments/follows/views).
+  activityLimits        Json     @default("{}")
+  /// Approved comment template strings only.
+  commentTemplates      Json     @default("[]")
+  /// Username suffix used when provisioning (inspiration-based names).
+  usernameSuffix        String   @default("_mx") @db.VarChar(16)
+  updatedAt             DateTime @updatedAt
+
+  @@map("bot_settings")
+}
+
+/// Auditable candidate selection run. Does not create bot users by itself.
+model BotCandidateBatch {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  /// e.g. presence_v1 — documents ranking method for audit.
+  criteriaVersion    String                   @db.VarChar(64)
+  criteria           Json                     @default("{}")
+  rankedAt           DateTime
+  /// Compact preview rows (ids + inactivity timestamps only).
+  previewSnapshot    Json                     @default("[]")
+  eligibleCount      Int                      @default(0)
+  previewCount       Int                      @default(0)
+  selectedUserIds    String[]                 @default([]) @db.Uuid
+  status             BotCandidateBatchStatus  @default(PREVIEWED)
+  createdByAdminId   String                   @db.Uuid
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  createdByAdmin User         @relation("BotBatchCreator", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  botAccounts    BotAccount[]
+
+  @@index([status, createdAt])
+  @@index([createdByAdminId, createdAt])
+  @@map("bot_candidate_batches")
+}
+
+model BotAccount {
+  id                    String           @id @default(uuid()) @db.Uuid
+  userId                String           @unique @db.Uuid
+  status                BotAccountStatus @default(PAUSED)
+  /// Source inactive user used only for candidate audit — never converted in place.
+  sourceCandidateUserId String?          @db.Uuid
+  candidateBatchId      String?          @db.Uuid
+  /// Per-bot activity permissions and limits.
+  permissions           Json             @default("{}")
+  provisionedByAdminId  String?          @db.Uuid
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  user               User                @relation("BotAccountUser", fields: [userId], references: [id], onDelete: Cascade)
+  sourceCandidate    User?               @relation("BotSourceCandidate", fields: [sourceCandidateUserId], references: [id], onDelete: SetNull)
+  provisionedByAdmin User?               @relation("BotProvisioner", fields: [provisionedByAdminId], references: [id], onDelete: SetNull)
+  candidateBatch     BotCandidateBatch?  @relation(fields: [candidateBatchId], references: [id], onDelete: SetNull)
+  activityJobs       BotActivityJob[]
+
+  @@index([status, createdAt])
+  @@index([sourceCandidateUserId])
+  @@index([candidateBatchId])
+  @@map("bot_accounts")
+}
+
+model BotActivityJob {
+  id              String               @id @default(uuid()) @db.Uuid
+  botAccountId    String               @db.Uuid
+  activityType    BotActivityType
+  targetType      String               @db.VarChar(32)
+  targetId        String               @db.Uuid
+  status          BotActivityJobStatus @default(PENDING)
+  attempts        Int                  @default(0)
+  availableAt     DateTime             @default(now())
+  processedAt     DateTime?
+  lastError       String?              @db.VarChar(500)
+  /// Template id/body preview, skip reasons — never secrets.
+  metadata        Json                 @default("{}")
+  idempotencyKey  String               @unique @db.VarChar(191)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  botAccount BotAccount @relation(fields: [botAccountId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([botAccountId, createdAt])
+  @@map("bot_activity_jobs")
 }

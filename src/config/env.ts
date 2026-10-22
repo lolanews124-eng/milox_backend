@@ -9,6 +9,38 @@ const envSchema = z
   /** Public website URL used in shareable links (referrals, emails). */
   PUBLIC_WEB_ORIGIN: z.string().url().default("https://milox.in"),
   ADMIN_ORIGIN: z.string().url(),
+  /** Milox bots manager UI (local default port 3003). */
+  BOTS_ORIGIN: z.string().url().default("http://localhost:3003"),
+  /**
+   * Deployment identity for bot safeguards.
+   * local/test allow mutations; staging/production require BOTS_ALLOW_MUTATIONS.
+   */
+  MILOX_ENV: z
+    .enum(["local", "test", "staging", "production"])
+    .default("local"),
+  /** When true, bot workers may start. Default false — never auto-enable. */
+  BOTS_WORKER_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  /**
+   * Explicit allow for bot-mutating APIs outside local/test.
+   * Never set on production without operator approval.
+   */
+  BOTS_ALLOW_MUTATIONS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  /**
+   * Target eligibility for planner/executor.
+   * - disabled (default): no automatic targeting
+   * - test_fixtures_only: local/test E2E — [[MILLOX_BOTS_TEST_FIXTURE]] only
+   * - fresh_public: local/test — recent eligible public posts / active users
+   * Staging/production always resolve to disabled.
+   */
+  BOTS_TARGET_POLICY: z
+    .enum(["disabled", "test_fixtures_only", "fresh_public"])
+    .default("disabled"),
   /** Comma-separated extra browser origins allowed by CORS (e.g. production domains). */
   CORS_ORIGINS: z
     .string()
@@ -132,6 +164,19 @@ const envSchema = z
         message: "A dedicated cursor signing secret is required in production",
       });
     }
+    if (
+      (environment.BOTS_TARGET_POLICY === "test_fixtures_only" ||
+        environment.BOTS_TARGET_POLICY === "fresh_public") &&
+      (environment.MILOX_ENV === "production" ||
+        environment.MILOX_ENV === "staging")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["BOTS_TARGET_POLICY"],
+        message:
+          "BOTS_TARGET_POLICY targeting modes are not allowed for staging/production (use disabled)",
+      });
+    }
   });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -158,6 +203,7 @@ export function getAllowedOrigins(config: AppConfig): string[] {
   const merged = [
     config.WEB_ORIGIN,
     config.ADMIN_ORIGIN,
+    config.BOTS_ORIGIN,
     ...config.CORS_ORIGINS,
     ...DEFAULT_EXTRA_CORS_ORIGINS,
   ];

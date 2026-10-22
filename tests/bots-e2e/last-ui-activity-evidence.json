@@ -1,0 +1,59 @@
+{
+  "database": "milox_bots_e2e",
+  "hostname": "127.0.0.1",
+  "runId": "uiv_1e80dd5e76",
+  "sourceCandidateUserId": "e3bce655-b8d3-4a19-9f69-53ef00cd5730",
+  "authorUserId": "39b725d6-b3e3-4b8a-b11f-7f800a5a210b",
+  "postId": "bfb4cdb3-da45-4159-9f6e-8f3157a83260",
+  "botAccountId": "719b81a5-e324-401c-a99e-88ca9925eeb1",
+  "botUserId": "1aaf08f6-1675-4bfa-ba49-2d60d211e8fc",
+  "botUsername": "finnnorth",
+  "botStatusAfterProvision": "PAUSED",
+  "botStatusAfterActivate": "ACTIVE",
+  "likeJobId": "c0e4a68f-7e0c-40df-a84b-308a94c8c2f7",
+  "commentJobId": "97f11232-58a8-4be5-b7b9-05ba5164d982",
+  "likeJobStatus": "PROCESSED",
+  "commentJobStatus": "PROCESSED",
+  "likeCount": 1,
+  "commentCount": 1,
+  "organicLikeCount": 0,
+  "organicCommentCount": 0,
+  "jobsApiItems": [
+    {
+      "id": "c0e4a68f-7e0c-40df-a84b-308a94c8c2f7",
+      "botAccountId": "719b81a5-e324-401c-a99e-88ca9925eeb1",
+      "botUsername": "finnnorth",
+      "activityType": "LIKE_POST",
+      "targetType": "post",
+      "targetId": "bfb4cdb3-da45-4159-9f6e-8f3157a83260",
+      "status": "PROCESSED",
+      "attempts": 1,
+      "lastError": null,
+      "metadata": {
+        "detail": "liked"
+      },
+      "createdAt": "2026-10-19T10:01:20.183Z",
+      "processedAt": "2026-10-19T10:01:20.435Z"
+    },
+    {
+      "id": "97f11232-58a8-4be5-b7b9-05ba5164d982",
+      "botAccountId": "719b81a5-e324-401c-a99e-88ca9925eeb1",
+      "botUsername": "finnnorth",
+      "activityType": "COMMENT_POST",
+      "targetType": "post",
+      "targetId": "bfb4cdb3-da45-4159-9f6e-8f3157a83260",
+      "status": "PROCESSED",
+      "attempts": 1,
+      "lastError": null,
+      "metadata": {
+        "detail": "commented"
+      },
+      "createdAt": "2026-10-19T10:01:20.184Z",
+      "processedAt": "2026-10-19T10:01:20.460Z"
+    }
+  ],
+  "duplicateLikeStillOne": true,
+  "browserUiVerified": false,
+  "workerEnabledInMainEnv": false,
+  "note": "Jobs verified via GET /api/v1/admin/bots/jobs (same contract as milox_bots_manage /jobs). Browser UI was not automated. Main .env worker left false. Set BOTS_E2E_KEEP_EVIDENCE=1 and point a separate API process at milox_bots_e2e to inspect in localhost:3003."
+}

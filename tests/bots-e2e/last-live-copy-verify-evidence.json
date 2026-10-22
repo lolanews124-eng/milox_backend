@@ -1,0 +1,19 @@
+{
+  "database": "milox_live_copy",
+  "host": "localhost",
+  "marker": "mlc_verify_a1173eaf48",
+  "botAccountId": "f4d6f5ab-ce2c-4bf8-8adf-8cbd8ed247e2",
+  "botUsername": "mlc_verify_a1173eaf48_bot",
+  "postId": "400dcbad-fd19-47c8-b41e-b0315053f8bd",
+  "likeJobId": "2657b2b1-107d-44b7-bab8-5b499efb7a9c",
+  "commentJobId": "fe21456e-4fe6-4885-96cd-6f4bd7affb3c",
+  "likeStatus": "PROCESSED",
+  "commentStatus": "PROCESSED",
+  "likes": 1,
+  "commentBody": "MLC_VERIFY approved neutral comment.",
+  "organicLikeCount": 0,
+  "organicCommentCount": 0,
+  "jobsApiConfirmedViaPort3001": true,
+  "browserUiVerified": false,
+  "workerRemainsDisabled": true
+}

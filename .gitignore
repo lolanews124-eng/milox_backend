@@ -36,3 +36,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+# Local DB dumps / backups (never commit)
+*.backup
+milox_live.backup
+*.dump
+*.sql.gz

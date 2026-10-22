@@ -15,6 +15,9 @@ describe("PrismaFollowRepository", () => {
         create: vi.fn().mockResolvedValue({ id: followId }),
       },
       user: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ isAutomatedAccount: false }),
         update: vi
           .fn()
           .mockResolvedValueOnce({ followerCount: 6 })
@@ -61,6 +64,9 @@ describe("PrismaFollowRepository", () => {
         create: vi.fn().mockResolvedValue({ id: followId }),
       },
       user: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ isAutomatedAccount: false }),
         update: vi.fn(),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ followerCount: 5 }),
       },

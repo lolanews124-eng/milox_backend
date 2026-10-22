@@ -1,0 +1,52 @@
+{
+  "database": "milox_live_copy",
+  "host": "localhost",
+  "marker": "mlc_follow_0b83cc38f2",
+  "reusedBot": true,
+  "createdFollowTarget": false,
+  "botAccountId": "f4d6f5ab-ce2c-4bf8-8adf-8cbd8ed247e2",
+  "botUserId": "e7cf6b76-f69c-4502-b80f-2670597ed203",
+  "botUsername": "mlc_verify_a1173eaf48_bot",
+  "followTargetUserId": "e2b3577d-4a08-44c7-99e2-46d0c35a8e44",
+  "followTargetUsername": "mlc_verify_a1173eaf48_auth",
+  "followJobId": "86920a5a-765d-4467-a1be-e848c9eb575e",
+  "followJobStatus": "PROCESSED",
+  "followRelationshipId": "460c55ba-876b-4fbd-9997-ea4b5826b228",
+  "followRelationshipStatus": "ACTIVE",
+  "countersBefore": {
+    "botFollowingCount": 0,
+    "targetFollowerCount": 0
+  },
+  "countersAfter": {
+    "botFollowingCount": 0,
+    "targetFollowerCount": 0
+  },
+  "organicCountersUnchanged": true,
+  "duplicateRetry": {
+    "outcome": "skipped",
+    "reason": "already_following"
+  },
+  "activeFollowCount": 1,
+  "jobsApiReturnedFollow": true,
+  "jobsApiSample": {
+    "id": "86920a5a-765d-4467-a1be-e848c9eb575e",
+    "botAccountId": "f4d6f5ab-ce2c-4bf8-8adf-8cbd8ed247e2",
+    "botUsername": "mlc_verify_a1173eaf48_bot",
+    "activityType": "FOLLOW_USER",
+    "targetType": "user",
+    "targetId": "e2b3577d-4a08-44c7-99e2-46d0c35a8e44",
+    "status": "PROCESSED",
+    "attempts": 1,
+    "lastError": null,
+    "metadata": {
+      "detail": "followed",
+      "marker": "mlc_follow_0b83cc38f2"
+    },
+    "createdAt": "2026-10-19T10:20:12.900Z",
+    "processedAt": "2026-10-19T10:20:13.037Z"
+  },
+  "browserUiVerified": false,
+  "workerRemainsDisabled": true,
+  "killSwitchUntouched": true,
+  "dashboardHint": "Refresh http://localhost:3003/jobs — expect FOLLOW_USER PROCESSED for @mlc_verify_a1173eaf48_bot"
+}

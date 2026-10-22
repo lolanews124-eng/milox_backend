@@ -12,6 +12,7 @@ import {
 } from "./config/env.js";
 import { prisma } from "./infrastructure/prisma/client.js";
 import { createAdminModule } from "./modules/admin/index.js";
+import { createBotsModule } from "./modules/bots/index.js";
 import { createEmailMarketingPublicRouter } from "./modules/email-marketing/public-router.js";
 import { createAuthModule } from "./modules/auth/index.js";
 import type { SignupOfficialChatWriter } from "./modules/official-chat/infrastructure/prisma-official-chat-repository.js";
@@ -94,6 +95,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
     dependencies.onEmailSettingsUpdated,
     paypalClient,
   );
+  const bots = createBotsModule(config, database, auth.authenticate);
   const blog = createBlogModule(database);
   const posts = createPostModule(
     config,
@@ -344,6 +346,7 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   app.use("/api/v1/reports", moderation.reportsRouter);
   app.use("/api/v1/app", createAppReleaseRouter(database));
   app.use("/api/v1/admin", admin.router);
+  app.use("/api/v1/admin/bots", bots.router);
   app.use("/api/v1/blog", blog.router);
   app.use("/api/v1/email", createEmailMarketingPublicRouter(config, database));
   app.use(notFoundHandler);

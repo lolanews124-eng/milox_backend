@@ -1,0 +1,85 @@
+{
+  "pipelines": {
+    "like": {
+      "jobId": "5ae64b93-253c-4baf-a98a-f54bf945dfe1",
+      "idempotencyKey": "like:c88abccb-7ffb-427f-b2e2-ca51e9a9c72f:eaf71928-df7b-4c4e-9ce1-a123a80680da",
+      "status": "PROCESSED",
+      "organicLikeCountBefore": 0,
+      "organicLikeCountAfter": 0,
+      "domainLikes": 1,
+      "jobsApiSample": {
+        "id": "5ae64b93-253c-4baf-a98a-f54bf945dfe1",
+        "botAccountId": "c88abccb-7ffb-427f-b2e2-ca51e9a9c72f",
+        "botUsername": "e2e_45807ed94b_bot",
+        "activityType": "LIKE_POST",
+        "targetType": "post",
+        "targetId": "eaf71928-df7b-4c4e-9ce1-a123a80680da",
+        "status": "PROCESSED",
+        "attempts": 1,
+        "lastError": null,
+        "metadata": {
+          "detail": "liked"
+        },
+        "createdAt": "2026-10-19T11:30:07.011Z",
+        "processedAt": "2026-10-19T11:30:07.036Z"
+      }
+    },
+    "comment": {
+      "jobId": "a3b9bbef-734f-4ba1-8d51-3afdde49b771",
+      "idempotencyKey": "comment:c88abccb-7ffb-427f-b2e2-ca51e9a9c72f:eaf71928-df7b-4c4e-9ce1-a123a80680da",
+      "status": "PROCESSED",
+      "commentId": "8a50a339-1bda-47c0-9958-2b1ec48239c2",
+      "commentBody": "E2E approved comment template.",
+      "organicCommentCountBefore": 0,
+      "organicCommentCountAfter": 0,
+      "jobsApiSample": {
+        "id": "a3b9bbef-734f-4ba1-8d51-3afdde49b771",
+        "botAccountId": "c88abccb-7ffb-427f-b2e2-ca51e9a9c72f",
+        "botUsername": "e2e_45807ed94b_bot",
+        "activityType": "COMMENT_POST",
+        "targetType": "post",
+        "targetId": "eaf71928-df7b-4c4e-9ce1-a123a80680da",
+        "status": "PROCESSED",
+        "attempts": 1,
+        "lastError": null,
+        "metadata": {
+          "detail": "commented"
+        },
+        "createdAt": "2026-10-19T11:30:07.129Z",
+        "processedAt": "2026-10-19T11:30:07.144Z"
+      }
+    },
+    "follow": {
+      "jobId": "57a68f51-b010-4c60-a2b2-962dbf34149d",
+      "idempotencyKey": "follow:c88abccb-7ffb-427f-b2e2-ca51e9a9c72f:3c3b86bf-d85a-4059-986b-37617709f8f3",
+      "status": "PROCESSED",
+      "followId": "86764b8d-9c76-4522-b992-b8d397ac45df",
+      "followStatus": "ACTIVE",
+      "organicFollowingBefore": 0,
+      "organicFollowingAfter": 0,
+      "organicFollowersBefore": 0,
+      "organicFollowersAfter": 0,
+      "jobsApiSample": {
+        "id": "57a68f51-b010-4c60-a2b2-962dbf34149d",
+        "botAccountId": "c88abccb-7ffb-427f-b2e2-ca51e9a9c72f",
+        "botUsername": "e2e_45807ed94b_bot",
+        "activityType": "FOLLOW_USER",
+        "targetType": "user",
+        "targetId": "3c3b86bf-d85a-4059-986b-37617709f8f3",
+        "status": "PROCESSED",
+        "attempts": 1,
+        "lastError": null,
+        "metadata": {
+          "detail": "followed"
+        },
+        "createdAt": "2026-10-19T11:30:07.208Z",
+        "processedAt": "2026-10-19T11:30:07.222Z"
+      }
+    }
+  },
+  "database": "milox_bots_e2e",
+  "hostname": "127.0.0.1",
+  "runId": "e2e_45807ed94b",
+  "botAccountId": "c88abccb-7ffb-427f-b2e2-ca51e9a9c72f",
+  "botUsername": "e2e_45807ed94b_bot"
+}

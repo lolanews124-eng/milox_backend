@@ -17,10 +17,18 @@ import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
 import { NotificationOutboxWorker } from "./jobs/notifications/notification-outbox-worker.js";
 import { SubscriptionExpiryWorker } from "./jobs/premium/subscription-expiry-worker.js";
+import { BotActivityWorker } from "./jobs/bots/bot-activity-worker.js";
 import { CryptoService } from "./modules/auth/application/services/crypto-service.js";
 import { createChatService } from "./modules/chat/index.js";
 import { CallService } from "./modules/calls/index.js";
+import { CommentService } from "./modules/comments/application/services/comment-service.js";
+import { PrismaCommentRepository } from "./modules/comments/infrastructure/prisma-comment-repository.js";
+import { FeedCursorCodec } from "./modules/feed/application/services/feed-cursor.js";
+import { FollowService } from "./modules/follows/application/services/follow-service.js";
+import { PrismaFollowRepository } from "./modules/follows/infrastructure/prisma-follow-repository.js";
 import { createOfficialChatModule } from "./modules/official-chat/index.js";
+import { PostService } from "./modules/posts/application/services/post-service.js";
+import { PrismaPostRepository } from "./modules/posts/infrastructure/prisma-post-repository.js";
 import {
   registerChatGateway,
   type ChatClientToServerEvents,
@@ -36,6 +44,16 @@ const crypto = new CryptoService(config);
 const emailWorker = new EmailWorker(prisma, config);
 const feedScoreWorker = new FeedScoreWorker(prisma, config);
 const subscriptionExpiryWorker = new SubscriptionExpiryWorker(prisma, config);
+const feedCursors = new FeedCursorCodec(
+  config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
+);
+const botActivityWorker = new BotActivityWorker(
+  prisma,
+  config,
+  new PostService(new PrismaPostRepository(prisma), feedCursors, config),
+  new CommentService(new PrismaCommentRepository(prisma), feedCursors, config),
+  new FollowService(new PrismaFollowRepository(prisma), feedCursors, config),
+);
 let callLifecycleWorker: CallLifecycleWorker;
 const port = config.PORT;
 const chatOutboxHooks = {
@@ -164,6 +182,7 @@ async function bootstrap(): Promise<void> {
     callLifecycleWorker.start();
     void chatOutboxWorker.start();
     void notificationOutboxWorker.start();
+    botActivityWorker.start();
   });
 }
 
@@ -180,6 +199,7 @@ async function shutdown(signal: string): Promise<void> {
   callLifecycleWorker.stop();
   chatOutboxWorker.stop();
   notificationOutboxWorker.stop();
+  botActivityWorker.stop();
   await io.close();
   await prisma.$disconnect();
 }
