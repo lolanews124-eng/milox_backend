@@ -26,7 +26,9 @@ import {
 import { MILOX_OFFICIAL_USERNAME } from "../../../official-chat/official-chat-config.js";
 import {
   isAdsEligibleProfile,
+  moderateDisplayName,
   moderateProfileText,
+  moderateUsername,
 } from "../../../moderation/application/ugc-moderation.js";
 import type { AuthService } from "../../../auth/application/services/auth-service.js";
 import {
@@ -553,12 +555,18 @@ export class UserService {
             429,
           );
         }
+        // Reject prohibited handles before uniqueness / persistence.
+        moderateUsername(normalized);
         data.username = input.username;
         data.usernameNormalized = normalized;
         data.usernameChangedAt = new Date();
       } else {
         delete data.username;
       }
+    }
+
+    if (input.displayName !== undefined) {
+      moderateDisplayName(input.displayName);
     }
 
     if (input.ageRange !== undefined) {
@@ -586,11 +594,19 @@ export class UserService {
       );
     }
 
-    if (input.bio !== undefined || input.websiteUrl !== undefined) {
+    if (
+      input.bio !== undefined ||
+      input.websiteUrl !== undefined ||
+      input.instagramHandle !== undefined
+    ) {
       const moderation = moderateProfileText({
         bio: input.bio !== undefined ? input.bio : current.bio,
         websiteUrl:
           input.websiteUrl !== undefined ? input.websiteUrl : current.websiteUrl,
+        instagramHandle:
+          input.instagramHandle !== undefined
+            ? input.instagramHandle
+            : current.instagramHandle,
       });
       data.bioModerationState = moderation.state;
       data.bioModerationReason = moderation.reason;

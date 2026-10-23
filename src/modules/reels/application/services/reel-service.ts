@@ -1,6 +1,11 @@
 import type { AppConfig } from "../../../../config/env.js";
 import { prisma } from "../../../../infrastructure/prisma/client.js";
 import { assertCanCreateContent } from "../../../moderation/application/profile-health.js";
+import {
+  moderateCaption,
+  moderateStrictPublicText,
+} from "../../../moderation/application/ugc-moderation.js";
+import { UGC_LENGTH_LIMITS } from "../../../moderation/application/ugc-text-normalize.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { viewerFollowStateFromStatus } from "../../../posts/application/post-view.js";
 import type { FeedCursorCodec } from "../../../feed/application/services/feed-cursor.js";
@@ -82,6 +87,10 @@ export class ReelService {
   ): Promise<object> {
     await this.assertEnabled();
     await assertCanCreateContent(prisma, authorId);
+    const caption = input.caption?.trim() ? input.caption.trim() : null;
+    if (caption) {
+      moderateCaption(caption, UGC_LENGTH_LIMITS.caption);
+    }
     const posterMediaId = await this.checkedPoster(authorId, input.posterMediaId);
     let videoId: string | null = null;
     try {
@@ -91,7 +100,7 @@ export class ReelService {
         authorId,
         mediaAssetId: uploaded.id,
         posterMediaId,
-        caption: input.caption?.trim() ? input.caption.trim() : null,
+        caption,
         durationMs: input.durationMs ?? 0,
         dayStart: startOfIstDay(),
       });
@@ -556,10 +565,20 @@ export class ReelService {
     body: string,
     parentId?: string,
   ): Promise<object> {
+    const trimmed = body.trim();
+    if (!trimmed) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Comment body cannot be blank",
+        400,
+      );
+    }
+    // Reel comments have no UGC state columns — must be immediately publishable.
+    moderateStrictPublicText(trimmed, "body", UGC_LENGTH_LIMITS.comment);
     const comment = await this.repository.addComment({
       reelId,
       authorId,
-      body,
+      body: trimmed,
       ...(parentId ? { parentId } : {}),
     });
     if (!comment) {

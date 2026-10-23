@@ -3,6 +3,10 @@ import { randomInt } from "node:crypto";
 import type { AgeRange, Gender, UserRole, UserStatus } from "@prisma/client";
 
 import type { AppConfig } from "../../../../config/env.js";
+import {
+  moderateDisplayName,
+  moderateUsername,
+} from "../../../moderation/application/ugc-moderation.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { isStaffRole } from "../../../../shared/user-visibility.js";
 import { DuplicateAccountError } from "../ports/auth-repository.js";
@@ -63,6 +67,10 @@ export class AuthService {
     input: SignupInput,
     context: RequestContext,
   ): Promise<AuthSession> {
+    const usernameNormalized = normalizeUsername(input.username);
+    moderateUsername(usernameNormalized);
+    moderateDisplayName(input.displayName);
+
     const verification = this.crypto.createOpaqueToken();
     const passwordHash = await this.crypto.hashPassword(input.password);
 
@@ -70,7 +78,7 @@ export class AuthService {
     try {
       user = await this.repository.createAccount({
         username: input.username,
-        usernameNormalized: normalizeUsername(input.username),
+        usernameNormalized,
         email: normalizeEmail(input.email),
         passwordHash,
         displayName: input.displayName.trim(),

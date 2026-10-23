@@ -1,6 +1,8 @@
 import type { AppConfig } from "../../../../config/env.js";
 import { prisma } from "../../../../infrastructure/prisma/client.js";
 import { assertCanCreateContent } from "../../../moderation/application/profile-health.js";
+import { moderateCaption } from "../../../moderation/application/ugc-moderation.js";
+import { UGC_LENGTH_LIMITS } from "../../../moderation/application/ugc-text-normalize.js";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { presentPublicAuthor } from "../../../posts/application/post-view.js";
 import type {
@@ -44,10 +46,14 @@ export class StoryService {
         429,
       );
     }
+    const caption = input.caption?.trim() || null;
+    if (caption) {
+      moderateCaption(caption, UGC_LENGTH_LIMITS.storyCaption);
+    }
     const story = await this.repository.create({
       authorId,
       mediaAssetId: input.mediaId,
-      caption: input.caption?.trim() || null,
+      caption,
       expiresAt: new Date(Date.now() + STORY_TTL_HOURS * 3600 * 1000),
     });
     return this.present(story, authorId);

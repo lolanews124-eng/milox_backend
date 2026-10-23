@@ -155,7 +155,7 @@ export function tokenHasEmbeddedStem(
   if (token.startsWith(stem) && token.length > stem.length) {
     const rest = token.slice(stem.length);
     if (config.prefixGlue) {
-      return config.prefixGlue.has(rest);
+      return matchesPrefixGlue(rest, config.prefixGlue);
     }
     const minRest = config.prefixCompoundMinRest ?? 2;
     return rest.length >= minRest;
@@ -168,6 +168,13 @@ export function tokenHasEmbeddedStem(
   }
 
   return false;
+}
+
+/** `chat` or `chat99` style remainders against a glue allowlist. */
+function matchesPrefixGlue(rest: string, glue: ReadonlySet<string>): boolean {
+  if (glue.has(rest)) return true;
+  const match = /^([a-z\u0900-\u097F]+)(\d+)$/u.exec(rest);
+  return Boolean(match && glue.has(match[1]!));
 }
 
 /** Scan space-separated tokens for any embeddable stem hit. */
@@ -205,4 +212,7 @@ export const UGC_LENGTH_LIMITS = {
   comment: 1000,
   websiteUrl: 255,
   caption: 300,
+  storyCaption: 200,
+  displayName: 80,
+  username: 32,
 } as const;
