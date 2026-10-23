@@ -336,4 +336,11 @@ export class PrismaAuthRepository implements AuthRepository {
       data: { passwordHash },
     });
   }
+
+  async touchLastLoginAt(userId: string, at: Date = new Date()): Promise<void> {
+    await this.database.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: at },
+    });
+  }
 }

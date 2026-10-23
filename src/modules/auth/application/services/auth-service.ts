@@ -183,6 +183,8 @@ export class AuthService {
       throw error;
     }
 
+    await this.repository.touchLastLoginAt(result.user.id);
+
     return {
       accessToken: await this.createAccessToken(result.user),
       refreshToken: replacement.raw,
@@ -302,6 +304,8 @@ export class AuthService {
       expiresAt: addDays(new Date(), this.config.REFRESH_TOKEN_TTL_DAYS),
       ...optionalContext(context, this.crypto),
     });
+    // Qualifying activity for 14-day inactivity suspension policy.
+    await this.repository.touchLastLoginAt(user.id);
 
     return {
       accessToken: await this.createAccessToken(user),

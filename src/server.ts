@@ -17,6 +17,7 @@ import { EmailWorker } from "./jobs/email/email-worker.js";
 import { FeedScoreWorker } from "./jobs/feed/feed-score-worker.js";
 import { NotificationOutboxWorker } from "./jobs/notifications/notification-outbox-worker.js";
 import { SubscriptionExpiryWorker } from "./jobs/premium/subscription-expiry-worker.js";
+import { InactiveAccountWorker } from "./jobs/users/inactive-account-worker.js";
 import { BotActivityWorker } from "./jobs/bots/bot-activity-worker.js";
 import { CryptoService } from "./modules/auth/application/services/crypto-service.js";
 import { createChatService } from "./modules/chat/index.js";
@@ -44,6 +45,7 @@ const crypto = new CryptoService(config);
 const emailWorker = new EmailWorker(prisma, config);
 const feedScoreWorker = new FeedScoreWorker(prisma, config);
 const subscriptionExpiryWorker = new SubscriptionExpiryWorker(prisma, config);
+const inactiveAccountWorker = new InactiveAccountWorker(prisma, config);
 const feedCursors = new FeedCursorCodec(
   config.CURSOR_SIGNING_SECRET ?? config.JWT_ACCESS_SECRET,
 );
@@ -179,6 +181,7 @@ async function bootstrap(): Promise<void> {
     void emailWorker.start();
     feedScoreWorker.start();
     subscriptionExpiryWorker.start();
+    inactiveAccountWorker.start();
     callLifecycleWorker.start();
     void chatOutboxWorker.start();
     void notificationOutboxWorker.start();
@@ -196,6 +199,7 @@ async function shutdown(signal: string): Promise<void> {
   emailWorker.stop();
   feedScoreWorker.stop();
   subscriptionExpiryWorker.stop();
+  inactiveAccountWorker.stop();
   callLifecycleWorker.stop();
   chatOutboxWorker.stop();
   notificationOutboxWorker.stop();

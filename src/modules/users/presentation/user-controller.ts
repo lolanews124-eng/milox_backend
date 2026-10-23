@@ -64,6 +64,8 @@ export class UserController {
       username,
       request.auth?.userId,
     );
+    // Avoid CDN/Next ISR serving stale suspended profiles after status changes.
+    response.setHeader("Cache-Control", "private, no-store");
     response.status(200).json(successEnvelope(request, profile));
   };
 

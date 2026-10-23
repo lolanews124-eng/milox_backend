@@ -217,5 +217,6 @@ function createRepository(): AuthRepository {
     createPasswordReset: vi.fn(),
     resetPassword: vi.fn(),
     updatePassword: vi.fn(),
+    touchLastLoginAt: vi.fn().mockResolvedValue(undefined),
   };
 }

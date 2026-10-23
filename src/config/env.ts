@@ -82,6 +82,28 @@ const envSchema = z
       .int()
       .positive()
       .default(300_000),
+  /**
+   * When true, API process runs the inactive-account suspension worker.
+   * Prefer an external cron calling `npm run users:suspend-inactive:apply`
+   * in production; leave false until explicitly enabled.
+   */
+  INACTIVE_ACCOUNT_WORKER_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  /** Days without qualifying activity before automatic SUSPENDED. */
+  INACTIVE_ACCOUNT_DAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(365)
+    .default(14),
+  /** Poll interval for in-process inactive-account worker (default 24h). */
+  INACTIVE_ACCOUNT_POLL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(86_400_000),
     INTEREST_DAILY_LIMIT: z.coerce.number().int().positive().max(500).default(30),
     /** Free-tier users send this many interests per day at no point cost (env fallback). */
     FREE_DAILY_INTEREST_GRANTS: z.coerce

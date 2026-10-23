@@ -34,6 +34,8 @@
     "admin:create-super": "tsx scripts/create-super-admin.ts",
     "audit:ugc": "tsx scripts/audit-ugc-moderation.ts",
     "audit:ugc:apply": "tsx scripts/audit-ugc-moderation.ts --apply",
+    "users:suspend-inactive": "tsx scripts/suspend-inactive-users.ts",
+    "users:suspend-inactive:apply": "tsx scripts/suspend-inactive-users.ts --apply",
     "db:local": "node scripts/start-local-db.mjs",
     "db:push": "prisma db push",
     "db:constraints": "prisma db execute --file prisma/sql/constraints.sql --schema prisma/schema.prisma",

@@ -1037,7 +1037,12 @@ export class PrismaAdminRepository implements AdminRepository {
           where: { id: target.id },
           data: {
             status: data.status,
-            bannedAt: data.status === UserStatus.BANNED ? now : null,
+            // Timestamp for both ban and suspension (admin + inactivity job).
+            bannedAt:
+              data.status === UserStatus.BANNED ||
+              data.status === UserStatus.SUSPENDED
+                ? now
+                : null,
             banReason:
               data.status === UserStatus.ACTIVE ? null : data.reason,
           },

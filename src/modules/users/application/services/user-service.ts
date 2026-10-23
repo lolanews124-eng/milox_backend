@@ -359,9 +359,11 @@ export class UserService {
     );
     if (
       !user ||
+      user.status !== UserStatus.ACTIVE ||
       (user.role !== "USER" &&
         !(user.isSystemAccount && user.usernameNormalized === MILOX_OFFICIAL_USERNAME))
     ) {
+      // Suspended / banned / deleted profiles are not publicly addressable (404, not soft redirect).
       throw new AppError("NOT_FOUND", "User not found", 404);
     }
     const relation = await this.repository.getViewerRelation(

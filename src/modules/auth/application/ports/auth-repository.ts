@@ -88,6 +88,8 @@ export interface AuthRepository {
     now: Date,
   ): Promise<boolean>;
   updatePassword(userId: string, passwordHash: string): Promise<void>;
+  /** Qualifying activity for inactivity policy — login / session refresh. */
+  touchLastLoginAt(userId: string, at?: Date): Promise<void>;
 }
 
 export class DuplicateAccountError extends Error {

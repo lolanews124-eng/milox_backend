@@ -5,8 +5,9 @@
  * Accounts that never open realtime chat may have null `lastSeenAt`. Ranking
  * therefore falls back to `createdAt` and must be labeled as an estimate.
  *
- * `lastLoginAt` exists on User but is not written by the application — do not
- * use it until a dedicated login/refresh write is shipped.
+ * `lastLoginAt` is now written on login/refresh (consumer inactivity policy).
+ * Bot candidate ranking still uses lastSeenAt ?? createdAt for presence_v1
+ * stability; see users/inactive-account-policy.ts for account suspension.
  */
 
 export const BOT_CANDIDATE_CRITERIA_VERSION = "presence_v1" as const;
