@@ -10,6 +10,10 @@ import path from "node:path";
 import { AppError } from "../../../../shared/errors/app-error.js";
 import { istDateKey } from "../../../../shared/ist-time.js";
 import { ReportModerationError } from "../../../moderation/application/report-moderation.js";
+import {
+  listPendingUgc,
+  resolveUgcReview,
+} from "../../../moderation/application/ugc-admin-review.js";
 import { PhotoReasonRequiredError } from "../remove-user-photo.js";
 import {
   AdminHierarchyError,
@@ -2356,6 +2360,25 @@ export class AdminService {
       "userId or username is required",
       400,
     );
+  }
+
+  /** Keyword-held UGC queue (posts, comments, bios). */
+  listPendingUgc(input: { limit?: number; offset?: number } = {}) {
+    return listPendingUgc(this.requireDatabase(), input);
+  }
+
+  resolveUgcReview(
+    actorUserId: string,
+    input: {
+      resourceType: "post" | "comment" | "bio";
+      resourceId: string;
+      action: "approve" | "reject" | "remove";
+    },
+  ) {
+    return resolveUgcReview(this.requireDatabase(), {
+      actorUserId,
+      ...input,
+    });
   }
 }
 

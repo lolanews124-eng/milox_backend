@@ -22,6 +22,7 @@ import {
 } from "./post-spam-guard.js";
 import { prisma } from "../../../../infrastructure/prisma/client.js";
 import { assertCanCreateContent } from "../../../moderation/application/profile-health.js";
+import { moderatePostBody } from "../../../moderation/application/ugc-moderation.js";
 import { recordDailyMission } from "../../../rewards/application/daily-engagement.js";
 
 export interface PostPage {
@@ -90,11 +91,16 @@ export class PostService implements ProfileUpdatePostWriter {
       );
     }
 
+    const moderation = moderatePostBody(body);
+
     try {
       const created = await this.repository.create({
         authorId,
         body,
         mediaIds,
+        isHidden: moderation.isHidden,
+        moderationState: moderation.state,
+        moderationReason: moderation.reason,
         ...(idempotencyKey
           ? {
               idempotencyKey,
@@ -107,11 +113,18 @@ export class PostService implements ProfileUpdatePostWriter {
           () => undefined,
         );
       }
-      return {
+      const moderationWarning =
+        moderation.state === "PENDING"
+          ? (moderation.evaluation.publicReason ??
+            "Your post is held for review and is not public yet.")
+          : null;
+      const warning = spamCheck.warning ?? moderationWarning;
+      const result: CreatePostResult = {
         item: presentPost(created.post, this.config),
         replayed: created.replayed,
-        ...(spamCheck.warning ? { warning: spamCheck.warning } : {}),
       };
+      if (warning) result.warning = warning;
+      return result;
     } catch (error) {
       if (error instanceof PostMediaOwnershipError) {
         throw new AppError(
@@ -339,7 +352,12 @@ export class PostService implements ProfileUpdatePostWriter {
         400,
       );
     }
-    const updated = await this.repository.update(postId, authorId, body);
+    const moderation = moderatePostBody(body);
+    const updated = await this.repository.update(postId, authorId, body, {
+      moderationState: moderation.state,
+      moderationReason: moderation.reason,
+      isHidden: moderation.isHidden,
+    });
     if (!updated) throw postNotFound();
     return presentPost(updated, this.config);
   }

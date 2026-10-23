@@ -3,12 +3,14 @@ import type { AgeRange, Gender, RelationshipGoal } from "@prisma/client";
 
 import type { AppConfig } from "../../../config/env.js";
 import { isUserOnline } from "../../chat/realtime/presence-registry.js";
+import { isAdsEligibleContent } from "../../moderation/application/ugc-moderation.js";
 
 export interface PostAuthorViewRecord {
   id: string;
   username: string;
   displayName: string | null;
   bio: string | null;
+  bioModerationState?: string | null;
   ageRange: AgeRange;
   gender: Gender;
   country: string;
@@ -43,6 +45,8 @@ export interface PostViewRecord {
   saveCount: number;
   viewCount: number;
   trendingScore: number;
+  isHidden?: boolean;
+  moderationState?: string;
   createdAt: Date;
   updatedAt: Date;
   author: PostAuthorViewRecord;
@@ -86,6 +90,12 @@ export function presentPost(post: PostViewRecord, config: AppConfig): object {
     viewCount: post.viewCount,
     viewerLiked: post.likes.length > 0,
     viewerSaved: post.saves.length > 0,
+    /** Server decision: do not render AdSense on ineligible posts. */
+    adsEligible: isAdsEligibleContent({
+      moderationState: post.moderationState ?? null,
+      isHidden: post.isHidden ?? null,
+      deletedAt: null,
+    }),
     createdAt: post.createdAt.toISOString(),
     updatedAt: post.updatedAt.toISOString(),
   };
@@ -95,18 +105,20 @@ export function presentPublicAuthor(
   author: PostAuthorViewRecord,
   config: AppConfig,
 ): object {
+  const bioApproved =
+    !author.bioModerationState || author.bioModerationState === "APPROVED";
   return {
     id: author.id,
     username: author.username,
     displayName: author.displayName,
-    bio: author.bio,
+    bio: bioApproved ? author.bio : null,
     profilePhotoUrl: mediaUrl(author.profilePhoto?.id, config),
     coverPhotoUrl: mediaUrl(author.coverPhoto?.id, config),
     gender: author.gender,
     ...(!author.hideAge ? { ageRange: ageRangeLabel(author.ageRange) } : {}),
     ...(!author.hideCountry ? { country: author.country } : {}),
     relationshipGoal: author.relationshipGoal,
-    websiteUrl: author.websiteUrl,
+    websiteUrl: bioApproved ? author.websiteUrl : null,
     instagramHandle: author.instagramHandle,
     interests: author.interests.map(({ tag }) => tag.slug),
     isVerifiedBadge: author.isVerifiedBadge,

@@ -10,6 +10,7 @@ import {
   CommentDepthError,
   ParentCommentNotFoundError,
 } from "../ports/comment-repository.js";
+import { moderateCommentBody } from "../../../moderation/application/ugc-moderation.js";
 import { presentComment } from "../comment-view.js";
 
 export interface CommentPage {
@@ -38,11 +39,15 @@ export class CommentService {
         400,
       );
     }
+    const moderation = moderateCommentBody(body);
     try {
       const comment = await this.repository.create({
         postId,
         authorId,
         body,
+        isHidden: moderation.isHidden,
+        moderationState: moderation.state,
+        moderationReason: moderation.reason,
         ...(input.parentId ? { parentId: input.parentId } : {}),
       });
       if (!comment) throw postNotFound();

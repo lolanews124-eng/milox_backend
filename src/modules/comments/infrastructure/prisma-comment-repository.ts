@@ -37,6 +37,7 @@ export class PrismaCommentRepository implements CommentRepository {
             postId: data.postId,
             deletedAt: null,
             isHidden: false,
+            moderationState: "APPROVED",
             author: { is: visibleAuthorWhere(data.authorId) },
           },
           select: { id: true, authorId: true, depth: true },
@@ -51,6 +52,13 @@ export class PrismaCommentRepository implements CommentRepository {
           authorId: data.authorId,
           body: data.body,
           depth: parent ? 1 : 0,
+          isHidden: data.isHidden === true,
+          moderationState: data.moderationState ?? "APPROVED",
+          moderationReason: data.moderationReason ?? null,
+          moderatedAt:
+            data.moderationState && data.moderationState !== "APPROVED"
+              ? new Date()
+              : null,
           ...(parent ? { parentId: parent.id } : {}),
         },
         select: { id: true },
@@ -116,8 +124,8 @@ export class PrismaCommentRepository implements CommentRepository {
         depth: 0,
         parentId: null,
         deletedAt: null,
-        isHidden: false,
         author: { is: visibleAuthorWhere(query.viewerId) },
+        ...visibleCommentModerationWhere(query.viewerId),
         ...cursorWhere(query.before),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -135,9 +143,9 @@ export class PrismaCommentRepository implements CommentRepository {
         id: parentId,
         depth: 0,
         deletedAt: null,
-        isHidden: false,
         author: { is: visibleAuthorWhere(query.viewerId) },
         post: { is: visiblePostContentWhere(query.viewerId) },
+        ...visibleCommentModerationWhere(query.viewerId),
       },
       select: { id: true },
     });
@@ -147,8 +155,8 @@ export class PrismaCommentRepository implements CommentRepository {
         parentId,
         depth: 1,
         deletedAt: null,
-        isHidden: false,
         author: { is: visibleAuthorWhere(query.viewerId) },
+        ...visibleCommentModerationWhere(query.viewerId),
         ...cursorWhere(query.before),
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -335,6 +343,7 @@ function findVisibleForAction(
       id: commentId,
       deletedAt: null,
       isHidden: false,
+      moderationState: "APPROVED",
       author: { is: visibleAuthorWhere(viewerId) },
       post: { is: visiblePostContentWhere(viewerId) },
     },
@@ -350,6 +359,21 @@ function cursorWhere(
     OR: [
       { createdAt: { lt: before.createdAt } },
       { createdAt: before.createdAt, id: { lt: before.id } },
+    ],
+  };
+}
+
+/** Public: approved only. Authors may see their own pending comments. */
+function visibleCommentModerationWhere(
+  viewerId?: string,
+): Prisma.CommentWhereInput {
+  if (!viewerId) {
+    return { isHidden: false, moderationState: "APPROVED" };
+  }
+  return {
+    OR: [
+      { isHidden: false, moderationState: "APPROVED" },
+      { authorId: viewerId },
     ],
   };
 }

@@ -189,6 +189,18 @@ export function createAdminRouter(
     asyncHandler(controller.removeUserPhoto),
   );
   router.get(
+    "/ugc-reviews",
+    readLimit,
+    moderationStaff,
+    asyncHandler(controller.listPendingUgc),
+  );
+  router.post(
+    "/ugc-reviews/resolve",
+    mutationLimit,
+    moderationStaff,
+    asyncHandler(controller.resolveUgcReview),
+  );
+  router.get(
     "/reports",
     readLimit,
     moderationStaff,

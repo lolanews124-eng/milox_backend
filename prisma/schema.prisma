@@ -350,6 +350,10 @@ model User {
   status              UserStatus        @default(ACTIVE)
   displayName         String?           @db.VarChar(80)
   bio                 String?           @db.VarChar(500)
+  /// Bio / website keyword gate. Non-APPROVED bios are omitted from public APIs.
+  bioModerationState  UgcModerationState @default(APPROVED)
+  bioModerationReason String?            @db.VarChar(500)
+  bioModeratedAt      DateTime?
   country             String            @db.VarChar(80)
   relationshipGoal    RelationshipGoal?
   websiteUrl          String?           @db.VarChar(255)
@@ -639,6 +643,14 @@ enum ReelReviewStatus {
   REJECTED
 }
 
+/// Keyword / policy review state for posts, comments, and profile text.
+enum UgcModerationState {
+  APPROVED
+  PENDING
+  REJECTED
+  REMOVED
+}
+
 model Reel {
   id            String           @id @default(uuid()) @db.Uuid
   authorId      String           @db.Uuid
@@ -777,6 +789,10 @@ model Post {
   /// Engagement score used by trending feed (recomputed by jobs).
   trendingScore Float     @default(0)
   isHidden      Boolean   @default(false)
+  /// Keyword / policy gate. PENDING/REJECTED/REMOVED are never public.
+  moderationState   UgcModerationState @default(APPROVED)
+  moderationReason  String?            @db.VarChar(500)
+  moderatedAt       DateTime?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -796,6 +812,7 @@ model Post {
   @@index([createdAt])
   @@index([trendingScore, createdAt])
   @@index([deletedAt, isHidden, createdAt])
+  @@index([moderationState, createdAt])
   @@map("posts")
 }
 
@@ -942,6 +959,9 @@ model Comment {
   /// Depth 0 = top-level, 1 = reply. Higher depths rejected in application.
   depth      Int       @default(0)
   isHidden   Boolean   @default(false)
+  moderationState  UgcModerationState @default(APPROVED)
+  moderationReason String?            @db.VarChar(500)
+  moderatedAt      DateTime?
   deletedAt  DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -957,6 +977,7 @@ model Comment {
   @@index([authorId, createdAt])
   @@index([parentId])
   @@index([deletedAt, isHidden])
+  @@index([moderationState, createdAt])
   @@map("comments")
 }
 

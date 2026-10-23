@@ -41,6 +41,8 @@ const profileSelect = {
   status: true,
   displayName: true,
   bio: true,
+  bioModerationState: true,
+  bioModerationReason: true,
   country: true,
   relationshipGoal: true,
   websiteUrl: true,
@@ -291,6 +293,13 @@ export class PrismaUserRepository implements UserRepository {
               ? { displayName: data.displayName }
               : {}),
             ...(data.bio !== undefined ? { bio: data.bio } : {}),
+            ...(data.bioModerationState !== undefined
+              ? {
+                  bioModerationState: data.bioModerationState,
+                  bioModerationReason: data.bioModerationReason ?? null,
+                  bioModeratedAt: data.bioModeratedAt ?? new Date(),
+                }
+              : {}),
             ...(data.ageRange !== undefined ? { ageRange: data.ageRange } : {}),
             ...(data.country !== undefined ? { country: data.country } : {}),
             ...(data.relationshipGoal !== undefined

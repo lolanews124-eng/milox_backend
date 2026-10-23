@@ -72,6 +72,13 @@ export class PrismaPostRepository implements PostRepository {
           data: {
             authorId: data.authorId,
             body: data.body,
+            isHidden: data.isHidden === true,
+            moderationState: data.moderationState ?? "APPROVED",
+            moderationReason: data.moderationReason ?? null,
+            moderatedAt:
+              data.moderationState && data.moderationState !== "APPROVED"
+                ? new Date()
+                : null,
             ...(data.mediaIds.length > 0
               ? {
                   media: {
@@ -399,11 +406,32 @@ export class PrismaPostRepository implements PostRepository {
     postId: string,
     authorId: string,
     body: string | null,
+    moderation?: {
+      moderationState: "APPROVED" | "PENDING" | "REJECTED" | "REMOVED";
+      moderationReason: string | null;
+      isHidden: boolean;
+    },
   ): Promise<PostViewRecord | null> {
     return this.database.$transaction(async (transaction) => {
       const result = await transaction.post.updateMany({
-        where: { id: postId, authorId, deletedAt: null, isHidden: false },
-        data: { body },
+        where: {
+          id: postId,
+          authorId,
+          deletedAt: null,
+          // Author may edit their own pending (held) posts.
+          OR: [{ isHidden: false }, { moderationState: "PENDING" }],
+        },
+        data: {
+          body,
+          ...(moderation
+            ? {
+                isHidden: moderation.isHidden,
+                moderationState: moderation.moderationState,
+                moderationReason: moderation.moderationReason,
+                moderatedAt: new Date(),
+              }
+            : {}),
+        },
       });
       if (result.count === 0) return null;
       await syncPostHashtags(transaction, postId, body);

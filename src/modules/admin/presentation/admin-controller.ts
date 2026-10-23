@@ -330,6 +330,61 @@ export class AdminController {
     response.status(200).json(success(request, data));
   };
 
+  listPendingUgc = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const limit = Number(request.query.limit ?? 50);
+    const offset = Number(request.query.offset ?? 0);
+    response.status(200).json(
+      success(
+        request,
+        await this.admin.listPendingUgc({
+          limit: Number.isFinite(limit) ? limit : 50,
+          offset: Number.isFinite(offset) ? offset : 0,
+        }),
+      ),
+    );
+  };
+
+  resolveUgcReview = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const body = request.body as {
+      resourceType?: string;
+      resourceId?: string;
+      action?: string;
+    };
+    if (
+      body.resourceType !== "post" &&
+      body.resourceType !== "comment" &&
+      body.resourceType !== "bio"
+    ) {
+      throw new AppError("VALIDATION_ERROR", "Invalid resourceType", 400);
+    }
+    if (
+      body.action !== "approve" &&
+      body.action !== "reject" &&
+      body.action !== "remove"
+    ) {
+      throw new AppError("VALIDATION_ERROR", "Invalid action", 400);
+    }
+    if (typeof body.resourceId !== "string" || !body.resourceId) {
+      throw new AppError("VALIDATION_ERROR", "resourceId required", 400);
+    }
+    response.status(200).json(
+      success(
+        request,
+        await this.admin.resolveUgcReview(requireUser(request), {
+          resourceType: body.resourceType,
+          resourceId: body.resourceId,
+          action: body.action,
+        }),
+      ),
+    );
+  };
+
   listReports = async (request: Request, response: Response): Promise<void> => {
     const query = adminReportQuerySchema.parse(request.query);
     const data = await this.admin.listReports(query);

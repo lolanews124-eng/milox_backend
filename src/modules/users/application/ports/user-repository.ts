@@ -22,6 +22,8 @@ export interface UserProfileRecord {
   status: UserStatus;
   displayName: string | null;
   bio: string | null;
+  bioModerationState?: string;
+  bioModerationReason?: string | null;
   country: string;
   relationshipGoal: RelationshipGoal | null;
   websiteUrl: string | null;
@@ -64,6 +66,9 @@ export interface UpdateProfileData {
   usernameChangedAt?: Date | undefined;
   displayName?: string | null | undefined;
   bio?: string | null | undefined;
+  bioModerationState?: "APPROVED" | "PENDING" | "REJECTED" | "REMOVED" | undefined;
+  bioModerationReason?: string | null | undefined;
+  bioModeratedAt?: Date | null | undefined;
   country?: string | undefined;
   ageRange?: AgeRange | undefined;
   relationshipGoal?: RelationshipGoal | null | undefined;

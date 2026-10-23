@@ -55,9 +55,25 @@ export function visiblePostWhere(
 export function visiblePostContentWhere(
   viewerId?: string,
 ): Prisma.PostWhereInput {
+  // Public: only approved, non-hidden posts.
+  // Authors may still see their own pending/held posts (not other users').
+  const visibility: Prisma.PostWhereInput = viewerId
+    ? {
+        OR: [
+          {
+            isHidden: false,
+            moderationState: "APPROVED",
+          },
+          { authorId: viewerId },
+        ],
+      }
+    : {
+        isHidden: false,
+        moderationState: "APPROVED",
+      };
   return {
     deletedAt: null,
-    isHidden: false,
+    ...visibility,
     author: { is: visibleAuthorWhere(viewerId) },
   };
 }
@@ -73,6 +89,8 @@ export function postViewSelect(viewerId?: string) {
     saveCount: true,
     viewCount: true,
     trendingScore: true,
+    isHidden: true,
+    moderationState: true,
     createdAt: true,
     updatedAt: true,
     author: {
@@ -135,6 +153,7 @@ export function publicAuthorSelect() {
     username: true,
     displayName: true,
     bio: true,
+    bioModerationState: true,
     ageRange: true,
     gender: true,
     country: true,

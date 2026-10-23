@@ -11,6 +11,9 @@ export interface CreateCommentData {
   authorId: string;
   body: string;
   parentId?: string;
+  isHidden?: boolean;
+  moderationState?: "APPROVED" | "PENDING" | "REJECTED" | "REMOVED";
+  moderationReason?: string | null;
 }
 
 export interface CommentRepository {

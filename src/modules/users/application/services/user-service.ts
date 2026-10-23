@@ -24,6 +24,10 @@ import {
   type UserEntitlements,
 } from "../../../premium/application/entitlements.js";
 import { MILOX_OFFICIAL_USERNAME } from "../../../official-chat/official-chat-config.js";
+import {
+  isAdsEligibleProfile,
+  moderateProfileText,
+} from "../../../moderation/application/ugc-moderation.js";
 import type { AuthService } from "../../../auth/application/services/auth-service.js";
 import {
   DuplicateUsernameError,
@@ -569,6 +573,17 @@ export class UserService {
       );
     }
 
+    if (input.bio !== undefined || input.websiteUrl !== undefined) {
+      const moderation = moderateProfileText({
+        bio: input.bio !== undefined ? input.bio : current.bio,
+        websiteUrl:
+          input.websiteUrl !== undefined ? input.websiteUrl : current.websiteUrl,
+      });
+      data.bioModerationState = moderation.state;
+      data.bioModerationReason = moderation.reason;
+      data.bioModeratedAt = new Date();
+    }
+
     try {
       const updated = await this.repository.updateProfile(userId, data);
       await this.publishProfilePhotoUpdatePosts(current, input);
@@ -728,11 +743,25 @@ function mapPublicProfile(
     user.isSystemAccount && user.usernameNormalized === MILOX_OFFICIAL_USERNAME;
   const premium = premiumProfileFields(user, entitlements);
 
+  const bioPublic =
+    !user.bioModerationState || user.bioModerationState === "APPROVED"
+      ? user.bio
+      : null;
+  const websitePublic =
+    !user.bioModerationState || user.bioModerationState === "APPROVED"
+      ? user.websiteUrl
+      : null;
+  const adsEligible = isAdsEligibleProfile({
+    bioModerationState: user.bioModerationState ?? null,
+    status: user.status,
+    deletedAt: null,
+  });
+
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
-    bio: user.bio,
+    bio: bioPublic,
     profilePhotoUrl: mediaUrl(user.profilePhoto?.id, config),
     coverPhotoUrl: mediaUrl(user.coverPhoto?.id, config),
     ...(isOfficialAccount
@@ -742,7 +771,7 @@ function mapPublicProfile(
           ...(!user.hideAge ? { ageRange: ageRangeLabel(user.ageRange) } : {}),
           ...(!user.hideCountry ? { country: user.country } : {}),
           relationshipGoal: user.relationshipGoal,
-          websiteUrl: user.websiteUrl,
+          websiteUrl: websitePublic,
           instagramHandle: user.instagramHandle,
           interests: user.interests.map(({ tag }) => tag.slug),
         }),
@@ -752,6 +781,7 @@ function mapPublicProfile(
     premiumPlanCode: premium.premiumPlanCode,
     isOfficialAccount,
     isPrivateAccount: user.isPrivateAccount,
+    adsEligible,
     followerCount: user.followerCount,
     followingCount: user.followingCount,
     postCount: user.postCount,
@@ -806,6 +836,14 @@ function mapPrivateProfile(
   );
   return {
     ...mapPublicProfile(user, relation, config, entitlements),
+    // Owner always sees own bio/website even while held for review.
+    bio: user.bio,
+    websiteUrl: user.websiteUrl,
+    bioModerationState: user.bioModerationState ?? "APPROVED",
+    bioModerationReason:
+      user.bioModerationState && user.bioModerationState !== "APPROVED"
+        ? "Your bio is held for review and is not shown publicly yet."
+        : null,
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
     ageRange: user.ageRange,

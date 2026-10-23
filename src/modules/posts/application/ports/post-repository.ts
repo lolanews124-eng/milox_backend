@@ -8,6 +8,10 @@ export interface CreatePostData {
   mediaIds: string[];
   idempotencyKey?: string;
   requestHash?: string;
+  /** Server-side keyword moderation — never accept from client. */
+  moderationState?: "APPROVED" | "PENDING" | "REJECTED" | "REMOVED";
+  moderationReason?: string | null;
+  isHidden?: boolean;
 }
 
 export interface PostPageQuery {
@@ -76,6 +80,11 @@ export interface PostRepository {
     postId: string,
     authorId: string,
     body: string | null,
+    moderation?: {
+      moderationState: "APPROVED" | "PENDING" | "REJECTED" | "REMOVED";
+      moderationReason: string | null;
+      isHidden: boolean;
+    },
   ): Promise<PostViewRecord | null>;
   softDelete(postId: string, authorId: string): Promise<boolean>;
   like(postId: string, userId: string): Promise<PostViewRecord | null>;
