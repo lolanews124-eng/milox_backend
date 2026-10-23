@@ -1,12 +1,10 @@
 /**
  * Configurable UGC keyword rules for AdSense / policy protection.
- * Edit this file (or replace RULE_SETS at runtime in tests) to add/remove phrases.
- * Matching uses normalized text + token boundaries — see ugc-text-normalize.ts /
- * evaluate-ugc-text.ts.
- *
- * Gap this addresses: multi-word solicitation phrases alone missed common
- * sexually solicitous bio language (e.g. "horny, seducing") that AdSense flags.
+ * Matching uses layered normalization + token / embedded / compact checks —
+ * see ugc-text-normalize.ts and evaluate-ugc-text.ts.
  */
+
+import type { UgcEmbeddableStem } from "./ugc-text-normalize.js";
 
 export type UgcRuleSeverity = "reject" | "review" | "spam";
 
@@ -50,6 +48,7 @@ export const UGC_KEYWORD_RULES: UgcKeywordRule[] = [
   { id: "sex.hi.nude_photo", category: "sexual_explicit", phrase: "nude photo bhejo", severity: "reject", language: "hi" },
 
   // A2. Sexually solicitous profile / bio language — reject (token-bounded)
+  { id: "sex.solicit.sex", category: "sexual_solicitous", phrase: "sex", severity: "reject", language: "en" },
   { id: "sex.solicit.horny", category: "sexual_solicitous", phrase: "horny", severity: "reject", language: "en" },
   { id: "sex.solicit.seducing", category: "sexual_solicitous", phrase: "seducing", severity: "reject", language: "en" },
   { id: "sex.solicit.seduce", category: "sexual_solicitous", phrase: "seduce", severity: "reject", language: "en" },
@@ -101,3 +100,107 @@ export const UGC_HARMLESS_ALONE = new Set([
   "dm",
   "adult",
 ]);
+
+/**
+ * Legitimate / educational / medical phrases. When present, stem-level
+ * sexual solicitous hits (exact "sex", embedded compounds) are suppressed
+ * so content can stay allow or fall through to other rules.
+ */
+export const UGC_CONTEXT_ALLOW_PHRASES: string[] = [
+  "sex education",
+  "sexual education",
+  "sexual health",
+  "safe sex",
+  "safer sex",
+  "sexually transmitted",
+  "consent education",
+  "reproductive health",
+];
+
+/** Glue allowed after stem "sex" for prefix compounds (sexchat, sexcam). */
+const SEX_PREFIX_GLUE = new Set([
+  "chat",
+  "cam",
+  "cams",
+  "tape",
+  "tapes",
+  "video",
+  "videos",
+  "show",
+  "shows",
+  "work",
+  "worker",
+  "workers",
+  "toy",
+  "toys",
+  "call",
+  "calls",
+  "dating",
+  "date",
+]);
+
+const SEX_PLACE_FALSE_POSITIVES = new Set([
+  "essex",
+  "sussex",
+  "middlesex",
+  "wessex",
+]);
+
+/**
+ * Stems scanned as prefix/suffix compounds inside tokens (chatsex, hornymen).
+ * Synthetic rules are emitted from these — keep stems aligned with solicitous policy.
+ */
+export const UGC_EMBEDDABLE_STEMS: Array<
+  UgcEmbeddableStem & { ruleId: string; category: UgcRuleCategory; severity: UgcRuleSeverity }
+> = [
+  {
+    stem: "sex",
+    ruleId: "sex.embed.sex",
+    category: "sexual_solicitous",
+    severity: "reject",
+    prefixGlue: SEX_PREFIX_GLUE,
+    // chat(4)+sex; require >=3 so "es"+"sex" (Essex) needs FP anyway
+    suffixCompoundMinPrefix: 3,
+    falsePositiveTokens: SEX_PLACE_FALSE_POSITIVES,
+  },
+  {
+    stem: "horny",
+    ruleId: "sex.embed.horny",
+    category: "sexual_solicitous",
+    severity: "reject",
+    prefixCompoundMinRest: 2,
+    suffixCompoundMinPrefix: 2,
+  },
+  {
+    stem: "nude",
+    ruleId: "sex.embed.nude",
+    category: "sexual_solicitous",
+    severity: "reject",
+    prefixCompoundMinRest: 2,
+    suffixCompoundMinPrefix: 2,
+  },
+  {
+    stem: "naked",
+    ruleId: "sex.embed.naked",
+    category: "sexual_solicitous",
+    severity: "reject",
+    prefixCompoundMinRest: 2,
+    suffixCompoundMinPrefix: 2,
+  },
+  {
+    stem: "nsfw",
+    ruleId: "sex.embed.nsfw",
+    category: "sexual_solicitous",
+    severity: "reject",
+    prefixCompoundMinRest: 2,
+    suffixCompoundMinPrefix: 2,
+  },
+  {
+    stem: "seduce",
+    ruleId: "sex.embed.seduce",
+    category: "sexual_solicitous",
+    severity: "reject",
+    prefixCompoundMinRest: 2,
+    suffixCompoundMinPrefix: 2,
+  },
+];

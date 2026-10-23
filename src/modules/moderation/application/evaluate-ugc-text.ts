@@ -1,4 +1,6 @@
 import {
+  UGC_CONTEXT_ALLOW_PHRASES,
+  UGC_EMBEDDABLE_STEMS,
   UGC_HARMLESS_ALONE,
   UGC_KEYWORD_RULES,
   type UgcKeywordRule,
@@ -6,9 +8,12 @@ import {
 } from "./ugc-keyword-rules.js";
 import {
   countUrlMentions,
+  layersContainEmbeddedStem,
   normalizedContainsPhrase,
+  normalizeUgcLayers,
   normalizeUgcText,
   UGC_LENGTH_LIMITS,
+  type UgcNormalizedLayers,
 } from "./ugc-text-normalize.js";
 
 export type UgcModerationDecision =
@@ -32,12 +37,80 @@ export type EvaluateUgcOptions = {
   /** When true, 3+ promotional URLs escalate spam → pending. */
   checkUrlSpam?: boolean;
   maxLength?: number;
+  /** Skip embeddable-stem compound detection (tests). */
+  skipEmbedded?: boolean;
 };
 
 function severityRank(s: UgcRuleSeverity): number {
   if (s === "reject") return 3;
   if (s === "review") return 2;
   return 1;
+}
+
+function decisionRank(d: UgcModerationDecision): number {
+  if (d === "rejected") return 3;
+  if (d === "pending") return 2;
+  return 1;
+}
+
+function hasContextAllow(layers: UgcNormalizedLayers): boolean {
+  for (const phrase of UGC_CONTEXT_ALLOW_PHRASES) {
+    const normalizedPhrase = normalizeUgcText(phrase);
+    if (!normalizedPhrase) continue;
+    if (
+      normalizedContainsPhrase(layers.spacedCollapsed, normalizedPhrase) ||
+      normalizedContainsPhrase(layers.tokens, normalizedPhrase)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Token-boundary match on spaced layers; compact match for multi-word phrases. */
+function ruleMatchesLayers(
+  rule: UgcKeywordRule,
+  layers: UgcNormalizedLayers,
+): boolean {
+  const phrase = normalizeUgcText(rule.phrase);
+  if (!phrase) return false;
+  if (!phrase.includes(" ") && UGC_HARMLESS_ALONE.has(phrase)) return false;
+
+  if (
+    normalizedContainsPhrase(layers.spacedCollapsed, phrase) ||
+    normalizedContainsPhrase(layers.tokens, phrase)
+  ) {
+    return true;
+  }
+
+  // Joined multi-word evasion: "sex chat" ↔ compact "sexchat"
+  if (phrase.includes(" ")) {
+    const compactPhrase = phrase.replace(/\s+/g, "");
+    if (
+      compactPhrase.length >= 4 &&
+      layers.compact.includes(compactPhrase)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function collectEmbeddedMatches(
+  layers: UgcNormalizedLayers,
+): UgcKeywordRule[] {
+  const matched: UgcKeywordRule[] = [];
+  for (const stem of UGC_EMBEDDABLE_STEMS) {
+    if (!layersContainEmbeddedStem(layers, stem)) continue;
+    matched.push({
+      id: stem.ruleId,
+      category: stem.category,
+      phrase: stem.stem,
+      severity: stem.severity,
+    });
+  }
+  return matched;
 }
 
 /**
@@ -59,8 +132,8 @@ export function evaluateUgcText(
     };
   }
 
-  const normalized = normalizeUgcText(raw);
-  if (!normalized) {
+  const layers = normalizeUgcLayers(raw);
+  if (!layers.spacedCollapsed && !layers.tokens) {
     return {
       decision: "allow",
       publicReason: null,
@@ -70,16 +143,25 @@ export function evaluateUgcText(
     };
   }
 
+  const contextAllow = hasContextAllow(layers);
   const rules = options.rules ?? UGC_KEYWORD_RULES;
   const matched: UgcKeywordRule[] = [];
+
   for (const rule of rules) {
-    const phrase = normalizeUgcText(rule.phrase);
-    if (!phrase) continue;
-    // Never let a "harmless alone" token fire as a one-word rule.
-    if (!phrase.includes(" ") && UGC_HARMLESS_ALONE.has(phrase)) continue;
-    if (normalizedContainsPhrase(normalized, phrase)) {
-      matched.push(rule);
+    if (!ruleMatchesLayers(rule, layers)) continue;
+    // Educational / medical context: suppress solitary "sex" token hits.
+    if (
+      contextAllow &&
+      rule.phrase === "sex" &&
+      rule.category === "sexual_solicitous"
+    ) {
+      continue;
     }
+    matched.push(rule);
+  }
+
+  if (!options.skipEmbedded && !contextAllow) {
+    matched.push(...collectEmbeddedMatches(layers));
   }
 
   let top: UgcKeywordRule | null = null;
@@ -121,7 +203,7 @@ export function evaluateUgcText(
       publicReason:
         "This content violates our community guidelines and cannot be published.",
       auditReason: `reject:${top.id}:${top.category}`,
-      matchedRuleIds: matched.map((r) => r.id),
+      matchedRuleIds: [...new Set(matched.map((r) => r.id))],
       severity: top.severity,
     };
   }
@@ -132,14 +214,18 @@ export function evaluateUgcText(
     publicReason:
       "This content was held for review and is not publicly visible yet.",
     auditReason: `${top.severity}:${top.id}:${top.category}`,
-    matchedRuleIds: matched.map((r) => r.id),
+    matchedRuleIds: [...new Set(matched.map((r) => r.id))],
     severity: top.severity,
   };
 }
 
 /** Combine multiple text fields (bio + website, etc.). */
 export function evaluateUgcFields(
-  fields: Array<{ label: string; value: string | null | undefined; maxLength?: number }>,
+  fields: Array<{
+    label: string;
+    value: string | null | undefined;
+    maxLength?: number;
+  }>,
   options: EvaluateUgcOptions = {},
 ): UgcEvaluation {
   let worst: UgcEvaluation = {
@@ -149,15 +235,13 @@ export function evaluateUgcFields(
     matchedRuleIds: [],
     severity: null,
   };
-  const rank = (d: UgcModerationDecision) =>
-    d === "rejected" ? 3 : d === "pending" ? 2 : 1;
 
   for (const field of fields) {
     const result = evaluateUgcText(field.value, {
       ...options,
       ...(field.maxLength !== undefined ? { maxLength: field.maxLength } : {}),
     });
-    if (rank(result.decision) > rank(worst.decision)) {
+    if (decisionRank(result.decision) > decisionRank(worst.decision)) {
       worst = {
         ...result,
         auditReason: result.auditReason

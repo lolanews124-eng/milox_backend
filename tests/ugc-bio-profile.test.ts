@@ -69,6 +69,39 @@ describe("bio moderation on profile update", () => {
     expect(repository.updateProfile).not.toHaveBeenCalled();
   });
 
+  it("rejects joined-word bio chatsex, hornymen on create and edit", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findById).mockResolvedValue(
+      profileFixture({
+        bio: "Friendly traveler",
+        bioModerationState: "APPROVED",
+      }),
+    );
+    const service = createService(repository);
+
+    await expect(
+      service.updateProfile("user-id", { bio: "chatsex, hornymen" }),
+    ).rejects.toMatchObject({ code: "CONTENT_REJECTED", statusCode: 422 });
+    expect(repository.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("re-moderates when editing a previously approved bio", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findById).mockResolvedValue(
+      profileFixture({
+        bio: "Love hiking and coffee",
+        bioModerationState: "APPROVED",
+      }),
+    );
+    const service = createService(repository);
+
+    // Prior APPROVED must not be reused — fresh evaluation rejects.
+    await expect(
+      service.updateProfile("user-id", { bio: "chatsex" }),
+    ).rejects.toMatchObject({ code: "CONTENT_REJECTED", statusCode: 422 });
+    expect(repository.updateProfile).not.toHaveBeenCalled();
+  });
+
   it("updateProfile persists PENDING for reviewable bio language", async () => {
     const repository = createRepository();
     vi.mocked(repository.findById).mockResolvedValue(profileFixture());

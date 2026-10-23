@@ -5,8 +5,15 @@ import {
   isAdsEligibleContent,
   isAdsEligibleProfile,
   moderatePostBody,
+  moderateProfileText,
 } from "../src/modules/moderation/application/ugc-moderation.js";
-import { normalizeUgcText } from "../src/modules/moderation/application/ugc-text-normalize.js";
+import {
+  collapseSpacedLetterTokens,
+  normalizeUgcCompact,
+  normalizeUgcLayers,
+  normalizeUgcText,
+  tokenHasEmbeddedStem,
+} from "../src/modules/moderation/application/ugc-text-normalize.js";
 import { AppError } from "../src/shared/errors/app-error.js";
 
 describe("normalizeUgcText", () => {
@@ -19,11 +26,38 @@ describe("normalizeUgcText", () => {
   it("treats commas and punctuation as token separators", () => {
     expect(normalizeUgcText("horny, seducing")).toBe("horny seducing");
     expect(normalizeUgcText("sex-chat")).toBe("sex chat");
+    expect(normalizeUgcText("sex.horny")).toBe("sex horny");
   });
 
-  it("handles common leetspeak separators conservatively", () => {
-    expect(normalizeUgcText("s e x   c h a t")).toContain("s e x");
-    expect(normalizeUgcText("sex-chat")).toBe("sex chat");
+  it("merges spaced single letters without joining multi-letter words", () => {
+    expect(collapseSpacedLetterTokens("s e x")).toBe("sex");
+    expect(collapseSpacedLetterTokens("s e x chat")).toBe("sex chat");
+    expect(collapseSpacedLetterTokens("essex")).toBe("essex");
+    expect(normalizeUgcLayers("s e x").spacedCollapsed).toBe("sex");
+    expect(normalizeUgcCompact("sexxx")).toBe("sex");
+  });
+});
+
+describe("embedded stem scoping", () => {
+  const sexStem = {
+    stem: "sex",
+    prefixGlue: new Set(["chat"]),
+    suffixCompoundMinPrefix: 3,
+    falsePositiveTokens: new Set(["essex", "sussex"]),
+  };
+  const hornyStem = {
+    stem: "horny",
+    prefixCompoundMinRest: 2,
+    suffixCompoundMinPrefix: 2,
+  };
+
+  it("detects joined compounds but not Essex / thorny", () => {
+    expect(tokenHasEmbeddedStem("chatsex", sexStem)).toBe(true);
+    expect(tokenHasEmbeddedStem("sexchat", sexStem)).toBe(true);
+    expect(tokenHasEmbeddedStem("essex", sexStem)).toBe(false);
+    expect(tokenHasEmbeddedStem("sussex", sexStem)).toBe(false);
+    expect(tokenHasEmbeddedStem("hornymen", hornyStem)).toBe(true);
+    expect(tokenHasEmbeddedStem("thorny", hornyStem)).toBe(false);
   });
 });
 
@@ -54,23 +88,33 @@ describe("evaluateUgcText — sexual / Hindi", () => {
     expect(evaluateUgcText("Just seducing tonight").decision).toBe("rejected");
   });
 
-  it("does not flag harmless alone words", () => {
-    expect(evaluateUgcText("Add me on WhatsApp").decision).toBe("allow");
-    expect(evaluateUgcText("Looking for a video call friend").decision).toBe(
-      "allow",
-    );
-    expect(evaluateUgcText("Private person, into dating").decision).toBe(
-      "allow",
-    );
-    expect(evaluateUgcText("Healthy relationship goals").decision).toBe(
-      "allow",
-    );
+  it.each([
+    ["chatsex", "rejected"],
+    ["hornymen", "rejected"],
+    ["chatsex, hornymen", "rejected"],
+    ["sex, horny", "rejected"],
+    ["sex.horny", "rejected"],
+    ["s e x", "rejected"],
+    ["s.e.x", "rejected"],
+    ["sexxx", "rejected"],
+    ["sex--horny", "rejected"],
+    ["h o r n y", "rejected"],
+  ] as const)("must detect evasion %#: %s → %s", (input, expected) => {
+    expect(evaluateUgcText(input).decision).toBe(expected);
   });
 
-  it("uses token boundaries so short rules do not match inside words", () => {
-    // "nude" is a rule; "denuded" must not false-positive if boundaries hold.
-    // "horny" must not match "thorny".
-    expect(evaluateUgcText("I love thorny roses").decision).toBe("allow");
+  it.each([
+    ["Essex", "allow"],
+    ["From Essex UK", "allow"],
+    ["I love thorny roses", "allow"],
+    ["Sex education workshop volunteer", "allow"],
+    ["Promoting sexual health awareness", "allow"],
+    ["Add me on WhatsApp", "allow"],
+    ["Looking for a video call friend", "allow"],
+    ["Private person, into dating", "allow"],
+    ["Healthy relationship goals", "allow"],
+  ] as const)("must avoid false positive %#: %s → %s", (input, expected) => {
+    expect(evaluateUgcText(input).decision).toBe(expected);
   });
 
   it("flags spam phrases and repeated URLs", () => {
@@ -85,7 +129,7 @@ describe("evaluateUgcText — sexual / Hindi", () => {
   });
 });
 
-describe("moderatePostBody", () => {
+describe("moderatePostBody / profile", () => {
   it("throws on reject severity and never returns approved", () => {
     expect(() => moderatePostBody("live sex show now")).toThrow(AppError);
     try {
@@ -100,6 +144,12 @@ describe("moderatePostBody", () => {
     const result = moderatePostBody("hot video call available");
     expect(result.state).toBe("PENDING");
     expect(result.isHidden).toBe(true);
+  });
+
+  it("rejects joined-word bio chatsex, hornymen", () => {
+    expect(() =>
+      moderateProfileText({ bio: "chatsex, hornymen", websiteUrl: null }),
+    ).toThrow(AppError);
   });
 });
 
