@@ -36,6 +36,8 @@
     "audit:ugc:apply": "tsx scripts/audit-ugc-moderation.ts --apply",
     "users:suspend-inactive": "tsx scripts/suspend-inactive-users.ts",
     "users:suspend-inactive:apply": "tsx scripts/suspend-inactive-users.ts --apply",
+    "users:restore-inactive-suspensions": "tsx scripts/restore-inactive-suspensions.ts",
+    "users:restore-inactive-suspensions:apply": "tsx scripts/restore-inactive-suspensions.ts --apply --confirm=RESTORE_INACTIVE_SUSPENSIONS",
     "db:local": "node scripts/start-local-db.mjs",
     "db:push": "prisma db push",
     "db:constraints": "prisma db execute --file prisma/sql/constraints.sql --schema prisma/schema.prisma",
