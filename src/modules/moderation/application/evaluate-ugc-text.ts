@@ -1,10 +1,12 @@
 import {
+  UGC_HARMLESS_ALONE,
   UGC_KEYWORD_RULES,
   type UgcKeywordRule,
   type UgcRuleSeverity,
 } from "./ugc-keyword-rules.js";
 import {
   countUrlMentions,
+  normalizedContainsPhrase,
   normalizeUgcText,
   UGC_LENGTH_LIMITS,
 } from "./ugc-text-normalize.js";
@@ -73,7 +75,9 @@ export function evaluateUgcText(
   for (const rule of rules) {
     const phrase = normalizeUgcText(rule.phrase);
     if (!phrase) continue;
-    if (normalized.includes(phrase)) {
+    // Never let a "harmless alone" token fire as a one-word rule.
+    if (!phrase.includes(" ") && UGC_HARMLESS_ALONE.has(phrase)) continue;
+    if (normalizedContainsPhrase(normalized, phrase)) {
       matched.push(rule);
     }
   }

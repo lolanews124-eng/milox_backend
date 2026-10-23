@@ -104,7 +104,7 @@ export class UserService {
   }
 
   async getProfileHealth(userId: string): Promise<object> {
-    await this.requireActiveUser(userId);
+    const user = await this.requireActiveUser(userId);
     const warnings = await this.database.profileWarning.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
@@ -119,11 +119,18 @@ export class UserService {
       },
     });
     const health = computeProfileHealth(warnings, new Date());
+    const bioState = user.bioModerationState ?? "APPROVED";
+    const bioPubliclyVisible = bioState === "APPROVED";
+    // Strike-based health score is separate from keyword UGC gating — surface both.
     return {
       score: health.score,
       band: health.band,
       bandLabel: health.bandLabel,
       restrictedUntil: health.restrictedUntil?.toISOString() ?? null,
+      bioModerationState: bioState,
+      bioPubliclyVisible,
+      bioHeldForReview: bioState === "PENDING",
+      bioRejected: bioState === "REJECTED" || bioState === "REMOVED",
       warnings: [...warnings]
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
         .slice(0, 12)
@@ -521,7 +528,11 @@ export class UserService {
     input: UpdateProfileInput,
   ): Promise<object> {
     const current = await this.requireActiveUser(userId);
+    // Never trust client-supplied moderation fields (schema is .strict(), belt+suspenders).
     const data: UpdateProfileData = { ...input };
+    delete (data as { bioModerationState?: unknown }).bioModerationState;
+    delete (data as { bioModerationReason?: unknown }).bioModerationReason;
+    delete (data as { bioModeratedAt?: unknown }).bioModeratedAt;
 
     if (input.username !== undefined) {
       const normalized = normalizeUsername(input.username);

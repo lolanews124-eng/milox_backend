@@ -1,20 +1,25 @@
 /**
  * Configurable UGC keyword rules for AdSense / policy protection.
  * Edit this file (or replace RULE_SETS at runtime in tests) to add/remove phrases.
- * Matching uses normalized text — see ugc-text-normalize.ts.
+ * Matching uses normalized text + token boundaries — see ugc-text-normalize.ts /
+ * evaluate-ugc-text.ts.
+ *
+ * Gap this addresses: multi-word solicitation phrases alone missed common
+ * sexually solicitous bio language (e.g. "horny, seducing") that AdSense flags.
  */
 
 export type UgcRuleSeverity = "reject" | "review" | "spam";
 
 export type UgcRuleCategory =
   | "sexual_explicit"
+  | "sexual_solicitous"
   | "sexual_promotional"
   | "spam_scam";
 
 export type UgcKeywordRule = {
   id: string;
   category: UgcRuleCategory;
-  /** Phrase matched against normalized text (substring). */
+  /** Phrase matched against normalized text (token-bounded). */
   phrase: string;
   severity: UgcRuleSeverity;
   language?: "en" | "hi" | "mixed";
@@ -24,7 +29,7 @@ export type UgcKeywordRule = {
  * Initial phrase lists. Not exhaustive — extend here without touching call sites.
  */
 export const UGC_KEYWORD_RULES: UgcKeywordRule[] = [
-  // A. Explicit sexual — reject / hold
+  // A. Explicit sexual solicitation — reject
   { id: "sex.en.sex_chat", category: "sexual_explicit", phrase: "sex chat", severity: "reject", language: "en" },
   { id: "sex.en.full_sex_chat", category: "sexual_explicit", phrase: "full sex chat", severity: "reject", language: "en" },
   { id: "sex.en.sexual_services", category: "sexual_explicit", phrase: "sexual services", severity: "reject", language: "en" },
@@ -44,11 +49,26 @@ export const UGC_KEYWORD_RULES: UgcKeywordRule[] = [
   { id: "sex.hi.adult_service", category: "sexual_explicit", phrase: "adult service", severity: "reject", language: "mixed" },
   { id: "sex.hi.nude_photo", category: "sexual_explicit", phrase: "nude photo bhejo", severity: "reject", language: "hi" },
 
+  // A2. Sexually solicitous profile / bio language — reject (token-bounded)
+  { id: "sex.solicit.horny", category: "sexual_solicitous", phrase: "horny", severity: "reject", language: "en" },
+  { id: "sex.solicit.seducing", category: "sexual_solicitous", phrase: "seducing", severity: "reject", language: "en" },
+  { id: "sex.solicit.seduce", category: "sexual_solicitous", phrase: "seduce", severity: "reject", language: "en" },
+  { id: "sex.solicit.seduce_me", category: "sexual_solicitous", phrase: "seduce me", severity: "reject", language: "en" },
+  { id: "sex.solicit.looking_for_sex", category: "sexual_solicitous", phrase: "looking for sex", severity: "reject", language: "en" },
+  { id: "sex.solicit.want_sex", category: "sexual_solicitous", phrase: "want sex", severity: "reject", language: "en" },
+  { id: "sex.solicit.for_sex", category: "sexual_solicitous", phrase: "for sex", severity: "reject", language: "en" },
+  { id: "sex.solicit.nsfw", category: "sexual_solicitous", phrase: "nsfw", severity: "reject", language: "en" },
+  { id: "sex.solicit.onlyfans", category: "sexual_solicitous", phrase: "onlyfans", severity: "reject", language: "en" },
+  { id: "sex.solicit.nude", category: "sexual_solicitous", phrase: "nude", severity: "reject", language: "en" },
+  { id: "sex.solicit.nudes", category: "sexual_solicitous", phrase: "nudes", severity: "reject", language: "en" },
+  { id: "sex.solicit.naked", category: "sexual_solicitous", phrase: "naked", severity: "reject", language: "en" },
+
   // B. Suspicious promotional — review (hold)
   { id: "promo.full_enjoyment", category: "sexual_promotional", phrase: "full enjoyment", severity: "review", language: "en" },
   { id: "promo.hot_video_call", category: "sexual_promotional", phrase: "hot video call", severity: "review", language: "en" },
   { id: "promo.adult_chat", category: "sexual_promotional", phrase: "adult chat", severity: "review", language: "en" },
   { id: "promo.sexy_chat", category: "sexual_promotional", phrase: "sexy chat", severity: "review", language: "en" },
+  { id: "promo.sexy", category: "sexual_promotional", phrase: "sexy", severity: "review", language: "en" },
   { id: "promo.whatsapp_me", category: "sexual_promotional", phrase: "whatsapp me", severity: "review", language: "en" },
   { id: "promo.dm_video_call", category: "sexual_promotional", phrase: "dm for video call", severity: "review", language: "en" },
   { id: "promo.paid_video_call", category: "sexual_promotional", phrase: "paid video call", severity: "review", language: "en" },
@@ -66,7 +86,10 @@ export const UGC_KEYWORD_RULES: UgcKeywordRule[] = [
   { id: "spam.make_money_fast", category: "spam_scam", phrase: "make money fast", severity: "spam", language: "en" },
 ];
 
-/** Single words that must NOT trigger alone (require multi-word rules above). */
+/**
+ * Tokens that must NOT trigger alone. Multi-word rules still apply
+ * (e.g. "whatsapp me", "adult chat"). Enforced in evaluate-ugc-text.
+ */
 export const UGC_HARMLESS_ALONE = new Set([
   "whatsapp",
   "video",

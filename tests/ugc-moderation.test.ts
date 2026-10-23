@@ -13,7 +13,12 @@ describe("normalizeUgcText", () => {
   it("collapses zero-width and spacing obfuscation", () => {
     expect(normalizeUgcText("sex\u200B chat")).toContain("sex");
     expect(normalizeUgcText("sex   chat")).toBe("sex chat");
-    expect(normalizeUgcText("SEX CHAT!!!")).toBe("sex chat!!");
+    expect(normalizeUgcText("SEX CHAT!!!")).toBe("sex chat");
+  });
+
+  it("treats commas and punctuation as token separators", () => {
+    expect(normalizeUgcText("horny, seducing")).toBe("horny seducing");
+    expect(normalizeUgcText("sex-chat")).toBe("sex chat");
   });
 
   it("handles common leetspeak separators conservatively", () => {
@@ -43,6 +48,12 @@ describe("evaluateUgcText — sexual / Hindi", () => {
     );
   });
 
+  it("rejects sexually solicitous bio language (AdSense gap)", () => {
+    expect(evaluateUgcText("horny, seducing").decision).toBe("rejected");
+    expect(evaluateUgcText("horny").decision).toBe("rejected");
+    expect(evaluateUgcText("Just seducing tonight").decision).toBe("rejected");
+  });
+
   it("does not flag harmless alone words", () => {
     expect(evaluateUgcText("Add me on WhatsApp").decision).toBe("allow");
     expect(evaluateUgcText("Looking for a video call friend").decision).toBe(
@@ -54,6 +65,12 @@ describe("evaluateUgcText — sexual / Hindi", () => {
     expect(evaluateUgcText("Healthy relationship goals").decision).toBe(
       "allow",
     );
+  });
+
+  it("uses token boundaries so short rules do not match inside words", () => {
+    // "nude" is a rule; "denuded" must not false-positive if boundaries hold.
+    // "horny" must not match "thorny".
+    expect(evaluateUgcText("I love thorny roses").decision).toBe("allow");
   });
 
   it("flags spam phrases and repeated URLs", () => {
