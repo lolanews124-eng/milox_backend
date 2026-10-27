@@ -109,19 +109,29 @@ export class EmailCampaignService {
   ) {}
 
   async previewAudience(input: CampaignAudienceInput): Promise<{
+    /** Total users matching filters (uncapped). */
+    matchedCount: number;
+    /** How many this campaign will actually enqueue (≤ cappedAt). */
+    sendableCount: number;
+    /** @deprecated use sendableCount — kept for older admin builds */
     count: number;
     inactiveDays: number;
     requireEmailVerified: boolean;
     cappedAt: number;
+    capped: boolean;
   }> {
-    const count = await this.database.user.count({
+    const matchedCount = await this.database.user.count({
       where: audienceWhere(input),
     });
+    const sendableCount = Math.min(matchedCount, MAX_CAMPAIGN_RECIPIENTS);
     return {
-      count: Math.min(count, MAX_CAMPAIGN_RECIPIENTS),
+      matchedCount,
+      sendableCount,
+      count: sendableCount,
       inactiveDays: input.inactiveDays,
       requireEmailVerified: input.requireEmailVerified,
       cappedAt: MAX_CAMPAIGN_RECIPIENTS,
+      capped: matchedCount > MAX_CAMPAIGN_RECIPIENTS,
     };
   }
 
