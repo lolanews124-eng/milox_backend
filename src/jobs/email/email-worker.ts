@@ -47,6 +47,7 @@ export class EmailWorker {
   private running = false;
   private cachedRuntime: EmailRuntimeConfig | null = null;
   private cachedAt = 0;
+  private lastUnconfiguredLogAt = 0;
 
   constructor(
     private readonly database: PrismaClient,
@@ -84,7 +85,16 @@ export class EmailWorker {
     this.running = true;
     try {
       const runtime = await this.getRuntime();
-      if (!runtime.configured) return;
+      if (!runtime.configured) {
+        const now = Date.now();
+        if (now - this.lastUnconfiguredLogAt > 60_000) {
+          this.lastUnconfiguredLogAt = now;
+          console.warn(
+            "Email worker idle: ZeptoMail is not configured in Admin → Settings → Email. Marketing and OTP jobs will not send.",
+          );
+        }
+        return;
+      }
 
       for (let i = 0; i < JOBS_PER_TICK; i += 1) {
         const job = await this.claimNextJob();
@@ -118,6 +128,10 @@ export class EmailWorker {
           });
           await this.onMarketingOutcome(job, { ok: true });
         } catch (error: unknown) {
+          console.error(
+            `Email job ${job.id} (${job.type}) failed:`,
+            error instanceof Error ? error.message : error,
+          );
           await this.failOrRetry(job, error);
         }
       }

@@ -214,83 +214,117 @@ export class EmailCampaignService {
     }
 
     const now = new Date();
-    await this.database.$transaction(async (tx) => {
-      const claimed = await tx.emailCampaign.updateMany({
-        where: { id: campaignId, status: EmailCampaignStatus.DRAFT },
-        data: {
-          status: EmailCampaignStatus.QUEUED,
-          queuedAt: now,
-          startedAt: now,
-          totalRecipients: users.length,
-          sentCount: 0,
-          failedCount: 0,
-          skippedCount: 0,
-        },
-      });
-      if (claimed.count !== 1) {
-        throw new AppError(
-          "INVALID_STATE",
-          "Campaign was already launched",
-          409,
-        );
-      }
-
-      for (const user of users) {
-        const recipient = await tx.emailCampaignRecipient.create({
-          data: {
-            campaignId,
-            userId: user.id,
-            toEmail: user.email,
-            status: EmailCampaignRecipientStatus.PENDING,
-          },
-        });
-
-        const unsubscribeUrl = buildUnsubscribeUrl(
-          this.publicWebOrigin,
-          user.id,
-          this.encryptionSecret,
-        );
-        const html = injectUnsubscribe(campaign.htmlBody, unsubscribeUrl);
-        const text = `${campaign.textBody.trim()}\n\nUnsubscribe: ${unsubscribeUrl}`;
-
-        const job = await tx.emailJob.create({
-          data: {
-            type: EmailJobType.MARKETING,
-            toEmail: user.email,
-            payload: {
-              campaignId,
-              recipientId: recipient.id,
-              userId: user.id,
-              subject: campaign.subject,
-              html,
-              text,
-            },
-            availableAt: now,
-          },
-        });
-
-        await tx.emailCampaignRecipient.update({
-          where: { id: recipient.id },
-          data: { emailJobId: job.id },
-        });
-      }
-
-      await tx.emailCampaign.update({
-        where: { id: campaignId },
-        data: { status: EmailCampaignStatus.SENDING },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          actorType: "ADMIN",
-          actorUserId: adminId,
-          action: "admin.email_campaign.launched",
-          resourceType: "email_campaign",
-          resourceId: campaignId,
-          metadata: { recipients: users.length },
-        },
-      });
+    // Claim only — do NOT create thousands of jobs in one transaction
+    // (that timed out / rolled back and looked like “marketing doesn’t work”).
+    const claimed = await this.database.emailCampaign.updateMany({
+      where: { id: campaignId, status: EmailCampaignStatus.DRAFT },
+      data: {
+        status: EmailCampaignStatus.QUEUED,
+        queuedAt: now,
+        startedAt: now,
+        totalRecipients: users.length,
+        sentCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+      },
     });
+    if (claimed.count !== 1) {
+      throw new AppError(
+        "INVALID_STATE",
+        "Campaign was already launched",
+        409,
+      );
+    }
+
+    const BATCH = 40;
+    try {
+      for (let offset = 0; offset < users.length; offset += BATCH) {
+        const chunk = users.slice(offset, offset + BATCH);
+        await this.database.$transaction(
+          async (tx) => {
+            for (const user of chunk) {
+              const recipient = await tx.emailCampaignRecipient.create({
+                data: {
+                  campaignId,
+                  userId: user.id,
+                  toEmail: user.email,
+                  status: EmailCampaignRecipientStatus.PENDING,
+                },
+              });
+
+              const unsubscribeUrl = buildUnsubscribeUrl(
+                this.publicWebOrigin,
+                user.id,
+                this.encryptionSecret,
+              );
+              const html = injectUnsubscribe(campaign.htmlBody, unsubscribeUrl);
+              const text = `${campaign.textBody.trim()}\n\nUnsubscribe: ${unsubscribeUrl}`;
+
+              const job = await tx.emailJob.create({
+                data: {
+                  type: EmailJobType.MARKETING,
+                  toEmail: user.email,
+                  payload: {
+                    campaignId,
+                    recipientId: recipient.id,
+                    userId: user.id,
+                    subject: campaign.subject,
+                    html,
+                    text,
+                  },
+                  availableAt: now,
+                },
+              });
+
+              await tx.emailCampaignRecipient.update({
+                where: { id: recipient.id },
+                data: { emailJobId: job.id },
+              });
+            }
+          },
+          { timeout: 60_000 },
+        );
+      }
+
+      await this.database.$transaction(async (tx) => {
+        await tx.emailCampaign.update({
+          where: { id: campaignId },
+          data: { status: EmailCampaignStatus.SENDING },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorType: "ADMIN",
+            actorUserId: adminId,
+            action: "admin.email_campaign.launched",
+            resourceType: "email_campaign",
+            resourceId: campaignId,
+            metadata: { recipients: users.length },
+          },
+        });
+      });
+    } catch (error: unknown) {
+      await this.database.emailCampaign.updateMany({
+        where: {
+          id: campaignId,
+          status: {
+            in: [EmailCampaignStatus.QUEUED, EmailCampaignStatus.SENDING],
+          },
+        },
+        data: {
+          status: EmailCampaignStatus.FAILED,
+          completedAt: new Date(),
+        },
+      });
+      throw error instanceof AppError
+        ? error
+        : new AppError(
+            "LAUNCH_FAILED",
+            error instanceof Error
+              ? `Campaign enqueue failed: ${error.message}`
+              : "Campaign enqueue failed",
+            500,
+          );
+    }
 
     return this.getCampaign(campaignId);
   }

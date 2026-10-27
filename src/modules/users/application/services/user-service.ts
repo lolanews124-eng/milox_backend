@@ -73,8 +73,12 @@ export interface UpdateProfileInput {
   interestSlugs?: string[] | undefined;
 }
 
-/** Google allows 50,000 URLs per file. Stay under that so one response stays small. */
-const PUBLIC_SITEMAP_PAGE_SIZE = 10_000;
+/**
+ * Google allows 50,000 URLs per sitemap file.
+ * Keep pages smaller so the JSON payload stays under Next.js Data Cache’s 2MB
+ * limit (posts with image URLs were ~2.2MB at 10k/page and failed to cache).
+ */
+const PUBLIC_SITEMAP_PAGE_SIZE = 5_000;
 
 export class UserService {
   constructor(
@@ -278,7 +282,8 @@ export class UserService {
             updatedAt: true,
             media: {
               orderBy: { sortOrder: "asc" },
-              take: 10,
+              // One image is enough for sitemap image tags + keeps JSON under 2MB.
+              take: 1,
               select: { mediaAssetId: true },
             },
           },
