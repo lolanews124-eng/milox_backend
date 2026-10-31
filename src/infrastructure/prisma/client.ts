@@ -1,5 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 
+import {
+  adminPerfEnabled,
+  recordAdminQuery,
+} from "../observability/admin-perf.js";
+
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
@@ -42,11 +47,20 @@ function databaseUrlWithPool(): string | undefined {
  */
 function createPrismaClient(): PrismaClient {
   const url = databaseUrlWithPool();
+  const logQueries =
+    process.env.PRISMA_LOG_QUERIES === "true" || adminPerfEnabled();
   const client = new PrismaClient({
     ...(url ? { datasources: { db: { url } } } : {}),
     log: [
-      ...(process.env.PRISMA_LOG_QUERIES === "true"
-        ? [{ emit: "stdout" as const, level: "query" as const }]
+      ...(logQueries
+        ? [
+            {
+              emit: (adminPerfEnabled()
+                ? ("event" as const)
+                : ("stdout" as const)),
+              level: "query" as const,
+            },
+          ]
         : []),
       { emit: "stdout" as const, level: "warn" as const },
       { emit: "event" as const, level: "error" as const },
@@ -57,6 +71,17 @@ function createPrismaClient(): PrismaClient {
     if (event.message.includes("Unique constraint failed")) return;
     console.error(event.message);
   });
+
+  if (adminPerfEnabled()) {
+    client.$on("query", (event) => {
+      // Never log SQL text or params — duration + generic label only.
+      recordAdminQuery({
+        model: "sql",
+        action: "query",
+        durationMs: event.duration,
+      });
+    });
+  }
 
   return client;
 }

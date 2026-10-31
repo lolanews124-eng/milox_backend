@@ -8,6 +8,7 @@ import {
 } from "express";
 import multer, { MulterError } from "multer";
 
+import { adminPerfMiddleware } from "../../../infrastructure/observability/admin-perf.js";
 import { AppError } from "../../../shared/errors/app-error.js";
 import { asyncHandler } from "../../../shared/http/async-handler.js";
 import {
@@ -103,6 +104,7 @@ export function createAdminRouter(
   const mutationLimit = createRateLimit(300, 10 * 60 * 1_000, adminKey);
   const uploadLimit = createRateLimit(60, 10 * 60 * 1_000, adminKey);
 
+  router.use(adminPerfMiddleware());
   router.use(authenticate);
   router.get(
     "/dashboard",

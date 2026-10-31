@@ -393,83 +393,97 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async dashboard(now: Date): Promise<AdminDashboardRecord> {
     const dayStart = startOfIstDay(now);
-    // Skip full-table message/comment COUNTs on the hot path — they saturate the
-    // Prisma pool and cause admin 502s. Dedicated chats/comments screens still count.
-    const [
-      totalUsers,
-      dailyActiveUsers,
-      newUsersToday,
-      deletedUsers,
-      totalPosts,
-      openReports,
-      commerceRows,
-    ] = await Promise.all([
-      this.database.user.count({
-        where: {
-          status: { not: UserStatus.DELETED },
-          deletedAt: null,
-          ...consumerPlatformUserWhere(),
-        },
-      }),
-      this.database.user.count({
-        where: {
-          status: UserStatus.ACTIVE,
-          deletedAt: null,
-          ...consumerPlatformUserWhere(),
-          OR: [
-            { lastSeenAt: { gte: dayStart } },
-            { lastLoginAt: { gte: dayStart } },
-          ],
-        },
-      }),
-      this.database.user.count({
-        where: {
-          createdAt: { gte: dayStart },
-          deletedAt: null,
-          ...consumerPlatformUserWhere(),
-        },
-      }),
-      this.database.user.count({
-        where: {
-          deletedAt: { not: null },
-          ...consumerPlatformUserWhere(),
-        },
-      }),
-      this.database.post.count({ where: { deletedAt: null } }),
-      this.database.report.count({
-        where: {
-          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
-        },
-      }),
-      this.database.$queryRaw<
-        Array<{ premiumUsers: bigint; revenueCents: bigint }>
-      >`
-        SELECT
-          COUNT(DISTINCT s."userId") FILTER (
+    // One round-trip with conditional aggregates. Still skip message/comment
+    // COUNTs on the hot path — they saturate the pool and cause admin 502s.
+    const rows = await this.database.$queryRaw<
+      Array<{
+        totalUsers: number;
+        dailyActiveUsers: number;
+        newUsersToday: number;
+        deletedUsers: number;
+        totalPosts: number;
+        openReports: number;
+        premiumUsers: bigint;
+        revenueCents: bigint;
+      }>
+    >`
+      SELECT
+        (
+          SELECT COUNT(*)::int
+          FROM users
+          WHERE status <> 'DELETED'
+            AND "deletedAt" IS NULL
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+        ) AS "totalUsers",
+        (
+          SELECT COUNT(*)::int
+          FROM users
+          WHERE status = 'ACTIVE'
+            AND "deletedAt" IS NULL
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND (
+              "lastSeenAt" >= ${dayStart}
+              OR "lastLoginAt" >= ${dayStart}
+            )
+        ) AS "dailyActiveUsers",
+        (
+          SELECT COUNT(*)::int
+          FROM users
+          WHERE "createdAt" >= ${dayStart}
+            AND "deletedAt" IS NULL
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+        ) AS "newUsersToday",
+        (
+          SELECT COUNT(*)::int
+          FROM users
+          WHERE "deletedAt" IS NOT NULL
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+        ) AS "deletedUsers",
+        (
+          SELECT COUNT(*)::int
+          FROM posts
+          WHERE "deletedAt" IS NULL
+        ) AS "totalPosts",
+        (
+          SELECT COUNT(*)::int
+          FROM reports
+          WHERE status IN ('OPEN', 'UNDER_REVIEW')
+        ) AS "openReports",
+        (
+          SELECT COUNT(DISTINCT s."userId") FILTER (
             WHERE s.status = 'ACTIVE'
               AND s."startsAt" <= ${now}
               AND s."endsAt" > ${now}
-          )::bigint AS "premiumUsers",
-          COALESCE(SUM(p."priceCents") FILTER (
+          )::bigint
+          FROM user_subscriptions s
+          INNER JOIN premium_plans p ON p.id = s."planId"
+        ) AS "premiumUsers",
+        (
+          SELECT COALESCE(SUM(p."priceCents") FILTER (
             WHERE s.status = 'ACTIVE'
               AND s."startsAt" <= ${now}
               AND s."endsAt" > ${now}
-          ), 0)::bigint AS "revenueCents"
-        FROM user_subscriptions s
-        INNER JOIN premium_plans p ON p.id = s."planId"
-      `,
-    ]);
+          ), 0)::bigint
+          FROM user_subscriptions s
+          INNER JOIN premium_plans p ON p.id = s."planId"
+        ) AS "revenueCents"
+    `;
+    const row = rows[0];
     return {
-      totalUsers,
-      dailyActiveUsers,
-      newUsersToday,
-      deletedUsers,
-      totalPosts,
+      totalUsers: Number(row?.totalUsers ?? 0),
+      dailyActiveUsers: Number(row?.dailyActiveUsers ?? 0),
+      newUsersToday: Number(row?.newUsersToday ?? 0),
+      deletedUsers: Number(row?.deletedUsers ?? 0),
+      totalPosts: Number(row?.totalPosts ?? 0),
       totalComments: 0,
       totalMessages: 0,
-      openReports,
-      premiumUsers: Number(commerceRows[0]?.premiumUsers ?? 0),
-      revenueCents: Number(commerceRows[0]?.revenueCents ?? 0),
+      openReports: Number(row?.openReports ?? 0),
+      premiumUsers: Number(row?.premiumUsers ?? 0),
+      revenueCents: Number(row?.revenueCents ?? 0),
     };
   }
 
@@ -496,84 +510,115 @@ export class PrismaAdminRepository implements AdminRepository {
   async usersStats(now: Date): Promise<AdminUsersStatsRecord> {
     const dayStart = startOfIstDay(now);
     const onlineSince = new Date(now.getTime() - 15 * 60 * 1000);
-    const todaySince = dayStart;
     const quietSince = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const activeWhere = {
-      deletedAt: null,
-      status: { not: UserStatus.DELETED },
-      ...consumerPlatformUserWhere(),
-    } as const;
 
-    const [
-      totalUsers,
-      verifiedUsers,
-      onlineNow,
-      activeToday,
-      quiet14d,
-      newUsersToday,
-      suspendedUsers,
-      reportedUsers,
-      deletedUsers,
-      genderGroups,
-    ] = await Promise.all([
-      this.database.user.count({ where: activeWhere }),
-      this.database.user.count({
-        where: { ...activeWhere, isVerifiedBadge: true },
-      }),
-      this.database.user.count({
-        where: { ...activeWhere, lastSeenAt: { gte: onlineSince } },
-      }),
-      this.database.user.count({
-        where: { ...activeWhere, ...recentPresenceWhere(todaySince) },
-      }),
-      this.database.user.count({
-        where: {
-          ...activeWhere,
-          status: UserStatus.ACTIVE,
-          ...stalePresenceWhere(quietSince),
-        },
-      }),
-      this.database.user.count({
-        where: { ...activeWhere, createdAt: { gte: dayStart } },
-      }),
-      this.database.user.count({ where: { status: UserStatus.SUSPENDED } }),
-      // Approximate "reported users" with open-report count (avoids EXISTS over users×reports).
-      this.database.report.count({
-        where: {
-          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
-          reportedUserId: { not: null },
-        },
-      }),
-      this.database.user.count({
-        where: {
-          deletedAt: { not: null },
-          ...consumerPlatformUserWhere(),
-        },
-      }),
-      this.database.user.groupBy({
-        by: ["gender"],
-        where: activeWhere,
-        _count: { _all: true },
-      }),
-    ]);
+    // Single scan of users + one reports subquery. Metric definitions match the
+    // previous multi-COUNT implementation (including suspended = all statuses).
+    const rows = await this.database.$queryRaw<
+      Array<{
+        totalUsers: number;
+        verifiedUsers: number;
+        onlineNow: number;
+        activeToday: number;
+        quiet14d: number;
+        newUsersToday: number;
+        maleUsers: number;
+        femaleUsers: number;
+        suspendedUsers: number;
+        deletedUsers: number;
+        reportedUsers: number;
+      }>
+    >`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+        )::int AS "totalUsers",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND "isVerifiedBadge" = true
+        )::int AS "verifiedUsers",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND "lastSeenAt" >= ${onlineSince}
+        )::int AS "onlineNow",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND (
+              "lastSeenAt" >= ${dayStart}
+              OR "lastLoginAt" >= ${dayStart}
+            )
+        )::int AS "activeToday",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status = 'ACTIVE'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND ("lastSeenAt" IS NULL OR "lastSeenAt" < ${quietSince})
+            AND ("lastLoginAt" IS NULL OR "lastLoginAt" < ${quietSince})
+        )::int AS "quiet14d",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND "createdAt" >= ${dayStart}
+        )::int AS "newUsersToday",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND gender = 'MALE'
+        )::int AS "maleUsers",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NULL
+            AND status <> 'DELETED'
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+            AND gender = 'FEMALE'
+        )::int AS "femaleUsers",
+        COUNT(*) FILTER (
+          WHERE status = 'SUSPENDED'
+        )::int AS "suspendedUsers",
+        COUNT(*) FILTER (
+          WHERE "deletedAt" IS NOT NULL
+            AND role = 'USER'
+            AND "isSystemAccount" = false
+        )::int AS "deletedUsers",
+        (
+          SELECT COUNT(*)::int
+          FROM reports
+          WHERE status IN ('OPEN', 'UNDER_REVIEW')
+            AND "reportedUserId" IS NOT NULL
+        ) AS "reportedUsers"
+      FROM users
+    `;
 
-    const maleUsers =
-      genderGroups.find((row) => row.gender === "MALE")?._count._all ?? 0;
-    const femaleUsers =
-      genderGroups.find((row) => row.gender === "FEMALE")?._count._all ?? 0;
-
+    const row = rows[0];
     return {
-      totalUsers,
-      verifiedUsers,
-      onlineNow,
-      activeToday,
-      quiet14d,
-      newUsersToday,
-      maleUsers,
-      femaleUsers,
-      suspendedUsers,
-      reportedUsers,
-      deletedUsers,
+      totalUsers: Number(row?.totalUsers ?? 0),
+      verifiedUsers: Number(row?.verifiedUsers ?? 0),
+      onlineNow: Number(row?.onlineNow ?? 0),
+      activeToday: Number(row?.activeToday ?? 0),
+      quiet14d: Number(row?.quiet14d ?? 0),
+      newUsersToday: Number(row?.newUsersToday ?? 0),
+      maleUsers: Number(row?.maleUsers ?? 0),
+      femaleUsers: Number(row?.femaleUsers ?? 0),
+      suspendedUsers: Number(row?.suspendedUsers ?? 0),
+      reportedUsers: Number(row?.reportedUsers ?? 0),
+      deletedUsers: Number(row?.deletedUsers ?? 0),
     };
   }
 
@@ -3256,45 +3301,88 @@ export class PrismaAdminRepository implements AdminRepository {
     const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
     const monthStart = new Date(dayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
     const trendStart = new Date(dayStart.getTime() - 13 * 24 * 60 * 60 * 1000);
-    const consumerWhere = consumerPlatformUserWhere();
 
-    const [
-      totalReferrals,
-      referralsToday,
-      referralsLast7Days,
-      referralsLast30Days,
-      referralCodesIssued,
-      referredSignups,
-      totalConsumerUsers,
-      rewardAggregate,
-      sampleReferral,
-      trendRows,
-      referrerGroups,
-    ] = await Promise.all([
-      this.database.referral.count(),
-      this.database.referral.count({ where: { createdAt: { gte: dayStart } } }),
-      this.database.referral.count({ where: { createdAt: { gte: weekStart } } }),
-      this.database.referral.count({ where: { createdAt: { gte: monthStart } } }),
-      this.database.referralCode.count(),
-      this.database.user.count({
-        where: { ...consumerWhere, referredByUserId: { not: null } },
-      }),
-      this.database.user.count({ where: consumerWhere }),
-      this.database.referral.aggregate({ _sum: { rewardPoints: true } }),
-      this.database.referral.findFirst({
-        select: { rewardPoints: true },
-        orderBy: { createdAt: "desc" },
-      }),
-      this.database.referral.findMany({
-        where: { createdAt: { gte: trendStart } },
-        select: { createdAt: true },
-      }),
-      this.database.referral.groupBy({
-        by: ["referrerUserId"],
-        _count: { _all: true },
-      }),
+    const [statsRows, trendDays] = await Promise.all([
+      this.database.$queryRaw<
+        Array<{
+          totalReferrals: number;
+          referralsToday: number;
+          referralsLast7Days: number;
+          referralsLast30Days: number;
+          activeReferrers: number;
+          totalRewardPointsPaid: number;
+          rewardPerReferral: number | null;
+          referralCodesIssued: number;
+          referredSignups: number;
+          totalConsumerUsers: number;
+        }>
+      >`
+        SELECT
+          (
+            SELECT COUNT(*)::int FROM referrals
+          ) AS "totalReferrals",
+          (
+            SELECT COUNT(*)::int FROM referrals
+            WHERE "createdAt" >= ${dayStart}
+          ) AS "referralsToday",
+          (
+            SELECT COUNT(*)::int FROM referrals
+            WHERE "createdAt" >= ${weekStart}
+          ) AS "referralsLast7Days",
+          (
+            SELECT COUNT(*)::int FROM referrals
+            WHERE "createdAt" >= ${monthStart}
+          ) AS "referralsLast30Days",
+          (
+            SELECT COUNT(DISTINCT "referrerUserId")::int FROM referrals
+          ) AS "activeReferrers",
+          (
+            SELECT COALESCE(SUM("rewardPoints"), 0)::int FROM referrals
+          ) AS "totalRewardPointsPaid",
+          (
+            SELECT "rewardPoints" FROM referrals
+            ORDER BY "createdAt" DESC
+            LIMIT 1
+          ) AS "rewardPerReferral",
+          (
+            SELECT COUNT(*)::int FROM referral_codes
+          ) AS "referralCodesIssued",
+          (
+            SELECT COUNT(*)::int FROM users
+            WHERE role = 'USER'
+              AND "isSystemAccount" = false
+              AND "referredByUserId" IS NOT NULL
+          ) AS "referredSignups",
+          (
+            SELECT COUNT(*)::int FROM users
+            WHERE role = 'USER'
+              AND "isSystemAccount" = false
+          ) AS "totalConsumerUsers"
+      `,
+      this.database.$queryRaw<Array<{ day: string; count: number }>>`
+        SELECT
+          to_char(
+            ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata',
+            'YYYY-MM-DD'
+          ) AS day,
+          COUNT(*)::int AS count
+        FROM referrals
+        WHERE "createdAt" >= ${trendStart}
+        GROUP BY 1
+      `,
     ]);
 
+    const stats = statsRows[0];
+    const totalReferrals = Number(stats?.totalReferrals ?? 0);
+    const referralsToday = Number(stats?.referralsToday ?? 0);
+    const referralsLast7Days = Number(stats?.referralsLast7Days ?? 0);
+    const referralsLast30Days = Number(stats?.referralsLast30Days ?? 0);
+    const activeReferrers = Number(stats?.activeReferrers ?? 0);
+    const referralCodesIssued = Number(stats?.referralCodesIssued ?? 0);
+    const referredSignups = Number(stats?.referredSignups ?? 0);
+    const totalConsumerUsers = Number(stats?.totalConsumerUsers ?? 0);
+    const totalRewardPointsPaid = Number(stats?.totalRewardPointsPaid ?? 0);
+    const rewardPerReferral = Number(stats?.rewardPerReferral ?? 0);
     const referredSignupShare = totalConsumerUsers
       ? Math.round((referredSignups / totalConsumerUsers) * 1000) / 10
       : 0;
@@ -3304,17 +3392,13 @@ export class PrismaAdminRepository implements AdminRepository {
       referralsToday,
       referralsLast7Days,
       referralsLast30Days,
-      activeReferrers: referrerGroups.length,
+      activeReferrers,
       referralCodesIssued,
       referredSignupShare,
-      totalRewardPointsPaid: rewardAggregate._sum.rewardPoints ?? 0,
-      rewardPerReferral: sampleReferral?.rewardPoints ?? 0,
+      totalRewardPointsPaid,
+      rewardPerReferral,
       sharingActive: referralsLast7Days > 0,
-      referralsTrend: buildDailySeries(
-        trendStart,
-        14,
-        trendRows.map((row) => row.createdAt),
-      ),
+      referralsTrend: seriesFromCounts(trendStart, 14, trendDays),
     };
   }
 
@@ -3395,58 +3479,63 @@ export class PrismaAdminRepository implements AdminRepository {
   async listReferralLeaderboard(
     query: OffsetPage,
   ): Promise<AdminPage<AdminReferralLeaderboardRecord>> {
-    const grouped = await this.database.referral.groupBy({
-      by: ["referrerUserId"],
-      _count: { _all: true },
-      _sum: { rewardPoints: true },
-      _max: { createdAt: true },
-      orderBy: { _count: { referrerUserId: "desc" } },
-    });
-
-    const total = grouped.length;
-    const pageRows = grouped.slice(
-      (query.page - 1) * query.pageSize,
-      query.page * query.pageSize,
-    );
-    const userIds = pageRows.map((row) => row.referrerUserId);
-    if (userIds.length === 0) {
-      return { items: [], total };
-    }
-
-    const [users, codes] = await Promise.all([
-      this.database.user.findMany({
-        where: { id: { in: userIds } },
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          profilePhotoMediaId: true,
-        },
-      }),
-      this.database.referralCode.findMany({
-        where: { userId: { in: userIds } },
-        select: { userId: true, code: true },
-      }),
+    const skip = (query.page - 1) * query.pageSize;
+    const take = query.pageSize;
+    const [totalRows, rows] = await Promise.all([
+      this.database.$queryRaw<Array<{ total: number }>>`
+        SELECT COUNT(DISTINCT "referrerUserId")::int AS total
+        FROM referrals
+      `,
+      this.database.$queryRaw<
+        Array<{
+          userId: string;
+          username: string | null;
+          displayName: string | null;
+          profilePhotoMediaId: string | null;
+          referralCode: string | null;
+          referralCount: number;
+          totalEarned: number;
+          lastReferralAt: Date | null;
+        }>
+      >`
+        WITH ranked AS (
+          SELECT
+            "referrerUserId" AS "userId",
+            COUNT(*)::int AS "referralCount",
+            COALESCE(SUM("rewardPoints"), 0)::int AS "totalEarned",
+            MAX("createdAt") AS "lastReferralAt"
+          FROM referrals
+          GROUP BY "referrerUserId"
+        )
+        SELECT
+          r."userId",
+          u.username,
+          u."displayName",
+          u."profilePhotoMediaId",
+          rc.code AS "referralCode",
+          r."referralCount",
+          r."totalEarned",
+          r."lastReferralAt"
+        FROM ranked r
+        LEFT JOIN users u ON u.id = r."userId"
+        LEFT JOIN referral_codes rc ON rc."userId" = r."userId"
+        ORDER BY r."referralCount" DESC, r."userId" ASC
+        LIMIT ${take} OFFSET ${skip}
+      `,
     ]);
 
-    const userById = new Map(users.map((user) => [user.id, user]));
-    const codeByUserId = new Map(codes.map((code) => [code.userId, code.code]));
-
     return {
-      items: pageRows.map((row) => {
-        const user = userById.get(row.referrerUserId);
-        return {
-          userId: row.referrerUserId,
-          username: user?.username ?? "unknown",
-          displayName: user?.displayName ?? null,
-          profilePhotoMediaId: user?.profilePhotoMediaId ?? null,
-          referralCode: codeByUserId.get(row.referrerUserId) ?? "—",
-          referralCount: row._count._all,
-          totalEarned: row._sum.rewardPoints ?? 0,
-          lastReferralAt: row._max.createdAt,
-        };
-      }),
-      total,
+      total: Number(totalRows[0]?.total ?? 0),
+      items: rows.map((row) => ({
+        userId: row.userId,
+        username: row.username ?? "unknown",
+        displayName: row.displayName ?? null,
+        profilePhotoMediaId: row.profilePhotoMediaId ?? null,
+        referralCode: row.referralCode ?? "—",
+        referralCount: Number(row.referralCount),
+        totalEarned: Number(row.totalEarned),
+        lastReferralAt: row.lastReferralAt,
+      })),
     };
   }
 
@@ -5226,24 +5315,6 @@ function seriesFromCounts(
   for (const row of rows) {
     const key = String(row.day).slice(0, 10);
     if (buckets.has(key)) buckets.set(key, Number(row.count));
-  }
-  return [...buckets.entries()].map(([date, count]) => ({ date, count }));
-}
-
-function buildDailySeries(
-  start: Date,
-  days: number,
-  timestamps: Date[],
-): Array<{ date: string; count: number }> {
-  const buckets = new Map<string, number>();
-  for (let index = 0; index < days; index += 1) {
-    buckets.set(istDateKey(addDays(start, index)), 0);
-  }
-  for (const timestamp of timestamps) {
-    const key = istDateKey(timestamp);
-    if (buckets.has(key)) {
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
-    }
   }
   return [...buckets.entries()].map(([date, count]) => ({ date, count }));
 }

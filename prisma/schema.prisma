@@ -479,6 +479,12 @@ model User {
   @@index([isAutomatedAccount, status])
   @@index([lastSeenAt])
   @@index([lastLoginAt])
+  /// Admin consumer KPIs / list filters: role=USER AND isSystemAccount=false.
+  @@index([role, isSystemAccount, deletedAt, status])
+  /// Admin online / activity sorts scoped to consumer accounts.
+  @@index([role, isSystemAccount, lastSeenAt])
+  /// Admin verification queue: emailVerifiedAt IS NULL.
+  @@index([emailVerifiedAt])
   @@map("users")
 }
 
@@ -1064,6 +1070,9 @@ model Match {
   @@unique([userAId, userBId])
   @@index([userAId, status])
   @@index([userBId, status])
+  /// Admin matches-today / matchedAt range filters.
+  @@index([matchedAt])
+  @@index([status, matchedAt])
   @@map("matches")
 }
 
@@ -1841,6 +1850,8 @@ model Referral {
   referred User @relation("ReferralReceived", fields: [referredUserId], references: [id], onDelete: Cascade)
 
   @@index([referrerUserId, createdAt(sort: Desc)])
+  /// Admin referral trend / day / week / month window counts.
+  @@index([createdAt])
   @@map("referrals")
 }
 
