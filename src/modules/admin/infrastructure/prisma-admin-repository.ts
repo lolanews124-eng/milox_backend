@@ -1176,7 +1176,11 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        maxWait: 5_000,
+        timeout: 15_000,
+      },
     );
   }
 
@@ -1299,6 +1303,8 @@ export class PrismaAdminRepository implements AdminRepository {
     note: string | null;
     removeProfileMedia?: boolean | undefined;
   }): Promise<object | null> {
+    // ReadCommitted: Serializable was aborting / hanging under worker+KPI load
+    // (admin "Saving…" → proxy 502). Status check inside still prevents double-apply.
     return this.database.$transaction(
       async (transaction) => {
         const actor = await transaction.user.findFirst({
@@ -1321,7 +1327,11 @@ export class PrismaAdminRepository implements AdminRepository {
           removeProfileMedia: data.removeProfileMedia === true,
         });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        maxWait: 5_000,
+        timeout: 15_000,
+      },
     );
   }
 
