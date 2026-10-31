@@ -18,6 +18,7 @@ import {
   SubscriptionStatus,
   UserRole,
   UserStatus,
+  VerifiedBadgeOrderStatus,
   WalletTransactionType,
   type PrismaClient,
 } from "@prisma/client";
@@ -465,19 +466,17 @@ export class PrismaAdminRepository implements AdminRepository {
     openReports: number;
     pendingVerification: number;
   }> {
+    // pendingVerification used to COUNT almost every active user (isVerifiedBadge
+    // false). That saturated the pool on every shell load. Use open verified-badge
+    // orders as the real "needs attention" queue instead.
     const [openReports, pendingVerification] = await Promise.all([
       this.database.report.count({
         where: {
           status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
         },
       }),
-      this.database.user.count({
-        where: {
-          deletedAt: null,
-          status: UserStatus.ACTIVE,
-          ...consumerPlatformUserWhere(),
-          isVerifiedBadge: false,
-        },
+      this.database.verifiedBadgeOrder.count({
+        where: { status: VerifiedBadgeOrderStatus.PENDING },
       }),
     ]);
     return { openReports, pendingVerification };
@@ -1607,29 +1606,24 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async storiesStats(now: Date): Promise<AdminStoriesStatsRecord> {
     const notDeleted = { deletedAt: null };
-    const [
-      totalStories,
-      activeStories,
-      expiredStories,
-      removedStories,
-      totalViews,
-    ] = await Promise.all([
-      this.database.story.count({ where: notDeleted }),
-      this.database.story.count({
-        where: { ...notDeleted, expiresAt: { gt: now } },
-      }),
-      this.database.story.count({
-        where: { ...notDeleted, expiresAt: { lte: now } },
-      }),
-      this.database.story.count({ where: { deletedAt: { not: null } } }),
-      this.database.storyView.count(),
-    ]);
+    // Skip full-table storyView.count — expensive and not needed for queue UI.
+    const [totalStories, activeStories, expiredStories, removedStories] =
+      await Promise.all([
+        this.database.story.count({ where: notDeleted }),
+        this.database.story.count({
+          where: { ...notDeleted, expiresAt: { gt: now } },
+        }),
+        this.database.story.count({
+          where: { ...notDeleted, expiresAt: { lte: now } },
+        }),
+        this.database.story.count({ where: { deletedAt: { not: null } } }),
+      ]);
     return {
       totalStories,
       activeStories,
       expiredStories,
       removedStories,
-      totalViews,
+      totalViews: 0,
     };
   }
 
@@ -3552,12 +3546,13 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async conversationsStats(now: Date): Promise<AdminConversationsStatsRecord> {
     const dayStart = startOfIstDay(now);
+    // Skip full-table message.COUNT — it was a top cause of admin 502s.
+    // messagesToday uses createdAt range (index-friendly); totalMessages omitted.
     const [
       totalConversations,
       activeConversations,
       closedConversations,
       reportedConversations,
-      totalMessages,
       messagesToday,
     ] = await Promise.all([
       this.database.conversation.count(),
@@ -3571,9 +3566,6 @@ export class PrismaAdminRepository implements AdminRepository {
         where: { messages: { some: openReportMessageFilter } },
       }),
       this.database.message.count({
-        where: { deletedForEveryoneAt: null },
-      }),
-      this.database.message.count({
         where: { createdAt: { gte: dayStart }, deletedForEveryoneAt: null },
       }),
     ]);
@@ -3582,7 +3574,7 @@ export class PrismaAdminRepository implements AdminRepository {
       activeConversations,
       closedConversations,
       reportedConversations,
-      totalMessages,
+      totalMessages: 0,
       messagesToday,
     };
   }

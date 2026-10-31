@@ -213,8 +213,10 @@ export class AdminService {
   }
 
   async verificationStats(): Promise<object> {
-    const stats = await this.repository.verificationStats();
-    return presentAdminVerificationStats(stats);
+    return ttlGetOrSet("admin:verification-stats", 60_000, async () => {
+      const stats = await this.repository.verificationStats();
+      return presentAdminVerificationStats(stats);
+    });
   }
 
   async listUsers(options: {
@@ -584,8 +586,10 @@ export class AdminService {
   }
 
   async postsStats(): Promise<object> {
-    const stats = await this.repository.postsStats();
-    return presentAdminPostsStats(stats);
+    return ttlGetOrSet("admin:posts-stats", 60_000, async () => {
+      const stats = await this.repository.postsStats();
+      return presentAdminPostsStats(stats);
+    });
   }
 
   async updatePostVisibility(
@@ -746,8 +750,10 @@ export class AdminService {
   }
 
   async storiesStats(): Promise<object> {
-    const stats = await this.repository.storiesStats(new Date());
-    return presentAdminStoriesStats(stats);
+    return ttlGetOrSet("admin:stories-stats", 60_000, async () => {
+      const stats = await this.repository.storiesStats(new Date());
+      return presentAdminStoriesStats(stats);
+    });
   }
 
   async deleteStory(
@@ -816,8 +822,10 @@ export class AdminService {
   }
 
   async commentsStats(): Promise<object> {
-    const stats = await this.repository.commentsStats();
-    return presentAdminCommentsStats(stats);
+    return ttlGetOrSet("admin:comments-stats", 60_000, async () => {
+      const stats = await this.repository.commentsStats();
+      return presentAdminCommentsStats(stats);
+    });
   }
 
   async updateCommentVisibility(
@@ -1669,6 +1677,14 @@ export class AdminService {
     page?: number;
     limit?: number;
   }): Promise<object> {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 50;
+    // Cache first page (dashboard + payments landing). Deeper pages stay live.
+    if (page === 1 && limit <= 50) {
+      return ttlGetOrSet(`admin:income:p${page}:l${limit}`, 60_000, () =>
+        this.repository.paypalIncomeReport({ page, limit }),
+      );
+    }
     return this.repository.paypalIncomeReport(options);
   }
 
@@ -1676,6 +1692,13 @@ export class AdminService {
     days = 30,
     options?: { page?: number; limit?: number },
   ): Promise<object> {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 50;
+    if (page === 1 && limit <= 50) {
+      return ttlGetOrSet(`admin:funnel:d${days}:p${page}:l${limit}`, 60_000, () =>
+        paymentFunnelReport(this.requireDatabase(), days, { page, limit }),
+      );
+    }
     return paymentFunnelReport(this.requireDatabase(), days, options);
   }
 
@@ -1860,8 +1883,10 @@ export class AdminService {
   }
 
   async referralsStats(): Promise<object> {
-    const stats = await this.repository.referralsStats(new Date());
-    return presentAdminReferralsStats(stats);
+    return ttlGetOrSet("admin:referrals-stats", 120_000, async () => {
+      const stats = await this.repository.referralsStats(new Date());
+      return presentAdminReferralsStats(stats);
+    });
   }
 
   async listReferrals(options: {
@@ -1922,8 +1947,10 @@ export class AdminService {
   }
 
   async conversationsStats(): Promise<object> {
-    const stats = await this.repository.conversationsStats(new Date());
-    return presentAdminConversationsStats(stats);
+    return ttlGetOrSet("admin:conversations-stats", 60_000, async () => {
+      const stats = await this.repository.conversationsStats(new Date());
+      return presentAdminConversationsStats(stats);
+    });
   }
 
   async listConversationMessages(
@@ -2162,7 +2189,9 @@ export class AdminService {
   }
 
   async walletStats(): Promise<object> {
-    return presentAdminWalletStats(await this.repository.walletStats());
+    return ttlGetOrSet("admin:wallet-stats", 60_000, async () =>
+      presentAdminWalletStats(await this.repository.walletStats()),
+    );
   }
 
   async getWalletUser(userId: string): Promise<object> {

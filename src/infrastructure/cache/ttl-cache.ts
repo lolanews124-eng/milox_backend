@@ -4,6 +4,8 @@ type CacheEntry = {
 };
 
 const store = new Map<string, CacheEntry>();
+/** Coalesce concurrent cold misses so N admin tabs don't stampede the DB. */
+const inflight = new Map<string, Promise<unknown>>();
 
 /**
  * Process-local TTL cache for hot admin KPI responses.
@@ -19,12 +21,28 @@ export async function ttlGetOrSet<T>(
   if (hit && hit.expiresAt > now) {
     return hit.value as T;
   }
-  const value = await loader();
-  store.set(key, { value, expiresAt: now + ttlMs });
-  return value;
+
+  const pending = inflight.get(key);
+  if (pending) {
+    return pending as Promise<T>;
+  }
+
+  const loadPromise = (async () => {
+    try {
+      const value = await loader();
+      store.set(key, { value, expiresAt: Date.now() + ttlMs });
+      return value;
+    } finally {
+      inflight.delete(key);
+    }
+  })();
+
+  inflight.set(key, loadPromise);
+  return loadPromise as Promise<T>;
 }
 
 /** Test / deploy hook — clears all entries. */
 export function ttlCacheClear(): void {
   store.clear();
+  inflight.clear();
 }

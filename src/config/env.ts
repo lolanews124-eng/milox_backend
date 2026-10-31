@@ -215,10 +215,11 @@ export function resetConfigForTests(): void {
 }
 
 /**
- * Always allowed in production (Vercel staff consoles).
+ * Always allowed in production (custom domain + Vercel staff consoles).
  * Also set ADMIN_ORIGIN / BOTS_ORIGIN on the server when those are the canonical hosts.
  */
 const DEFAULT_EXTRA_CORS_ORIGINS = [
+  "https://admin.milox.in",
   "https://milox-admin.vercel.app",
   "https://milox-bots-manage.vercel.app",
 ] as const;
@@ -257,10 +258,9 @@ export function createCorsOriginChecker(config: AppConfig) {
     origin: string | undefined,
     callback: (error: Error | null, allow?: boolean) => void,
   ) => {
-    if (isAllowedCorsOrigin(config, origin)) {
-      callback(null, true);
-      return;
-    }
-    callback(new Error(`Origin ${origin ?? "unknown"} not allowed by CORS`));
+    // Important: pass `false`, never `new Error(...)`. Throwing here makes
+    // Express return INTERNAL_ERROR 500 and breaks admin login from unknown
+    // or misconfigured Origins (e.g. custom admin domain before allowlisting).
+    callback(null, isAllowedCorsOrigin(config, origin));
   };
 }
