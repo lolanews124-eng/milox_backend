@@ -477,6 +477,8 @@ model User {
   @@index([premiumTier, discoverBoost])
   @@index([deletedAt])
   @@index([isAutomatedAccount, status])
+  @@index([lastSeenAt])
+  @@index([lastLoginAt])
   @@map("users")
 }
 

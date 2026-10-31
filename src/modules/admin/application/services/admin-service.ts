@@ -83,6 +83,7 @@ import type { RazorpayClient } from "../../../payments/infrastructure/razorpay-c
 import type { PaypalClient } from "../../../payments/infrastructure/paypal-client.js";
 import { InsufficientWalletBalanceError } from "../../../rewards/application/ports/rewards-repository.js";
 import { notifyIndexNow } from "../../../../infrastructure/indexnow.js";
+import { ttlGetOrSet } from "../../../../infrastructure/cache/ttl-cache.js";
 import {
   ensureAppEconomyConfig,
   presentEconomyConfig,
@@ -177,16 +178,22 @@ export class AdminService {
   }
 
   dashboard(): ReturnType<AdminRepository["dashboard"]> {
-    return this.repository.dashboard(new Date());
+    return ttlGetOrSet("admin:dashboard", 60_000, () =>
+      this.repository.dashboard(new Date()),
+    );
   }
 
   navBadges(): ReturnType<AdminRepository["navBadges"]> {
-    return this.repository.navBadges();
+    return ttlGetOrSet("admin:nav-badges", 30_000, () =>
+      this.repository.navBadges(),
+    );
   }
 
   async usersStats(): Promise<object> {
-    const stats = await this.repository.usersStats(new Date());
-    return presentAdminUsersStats(stats);
+    return ttlGetOrSet("admin:users-stats", 60_000, async () => {
+      const stats = await this.repository.usersStats(new Date());
+      return presentAdminUsersStats(stats);
+    });
   }
 
   userArrivals(days: number): ReturnType<AdminRepository["userArrivals"]> {
@@ -1101,8 +1108,10 @@ export class AdminService {
   }
 
   async getAnalytics(): Promise<object> {
-    const data = await this.repository.analytics(new Date());
-    return presentAdminAnalytics(data);
+    return ttlGetOrSet("admin:analytics", 120_000, async () => {
+      const data = await this.repository.analytics(new Date());
+      return presentAdminAnalytics(data);
+    });
   }
 
   async listPremiumPlans(options: {
@@ -1844,8 +1853,10 @@ export class AdminService {
   }
 
   async matchesStats(): Promise<object> {
-    const stats = await this.repository.matchesStats(new Date());
-    return presentAdminMatchesStats(stats);
+    return ttlGetOrSet("admin:matches-stats", 60_000, async () => {
+      const stats = await this.repository.matchesStats(new Date());
+      return presentAdminMatchesStats(stats);
+    });
   }
 
   async referralsStats(): Promise<object> {

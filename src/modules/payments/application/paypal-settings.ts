@@ -137,11 +137,12 @@ function addMoney(
   bucket: Record<string, { amountMinor: number; count: number }>,
   currency: string,
   amountMinor: number,
+  count = 1,
 ) {
   const current = bucket[currency] ?? emptyMoney();
   bucket[currency] = {
     amountMinor: current.amountMinor + amountMinor,
-    count: current.count + 1,
+    count: current.count + count,
   };
 }
 
@@ -267,7 +268,7 @@ export async function paypalIncomeReport(
   const page = Math.max(1, options.page ?? 1);
   const limit = Math.min(200, Math.max(1, options.limit ?? 50));
 
-  const [grouped, recentTotal, recent, windowRows] = await Promise.all([
+  const [grouped, recentTotal, recent, windowAgg] = await Promise.all([
     database.paypalCheckout.groupBy({
       by: ["kind", "currency"],
       where: completed,
@@ -292,19 +293,29 @@ export async function paypalIncomeReport(
         user: { select: { username: true } },
       },
     }),
-    database.paypalCheckout.findMany({
-      where: {
-        ...completed,
-        OR: [{ fulfilledAt: { gte: month } }, { fulfilledAt: null, createdAt: { gte: month } }],
-      },
-      select: {
-        kind: true,
-        amountMinor: true,
-        currency: true,
-        fulfilledAt: true,
-        createdAt: true,
-      },
-    }),
+    // Aggregate in SQL — do not pull ~30d of checkout rows into Node.
+    database.$queryRaw<
+      Array<{
+        day: string;
+        currency: string;
+        amountMinor: bigint;
+        count: number;
+      }>
+    >`
+      SELECT
+        to_char(
+          (COALESCE("fulfilledAt", "createdAt") AT TIME ZONE 'UTC')
+            AT TIME ZONE 'Asia/Kolkata',
+          'YYYY-MM-DD'
+        ) AS day,
+        currency,
+        COALESCE(SUM("amountMinor"), 0)::bigint AS "amountMinor",
+        COUNT(*)::int AS count
+      FROM paypal_checkouts
+      WHERE status = 'COMPLETED'
+        AND COALESCE("fulfilledAt", "createdAt") >= ${month}
+      GROUP BY 1, 2
+    `,
   ]);
 
   const allTime: Record<string, { amountMinor: number; count: number }> = {};
@@ -314,7 +325,7 @@ export async function paypalIncomeReport(
     amountMinor: number;
     count: number;
   }> = grouped.map((row) => {
-    addMoney(allTime, row.currency, row._sum.amountMinor ?? 0);
+    addMoney(allTime, row.currency, row._sum.amountMinor ?? 0, row._count._all);
     return {
       kind: row.kind,
       currency: row.currency,
@@ -328,15 +339,18 @@ export async function paypalIncomeReport(
   const monthBucket: Record<string, { amountMinor: number; count: number }> = {};
   const daily = new Map<string, Record<string, { amountMinor: number; count: number }>>();
 
-  for (const row of windowRows) {
-    const at = paidAt(row);
-    if (at >= today) addMoney(todayBucket, row.currency, row.amountMinor);
-    if (at >= week) addMoney(weekBucket, row.currency, row.amountMinor);
-    addMoney(monthBucket, row.currency, row.amountMinor);
-    const key = istDateKey(at);
-    const day = daily.get(key) ?? {};
-    addMoney(day, row.currency, row.amountMinor);
-    daily.set(key, day);
+  const todayKey = istDateKey(today);
+  const weekKey = istDateKey(week);
+
+  for (const row of windowAgg) {
+    const amount = Number(row.amountMinor);
+    const count = row.count;
+    addMoney(monthBucket, row.currency, amount, count);
+    const dayMap = daily.get(row.day) ?? {};
+    addMoney(dayMap, row.currency, amount, count);
+    daily.set(row.day, dayMap);
+    if (row.day >= weekKey) addMoney(weekBucket, row.currency, amount, count);
+    if (row.day >= todayKey) addMoney(todayBucket, row.currency, amount, count);
   }
 
   const series: Array<{

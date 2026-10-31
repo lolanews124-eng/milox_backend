@@ -381,14 +381,14 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async dashboard(now: Date): Promise<AdminDashboardRecord> {
     const dayStart = startOfIstDay(now);
+    // Skip full-table message/comment COUNTs on the hot path — they saturate the
+    // Prisma pool and cause admin 502s. Dedicated chats/comments screens still count.
     const [
       totalUsers,
       dailyActiveUsers,
       newUsersToday,
       deletedUsers,
       totalPosts,
-      totalComments,
-      totalMessages,
       openReports,
       commerceRows,
     ] = await Promise.all([
@@ -424,10 +424,6 @@ export class PrismaAdminRepository implements AdminRepository {
         },
       }),
       this.database.post.count({ where: { deletedAt: null } }),
-      this.database.comment.count({ where: { deletedAt: null } }),
-      this.database.message.count({
-        where: { deletedForEveryoneAt: null },
-      }),
       this.database.report.count({
         where: {
           status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
@@ -457,8 +453,8 @@ export class PrismaAdminRepository implements AdminRepository {
       newUsersToday,
       deletedUsers,
       totalPosts,
-      totalComments,
-      totalMessages,
+      totalComments: 0,
+      totalMessages: 0,
       openReports,
       premiumUsers: Number(commerceRows[0]?.premiumUsers ?? 0),
       revenueCents: Number(commerceRows[0]?.revenueCents ?? 0),
@@ -3236,8 +3232,9 @@ export class PrismaAdminRepository implements AdminRepository {
       this.database.match.count(),
       this.database.match.count({ where: { status: MatchStatus.ACTIVE } }),
       this.database.match.count({ where: { status: MatchStatus.UNMATCHED } }),
-      this.database.match.count({
-        where: { conversation: { messages: { some: {} } } },
+      // Approximation: match threads that exist (avoids nested messages EXISTS).
+      this.database.conversation.count({
+        where: { matchId: { not: null } },
       }),
       this.database.match.count({ where: { matchedAt: { gte: dayStart } } }),
     ]);
