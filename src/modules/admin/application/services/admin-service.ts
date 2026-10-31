@@ -178,19 +178,19 @@ export class AdminService {
   }
 
   dashboard(): ReturnType<AdminRepository["dashboard"]> {
-    return ttlGetOrSet("admin:dashboard", 60_000, () =>
+    return ttlGetOrSet("admin:dashboard", 90_000, () =>
       this.repository.dashboard(new Date()),
     );
   }
 
   navBadges(): ReturnType<AdminRepository["navBadges"]> {
-    return ttlGetOrSet("admin:nav-badges", 30_000, () =>
+    return ttlGetOrSet("admin:nav-badges", 60_000, () =>
       this.repository.navBadges(),
     );
   }
 
   async usersStats(): Promise<object> {
-    return ttlGetOrSet("admin:users-stats", 60_000, async () => {
+    return ttlGetOrSet("admin:users-stats", 90_000, async () => {
       const stats = await this.repository.usersStats(new Date());
       return presentAdminUsersStats(stats);
     });
@@ -1116,7 +1116,7 @@ export class AdminService {
   }
 
   async getAnalytics(): Promise<object> {
-    return ttlGetOrSet("admin:analytics", 120_000, async () => {
+    return ttlGetOrSet("admin:analytics", 180_000, async () => {
       const data = await this.repository.analytics(new Date());
       return presentAdminAnalytics(data);
     });

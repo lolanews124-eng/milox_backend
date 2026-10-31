@@ -24,6 +24,17 @@ import {
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
+/**
+ * Admin writes must not use Serializable — under outbox/feed-score load it
+ * hangs, retries, and surfaces as proxy 502 while moderators wait on "Saving…".
+ * Status/version checks inside each tx still prevent double-apply.
+ */
+const ADMIN_WRITE_TX = {
+  isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+  maxWait: 5_000,
+  timeout: 15_000,
+} as const;
+
 import {
   ensureMobileAppConfig,
   MOBILE_APP_CONFIG_ID,
@@ -526,14 +537,11 @@ export class PrismaAdminRepository implements AdminRepository {
         where: { ...activeWhere, createdAt: { gte: dayStart } },
       }),
       this.database.user.count({ where: { status: UserStatus.SUSPENDED } }),
-      this.database.user.count({
+      // Approximate "reported users" with open-report count (avoids EXISTS over users×reports).
+      this.database.report.count({
         where: {
-          ...activeWhere,
-          reportsAgainst: {
-            some: {
-              status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
-            },
-          },
+          status: { in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW] },
+          reportedUserId: { not: null },
         },
       }),
       this.database.user.count({
@@ -1077,7 +1085,7 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -1176,11 +1184,7 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return updated;
       },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
-        maxWait: 5_000,
-        timeout: 15_000,
-      },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -1327,11 +1331,7 @@ export class PrismaAdminRepository implements AdminRepository {
           removeProfileMedia: data.removeProfileMedia === true,
         });
       },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
-        maxWait: 5_000,
-        timeout: 15_000,
-      },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -1693,7 +1693,7 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return mapAdminStory(updated);
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -1975,7 +1975,7 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -2019,7 +2019,7 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -2062,7 +2062,7 @@ export class PrismaAdminRepository implements AdminRepository {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -3717,7 +3717,7 @@ export class PrismaAdminRepository implements AdminRepository {
           mediaAsset: null,
         });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -4287,7 +4287,7 @@ export class PrismaAdminRepository implements AdminRepository {
         if (!comment) return null;
         return mutate(transaction, comment);
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 
@@ -4328,7 +4328,7 @@ export class PrismaAdminRepository implements AdminRepository {
         if (!post) return null;
         return mutate(transaction, post);
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ADMIN_WRITE_TX,
     );
   }
 

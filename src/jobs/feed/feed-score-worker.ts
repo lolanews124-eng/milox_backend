@@ -57,7 +57,11 @@ export class FeedScoreWorker {
       void this.tick().catch(() => undefined);
     }, this.config.FEED_SCORE_POLL_MS);
     this.timer.unref();
-    void this.tick().catch(() => undefined);
+    // Delay first heavy UPDATE so boot/admin traffic is not competing with it.
+    const warm = setTimeout(() => {
+      void this.tick().catch(() => undefined);
+    }, Math.min(60_000, this.config.FEED_SCORE_POLL_MS));
+    warm.unref();
   }
 
   stop(): void {

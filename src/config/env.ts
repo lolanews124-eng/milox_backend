@@ -150,7 +150,8 @@ const envSchema = z
     PAYPAL_CLIENT_SECRET: z.string().default(""),
     PAYPAL_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
     PAYPAL_WEBHOOK_ID: z.string().default(""),
-    CHAT_OUTBOX_POLL_MS: z.coerce.number().int().positive().default(100),
+    // Default 500ms — 100ms hammered Postgres while admin was loading.
+    CHAT_OUTBOX_POLL_MS: z.coerce.number().int().positive().default(500),
     NOTIFICATION_OUTBOX_POLL_MS: z.coerce
       .number()
       .int()
