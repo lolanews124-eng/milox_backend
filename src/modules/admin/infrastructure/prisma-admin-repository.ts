@@ -393,8 +393,8 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async dashboard(now: Date): Promise<AdminDashboardRecord> {
     const dayStart = startOfIstDay(now);
-    // One round-trip with conditional aggregates. Still skip message/comment
-    // COUNTs on the hot path — they saturate the pool and cause admin 502s.
+    // One users scan (COUNT FILTER) + one subscriptions scan + light posts/reports
+    // scalars. Skip message/comment COUNTs (pool saturation / admin 502s).
     const rows = await this.database.$queryRaw<
       Array<{
         totalUsers: number;
@@ -408,41 +408,10 @@ export class PrismaAdminRepository implements AdminRepository {
       }>
     >`
       SELECT
-        (
-          SELECT COUNT(*)::int
-          FROM users
-          WHERE status <> 'DELETED'
-            AND "deletedAt" IS NULL
-            AND role = 'USER'
-            AND "isSystemAccount" = false
-        ) AS "totalUsers",
-        (
-          SELECT COUNT(*)::int
-          FROM users
-          WHERE status = 'ACTIVE'
-            AND "deletedAt" IS NULL
-            AND role = 'USER'
-            AND "isSystemAccount" = false
-            AND (
-              "lastSeenAt" >= ${dayStart}
-              OR "lastLoginAt" >= ${dayStart}
-            )
-        ) AS "dailyActiveUsers",
-        (
-          SELECT COUNT(*)::int
-          FROM users
-          WHERE "createdAt" >= ${dayStart}
-            AND "deletedAt" IS NULL
-            AND role = 'USER'
-            AND "isSystemAccount" = false
-        ) AS "newUsersToday",
-        (
-          SELECT COUNT(*)::int
-          FROM users
-          WHERE "deletedAt" IS NOT NULL
-            AND role = 'USER'
-            AND "isSystemAccount" = false
-        ) AS "deletedUsers",
+        u."totalUsers",
+        u."dailyActiveUsers",
+        u."newUsersToday",
+        u."deletedUsers",
         (
           SELECT COUNT(*)::int
           FROM posts
@@ -453,24 +422,54 @@ export class PrismaAdminRepository implements AdminRepository {
           FROM reports
           WHERE status IN ('OPEN', 'UNDER_REVIEW')
         ) AS "openReports",
-        (
-          SELECT COUNT(DISTINCT s."userId") FILTER (
+        c."premiumUsers",
+        c."revenueCents"
+      FROM (
+        SELECT
+          COUNT(*) FILTER (
+            WHERE status <> 'DELETED'
+              AND "deletedAt" IS NULL
+              AND role = 'USER'
+              AND "isSystemAccount" = false
+          )::int AS "totalUsers",
+          COUNT(*) FILTER (
+            WHERE status = 'ACTIVE'
+              AND "deletedAt" IS NULL
+              AND role = 'USER'
+              AND "isSystemAccount" = false
+              AND (
+                "lastSeenAt" >= ${dayStart}
+                OR "lastLoginAt" >= ${dayStart}
+              )
+          )::int AS "dailyActiveUsers",
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= ${dayStart}
+              AND "deletedAt" IS NULL
+              AND role = 'USER'
+              AND "isSystemAccount" = false
+          )::int AS "newUsersToday",
+          COUNT(*) FILTER (
+            WHERE "deletedAt" IS NOT NULL
+              AND role = 'USER'
+              AND "isSystemAccount" = false
+          )::int AS "deletedUsers"
+        FROM users
+      ) u
+      CROSS JOIN (
+        SELECT
+          COUNT(DISTINCT s."userId") FILTER (
             WHERE s.status = 'ACTIVE'
               AND s."startsAt" <= ${now}
               AND s."endsAt" > ${now}
-          )::bigint
-          FROM user_subscriptions s
-          INNER JOIN premium_plans p ON p.id = s."planId"
-        ) AS "premiumUsers",
-        (
-          SELECT COALESCE(SUM(p."priceCents") FILTER (
+          )::bigint AS "premiumUsers",
+          COALESCE(SUM(p."priceCents") FILTER (
             WHERE s.status = 'ACTIVE'
               AND s."startsAt" <= ${now}
               AND s."endsAt" > ${now}
-          ), 0)::bigint
-          FROM user_subscriptions s
-          INNER JOIN premium_plans p ON p.id = s."planId"
-        ) AS "revenueCents"
+          ), 0)::bigint AS "revenueCents"
+        FROM user_subscriptions s
+        INNER JOIN premium_plans p ON p.id = s."planId"
+      ) c
     `;
     const row = rows[0];
     return {

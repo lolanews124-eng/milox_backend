@@ -20,6 +20,8 @@
     "test:bots-e2e:auto-pipeline": "vitest run tests/bots-e2e/bots-auto-pipeline.e2e.test.ts",
     "test:bots-e2e:mixed-tick": "vitest run tests/bots-e2e/bots-mixed-tick.e2e.test.ts",
     "test:bots-e2e:target-guard": "vitest run tests/bots-e2e/bots-target-guard.e2e.test.ts tests/bots-target-policy.test.ts",
+    "test:post-view-pg:setup": "node scripts/setup-post-view-e2e-db.mjs",
+    "test:post-view-pg": "vitest run tests/post-view-pg/ --fileParallelism=false",
     "postinstall": "prisma generate",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prisma:generate": "prisma generate",

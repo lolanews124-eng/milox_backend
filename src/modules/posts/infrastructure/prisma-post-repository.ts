@@ -540,37 +540,47 @@ export class PrismaPostRepository implements PostRepository {
     postId: string,
     viewerId: string,
   ): Promise<{ viewCount: number } | null> {
-    return this.database.$transaction(async (transaction) => {
-      const post = await findVisibleForAction(transaction, postId, viewerId);
-      if (!post) return null;
-
-      if (post.authorId === viewerId) {
-        const own = await transaction.post.findUnique({
-          where: { id: postId },
-          select: { viewCount: true },
-        });
-        return own ? { viewCount: own.viewCount } : null;
-      }
-
-      const created = await transaction.postView.createMany({
-        data: [{ postId, viewerId }],
-        skipDuplicates: true,
-      });
-      if (created.count === 0) {
-        const existing = await transaction.post.findUnique({
-          where: { id: postId },
-          select: { viewCount: true },
-        });
-        return existing ? { viewCount: existing.viewCount } : null;
-      }
-
-      const updated = await transaction.post.update({
-        where: { id: postId },
-        data: { viewCount: { increment: 1 } },
-        select: { viewCount: true },
-      });
-      return { viewCount: updated.viewCount };
+    // Visibility (privacy / blocks / deleted / moderation) stays outside the
+    // write path so expensive author EXISTS checks do not hold a write
+    // transaction open. Unique-view + conditional viewCount increment is a
+    // single atomic SQL statement so concurrent duplicates cannot double-count.
+    const post = await this.database.post.findFirst({
+      where: {
+        ...visiblePostWhere(postId, viewerId),
+      },
+      select: { authorId: true, viewCount: true },
     });
+    if (!post) return null;
+
+    if (post.authorId === viewerId) {
+      return { viewCount: post.viewCount };
+    }
+
+    const rows = await this.database.$queryRaw<Array<{ viewCount: number }>>`
+      WITH inserted AS (
+        INSERT INTO post_views ("postId", "viewerId")
+        VALUES (${postId}::uuid, ${viewerId}::uuid)
+        ON CONFLICT ("postId", "viewerId") DO NOTHING
+        RETURNING "postId"
+      ),
+      updated AS (
+        UPDATE posts AS p
+        SET
+          "viewCount" = p."viewCount" + 1,
+          "updatedAt" = CURRENT_TIMESTAMP
+        FROM inserted AS i
+        WHERE p.id = i."postId"
+        RETURNING p."viewCount"
+      )
+      SELECT COALESCE(
+        (SELECT u."viewCount" FROM updated AS u),
+        (SELECT p."viewCount" FROM posts AS p WHERE p.id = ${postId}::uuid)
+      ) AS "viewCount"
+    `;
+
+    const viewCount = rows[0]?.viewCount;
+    if (viewCount == null) return null;
+    return { viewCount };
   }
 
   async report(

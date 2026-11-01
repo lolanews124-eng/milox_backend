@@ -5,7 +5,7 @@ import { PrismaAdminRepository } from "../src/modules/admin/infrastructure/prism
 import { startOfIstDay } from "../src/shared/ist-time.js";
 
 describe("PrismaAdminRepository consolidated admin aggregates", () => {
-  it("dashboard uses one SQL round-trip and preserves KPI fields", async () => {
+  it("dashboard uses one SQL round-trip with FILTER users scan + shared commerce join", async () => {
     const queryRaw = vi.fn().mockResolvedValue([
       {
         totalUsers: 100,
@@ -30,6 +30,14 @@ describe("PrismaAdminRepository consolidated admin aggregates", () => {
     );
 
     expect(queryRaw).toHaveBeenCalledTimes(1);
+    const sql = queryRaw.mock.calls[0]?.[0] as { strings?: string[] };
+    const sqlText = Array.isArray(sql?.strings)
+      ? sql.strings.join("?")
+      : String(sql);
+    expect(sqlText).toMatch(/COUNT\(\*\) FILTER/i);
+    expect(sqlText).toMatch(/CROSS JOIN/i);
+    expect(sqlText).toMatch(/user_subscriptions/i);
+    expect(sqlText.match(/FROM users/gi)?.length).toBe(1);
     expect(database.user.count).not.toHaveBeenCalled();
     expect(database.post.count).not.toHaveBeenCalled();
     expect(database.report.count).not.toHaveBeenCalled();
