@@ -94,6 +94,20 @@ export class PrismaUserRepository implements UserRepository {
     });
   }
 
+  findAccountStateByUsername(usernameNormalized: string) {
+    return this.database.user.findFirst({
+      where: { usernameNormalized },
+      select: {
+        id: true,
+        username: true,
+        status: true,
+        deletedAt: true,
+        role: true,
+        isSystemAccount: true,
+      },
+    });
+  }
+
   async searchUsers(
     query: UserSearchQuery,
   ): Promise<PostAuthorViewRecord[]> {

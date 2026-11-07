@@ -57,6 +57,7 @@ import {
   officialBroadcastJobIdParamSchema,
   changeStaffRoleSchema,
   changeUserStatusSchema,
+  deleteUserAccountSchema,
   createAdSchema,
   adminAdQuerySchema,
   adminAdPlacementParamSchema,
@@ -292,6 +293,20 @@ export class AdminController {
     const { userId } = adminUserIdParamSchema.parse(request.params);
     const input = changeUserStatusSchema.parse(request.body as unknown);
     const data = await this.admin.changeUserStatus(
+      requireUser(request),
+      userId,
+      input,
+    );
+    response.status(200).json(success(request, data));
+  };
+
+  deleteUserAccount = async (
+    request: Request,
+    response: Response,
+  ): Promise<void> => {
+    const { userId } = adminUserIdParamSchema.parse(request.params);
+    const input = deleteUserAccountSchema.parse(request.body as unknown);
+    const data = await this.admin.deleteUserAccount(
       requireUser(request),
       userId,
       input,

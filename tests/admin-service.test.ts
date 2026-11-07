@@ -59,6 +59,80 @@ describe("AdminService", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN", statusCode: 403 });
   });
 
+  it("requires matching username confirmation before deleting an account", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.getUserById).mockResolvedValue({
+      ...userFixture(),
+      bio: null,
+      gender: "PREFER_NOT_TO_SAY",
+      ageRange: "AGE_18_24",
+      relationshipGoal: null,
+      websiteUrl: null,
+      instagramHandle: null,
+      isPrivateAccount: false,
+      hideAge: false,
+      hideCountry: false,
+      hideLastSeen: false,
+      hideOnline: false,
+      coverPhotoMediaId: null,
+      interestCount: 0,
+      reportCountAgainst: 0,
+      openReportCountAgainst: 0,
+    } as never);
+
+    await expect(
+      new AdminService(repository, "/tmp/uploads").deleteUserAccount(
+        actorId,
+        targetId,
+        { reason: "Spam ring", confirmUsername: "wrong-name" },
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", statusCode: 400 });
+    expect(repository.deleteUserAccount).not.toHaveBeenCalled();
+  });
+
+  it("deletes an account when username confirmation matches", async () => {
+    const repository = createRepository();
+    const deleted = {
+      ...userFixture(),
+      status: "PENDING_DELETION" as const,
+      deletedAt: new Date(),
+    };
+    vi.mocked(repository.getUserById).mockResolvedValue({
+      ...userFixture(),
+      bio: null,
+      gender: "PREFER_NOT_TO_SAY",
+      ageRange: "AGE_18_24",
+      relationshipGoal: null,
+      websiteUrl: null,
+      instagramHandle: null,
+      isPrivateAccount: false,
+      hideAge: false,
+      hideCountry: false,
+      hideLastSeen: false,
+      hideOnline: false,
+      coverPhotoMediaId: null,
+      interestCount: 0,
+      reportCountAgainst: 0,
+      openReportCountAgainst: 0,
+    } as never);
+    vi.mocked(repository.deleteUserAccount).mockResolvedValue(deleted);
+
+    const result = await new AdminService(
+      repository,
+      "/tmp/uploads",
+    ).deleteUserAccount(actorId, targetId, {
+      reason: "ToS violation",
+      confirmUsername: "person",
+    });
+
+    expect(repository.deleteUserAccount).toHaveBeenCalledWith({
+      actorId,
+      targetUserId: targetId,
+      reason: "ToS violation",
+    });
+    expect(result).toMatchObject({ id: targetId, status: "PENDING_DELETION" });
+  });
+
   it("normalizes report action codes and notes", async () => {
     const repository = createRepository();
     vi.mocked(repository.resolveReport).mockResolvedValue({
@@ -120,6 +194,7 @@ function createRepository(): AdminRepository {
     getUserById: vi.fn(),
     listUserModerationHistory: vi.fn(),
     changeUserStatus: vi.fn(),
+    deleteUserAccount: vi.fn(),
     listReports: vi.fn(),
     resolveReport: vi.fn(),
     listPosts: vi.fn(),

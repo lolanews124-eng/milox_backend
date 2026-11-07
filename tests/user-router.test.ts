@@ -106,6 +106,7 @@ function createRepository(): UserRepository {
   return {
     findById: vi.fn(),
     findByUsername: vi.fn(),
+    findAccountStateByUsername: vi.fn(),
     searchUsers: vi.fn(),
     getViewerRelation: vi.fn(),
     getPremiumStatus: vi.fn().mockResolvedValue({

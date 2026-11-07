@@ -478,6 +478,12 @@ export interface ChangeUserStatusData {
   reason: string | null;
 }
 
+export interface DeleteUserAccountData {
+  actorId: string;
+  targetUserId: string;
+  reason: string;
+}
+
 export interface ResolveReportData {
   actorId: string;
   reportId: string;
@@ -515,6 +521,13 @@ export interface AdminRepository {
   ): Promise<AdminPage<AdminModerationActionRecord>>;
   changeUserStatus(
     data: ChangeUserStatusData,
+  ): Promise<AdminUserRecord | null>;
+  /**
+   * Staff-initiated account deletion. Soft-deletes like self-serve delete
+   * (hide posts, revoke sessions, clear profile fields) and writes audit.
+   */
+  deleteUserAccount(
+    data: DeleteUserAccountData,
   ): Promise<AdminUserRecord | null>;
   listReports(
     query: AdminReportQuery,

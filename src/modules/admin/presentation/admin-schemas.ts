@@ -207,6 +207,13 @@ export const changeUserStatusSchema = z
   })
   .strict();
 
+export const deleteUserAccountSchema = z
+  .object({
+    reason: z.string().trim().min(3).max(500),
+    confirmUsername: z.string().trim().min(1).max(64),
+  })
+  .strict();
+
 export const resolveReportSchema = z
   .object({
     resolution: z.enum(["resolved", "dismissed"]),

@@ -368,16 +368,30 @@ export class UserService {
     username: string,
     viewerUserId?: string,
   ): Promise<object> {
-    const user = await this.repository.findByUsername(
-      normalizeUsername(username),
-    );
+    const normalized = normalizeUsername(username);
+    const user = await this.repository.findByUsername(normalized);
     if (
       !user ||
       user.status !== UserStatus.ACTIVE ||
       (user.role !== "USER" &&
         !(user.isSystemAccount && user.usernameNormalized === MILOX_OFFICIAL_USERNAME))
     ) {
-      // Suspended / banned / deleted profiles are not publicly addressable (404, not soft redirect).
+      const account = await this.repository.findAccountStateByUsername(
+        normalized,
+      );
+      if (
+        account &&
+        (account.deletedAt != null ||
+          account.status === UserStatus.PENDING_DELETION ||
+          account.status === UserStatus.DELETED)
+      ) {
+        throw new AppError(
+          "PROFILE_DELETED",
+          "This profile is deleted",
+          410,
+        );
+      }
+      // Suspended / banned / missing profiles are not publicly addressable.
       throw new AppError("NOT_FOUND", "User not found", 404);
     }
     const relation = await this.repository.getViewerRelation(

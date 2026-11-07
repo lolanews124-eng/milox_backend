@@ -361,6 +361,69 @@ export class AdminService {
     }
   }
 
+  async deleteUserAccount(
+    actorId: string,
+    targetUserId: string,
+    input: { reason: string; confirmUsername: string },
+  ): Promise<object> {
+    const reason = input.reason.trim();
+    const confirmUsername = input.confirmUsername.trim().replace(/^@/, "");
+    if (!reason) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "A reason is required to delete an account",
+        400,
+      );
+    }
+
+    const existing = await this.repository.getUserById(targetUserId);
+    if (!existing) {
+      throw new AppError("ADMIN_USER_NOT_FOUND", "User not found", 404);
+    }
+    if (existing.username.toLowerCase() !== confirmUsername.toLowerCase()) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Username confirmation does not match",
+        400,
+      );
+    }
+
+    try {
+      const user = await this.repository.deleteUserAccount({
+        actorId,
+        targetUserId,
+        reason,
+      });
+      if (!user) {
+        throw new AppError("ADMIN_USER_NOT_FOUND", "User not found", 404);
+      }
+      return presentAdminUser(user);
+    } catch (error) {
+      if (error instanceof AdminSelfActionError) {
+        throw new AppError(
+          "CANNOT_MODERATE_SELF",
+          "Staff cannot delete their own account from this panel",
+          422,
+        );
+      }
+      if (error instanceof AdminHierarchyError) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Insufficient moderation authority",
+          403,
+        );
+      }
+      if (error instanceof AdminStateConflictError) {
+        throw new AppError(
+          "ADMIN_STATE_CONFLICT",
+          "Account is already deleted",
+          409,
+        );
+      }
+      throw error;
+    }
+  }
+
   async listReports(options: {
     status?: ReportStatus | undefined;
     page: number;

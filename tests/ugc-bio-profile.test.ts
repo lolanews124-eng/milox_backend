@@ -245,6 +245,7 @@ function createRepository(): UserRepository {
   return {
     findById: vi.fn(),
     findByUsername: vi.fn(),
+    findAccountStateByUsername: vi.fn(),
     getViewerRelation: vi.fn(),
     updateProfile: vi.fn(),
     updatePrivacy: vi.fn(),

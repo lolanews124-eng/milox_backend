@@ -173,6 +173,12 @@ export function createAdminRouter(
     asyncHandler(controller.changeUserStatus),
   );
   router.post(
+    "/users/:userId/delete",
+    mutationLimit,
+    adminOnly,
+    asyncHandler(controller.deleteUserAccount),
+  );
+  router.post(
     "/users/:userId/warn",
     mutationLimit,
     moderationStaff,

@@ -94,9 +94,22 @@ export interface UserSearchQuery {
   before?: { followerCount: number; id: string };
 }
 
+export type UsernameAccountState = {
+  id: string;
+  username: string;
+  status: UserProfileRecord["status"];
+  deletedAt: Date | null;
+  role: UserProfileRecord["role"];
+  isSystemAccount: boolean;
+};
+
 export interface UserRepository {
   findById(userId: string): Promise<UserProfileRecord | null>;
   findByUsername(usernameNormalized: string): Promise<UserProfileRecord | null>;
+  /** Includes deleted / pending-deletion accounts (for tombstone responses). */
+  findAccountStateByUsername(
+    usernameNormalized: string,
+  ): Promise<UsernameAccountState | null>;
   searchUsers(query: UserSearchQuery): Promise<PostAuthorViewRecord[]>;
   getViewerRelation(
     profileUserId: string,

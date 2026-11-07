@@ -48,6 +48,7 @@ import {
   moderateOpenReport,
   warnUserDirectly,
 } from "../../moderation/application/report-moderation.js";
+import { PrismaUserRepository } from "../../users/infrastructure/prisma-user-repository.js";
 import { reelRejectReasonLabel } from "../../reels/application/reel-reject-reasons.js";
 import { addDays, istDateKey, istDayRange, startOfIstDay } from "../../../shared/ist-time.js";
 import { enqueueReelMentions } from "../../reels/infrastructure/prisma-reel-repository.js";
@@ -87,6 +88,7 @@ import type {
   OffsetPage,
   ChangeStaffRoleData,
   ChangeUserStatusData,
+  DeleteUserAccountData,
   CreateInterestTagData,
   CreateAdData,
   AdminAdQuery,
@@ -1131,6 +1133,89 @@ export class PrismaAdminRepository implements AdminRepository {
       },
       ADMIN_WRITE_TX,
     );
+  }
+
+  async deleteUserAccount(
+    data: DeleteUserAccountData,
+  ): Promise<AdminUserRecord | null> {
+    const actor = await this.database.user.findFirst({
+      where: {
+        id: data.actorId,
+        status: UserStatus.ACTIVE,
+        role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+      },
+      select: { id: true, role: true },
+    });
+    if (!actor) throw new AdminHierarchyError();
+
+    const target = await this.database.user.findUnique({
+      where: { id: data.targetUserId },
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        username: true,
+        deletedAt: true,
+        isSystemAccount: true,
+      },
+    });
+    if (!target) return null;
+    if (actor.id === target.id) throw new AdminSelfActionError();
+    if (target.isSystemAccount) throw new AdminHierarchyError();
+    if (roleRank(target.role) >= roleRank(actor.role)) {
+      throw new AdminHierarchyError();
+    }
+    if (
+      target.deletedAt != null ||
+      target.status === UserStatus.PENDING_DELETION ||
+      target.status === UserStatus.DELETED
+    ) {
+      throw new AdminStateConflictError();
+    }
+
+    const now = new Date();
+    // Same wipe pipeline as self-serve delete (posts hidden, sessions revoked, PII cleared).
+    const users = new PrismaUserRepository(this.database);
+    await users.softDelete(target.id, now);
+
+    await this.database.$transaction(
+      async (transaction) => {
+        await transaction.moderationAction.create({
+          data: {
+            actorId: actor.id,
+            targetUserId: target.id,
+            actionCode: "USER_ACCOUNT_DELETED",
+            note: data.reason,
+            metadata: {
+              previousStatus: target.status,
+              newStatus: UserStatus.PENDING_DELETION,
+              source: "admin",
+            },
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorType: AuditActorType.ADMIN,
+            actorUserId: actor.id,
+            action: "admin.user.account_deleted",
+            resourceType: "user",
+            resourceId: target.id,
+            metadata: {
+              previousStatus: target.status,
+              newStatus: UserStatus.PENDING_DELETION,
+              actionCode: "USER_ACCOUNT_DELETED",
+              username: target.username,
+            },
+          },
+        });
+      },
+      ADMIN_WRITE_TX,
+    );
+
+    return this.database.user.findUnique({
+      where: { id: target.id },
+      select: adminUserSelect,
+    });
   }
 
   async listReports(
